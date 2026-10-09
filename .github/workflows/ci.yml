@@ -64,7 +64,7 @@ jobs:
           export ENVANTER_SNAPSHOT_DIR="$RUNNER_TEMP/shots"
           export ENVANTER_DATE="$TODAY"
           export ENVANTER_SNAPSHOT_SIZE="1440x1000"
-          export ENVANTER_SECTIONS="overview,daily,sales,orders,labor,summary,analytics:general,analytics:item,analytics:abc,analytics:menu,recipes:11101,items,backup,help"
+          export ENVANTER_SECTIONS="overview,daily,sales,orders,labor,summary,analytics:general,analytics:item:patates,analytics:abc,analytics:menu,recipes:11101,items,backup,help"
           export ENVANTER_QUIT_AFTER_SNAPSHOT=1
           # exec { $ARGV[0] } liste biçimi: yol içindeki boşluk ("NextGen Envanter.app") kelimelere bölünmesin
           perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"

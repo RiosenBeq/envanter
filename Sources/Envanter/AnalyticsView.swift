@@ -374,6 +374,9 @@ private struct ItemAnalysisView: View {
                         StockLevelChart(item: item, series: series)
                     }
                 }
+                if (item.costHistory?.filter { $0.date != nil }.count ?? 0) >= 2 {
+                    PriceHistoryChart(item: item)
+                }
             }
         }
     }
@@ -473,6 +476,37 @@ private struct StockLevelChart: View {
                 }
             }
             .frame(height: 190)
+        }
+    }
+}
+
+/// Birim maliyetin zaman içindeki değişimi (tedarikçi fiyat takibi)
+private struct PriceHistoryChart: View {
+    let item: Item
+
+    var body: some View {
+        let points = (item.costHistory ?? []).compactMap { p -> (date: Date, cost: Double)? in
+            guard let d = p.date, let date = DateKey.date(from: d) else { return nil }
+            return (date, p.cost)
+        }
+        let change = item.lastPriceChange
+        ChartCard(title: "Birim maliyet geçmişi (₺ / \(item.unit.lowercased()))",
+                  subtitle: change.map { "Son değişim: \(Fmt.money($0.from)) → \(Fmt.money($0.to)) (\($0.ratio >= 0 ? "+" : "")\(Fmt.number($0.ratio * 100, maxFraction: 1))%)" } ?? "",
+                  info: .priceAlert) {
+            Chart {
+                ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                    LineMark(x: .value("Tarih", p.date, unit: .day), y: .value("Birim maliyet", p.cost))
+                        .foregroundStyle(Brand.accent)
+                        .interpolationMethod(.stepEnd)
+                    PointMark(x: .value("Tarih", p.date, unit: .day), y: .value("Birim maliyet", p.cost))
+                        .foregroundStyle(Brand.accent)
+                        .annotation(position: .top) {
+                            Text(Fmt.money(p.cost)).font(.caption2).foregroundStyle(.secondary)
+                        }
+                }
+            }
+            .chartYScale(domain: .automatic(includesZero: false))
+            .frame(height: 170)
         }
     }
 }

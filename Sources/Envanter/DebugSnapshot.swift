@@ -4,7 +4,8 @@ import EnvanterCore
 
 /// Geliştirme aracı: ENVANTER_SNAPSHOT_DIR tanımlıysa pencere içeriğini PNG olarak kaydeder (CI'da ekran görüntüleri için).
 ///   ENVANTER_SECTIONS="overview,daily,analytics:abc,recipes:11101"  ekranlar sırayla gezilir
-///     (iki noktadan sonrası: İstatistikler sekmesi — general/item/abc/menu — ya da Reçeteler'de seçilecek ürün kodu)
+///     (iki noktadan sonrası: İstatistikler sekmesi — general/item/abc/menu, "item:patates" ile kalem seçimi —
+///      ya da Reçeteler'de seçilecek ürün kodu)
 ///   ENVANTER_DATE=2026-08-15                                          seçili gün
 ///   ENVANTER_SNAPSHOT_SIZE=1440x1000                                  pencere boyutu (ekrandan büyük olabilir)
 ///   ENVANTER_QUIT_AFTER_SNAPSHOT=1                                    bitince çık
@@ -35,7 +36,12 @@ enum DebugSnapshot {
                 let parts = spec.split(separator: ":", maxSplits: 1).map(String.init)
                 let name = parts[0]
                 let arg = parts.count > 1 ? parts[1] : nil
-                if name == "analytics", let arg, let tab = AnalyticsTab.named(arg) { store.analyticsTab = tab }
+                if name == "analytics", let arg {
+                    // "analytics:item:patates" → Kalem Analizi sekmesi, patates seçili
+                    let sub = arg.split(separator: ":", maxSplits: 1).map(String.init)
+                    if let tab = AnalyticsTab.named(sub[0]) { store.analyticsTab = tab }
+                    if sub.count > 1 { store.analyticsItem = sub[1] }
+                }
                 if name == "recipes", let arg { store.recipeSelection = arg }
                 if let s = AppSection(rawValue: name) { store.section = s }
                 try? await Task.sleep(nanoseconds: 1_800_000_000)

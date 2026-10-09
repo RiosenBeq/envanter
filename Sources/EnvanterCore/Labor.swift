@@ -3,6 +3,7 @@ import Foundation
 // Personel maliyeti ve prime cost.
 //   Aylık maaş   : maaş × işveren çarpanı ÷ ayın gün sayısı (işte kayıtlı olduğu her güne)
 //   Günlük yevmiye: yevmiye × çarpan (çalıştı işaretli ya da saat girilmiş günlerde)
+//   Ücret değişiklikleri (zam) tarihlidir: her gün o gün geçerli ücretle hesaplanır.
 //   Saatlik ücret: saat × ücret × çarpan
 //   Ek ödeme (mesai, prim): tutar × çarpan; ayrıca güne "diğer personel gideri" eklenebilir.
 //   Prime cost = hammadde maliyeti (fiili) + personel maliyeti — restoranlarda en önemli maliyet göstergesi.
@@ -39,19 +40,22 @@ extension Engine {
     /// Bir personelin bir günlük maliyeti
     public func laborCost(of e: Employee, on date: String, shift: ShiftEntry?) -> (cost: Double, hours: Double, worked: Bool) {
         guard e.isEmployed(on: date) else { return (0, 0, false) }
-        let factor = max(e.costFactor, 0)
+        // O gün geçerli ücret koşulları (sonradan gelen zam geçmiş günleri değiştirmez)
+        let t = e.terms(on: date)
+        let factor = max(t.costFactor, 0)
+        let rate = max(t.rate, 0)
         let hours = max(shift?.hours ?? 0, 0)
         let extra = max(shift?.extra ?? 0, 0) * factor
-        switch e.payType {
+        switch t.payType {
         case .monthly:
             guard let v = DateKey.ymd(date) else { return (0, 0, false) }
-            let daily = max(e.rate, 0) * factor / Double(DateKey.daysInMonth(v.y, v.m))
+            let daily = rate * factor / Double(DateKey.daysInMonth(v.y, v.m))
             return (Self.clean(daily + extra), hours, true)
         case .daily:
             let worked = shift?.worked == true || hours > 0
-            return (Self.clean((worked ? max(e.rate, 0) * factor : 0) + extra), hours, worked)
+            return (Self.clean((worked ? rate * factor : 0) + extra), hours, worked)
         case .hourly:
-            return (Self.clean(hours * max(e.rate, 0) * factor + extra), hours, hours > 0)
+            return (Self.clean(hours * rate * factor + extra), hours, hours > 0)
         }
     }
 
@@ -67,7 +71,7 @@ extension Engine {
         let total = lines.reduce(0) { $0 + $1.cost } + other
         return LaborDay(date: date, lines: lines, other: Self.clean(other), total: Self.clean(total),
                         hours: Self.clean(lines.reduce(0) { $0 + $1.hours }),
-                        headcount: lines.filter { $0.worked && ($0.employee.payType != .monthly || $0.hours > 0) }.count)
+                        headcount: lines.filter { $0.worked && ($0.employee.terms(on: date).payType != .monthly || $0.hours > 0) }.count)
     }
 
     /// Dönemdeki her gün (verisi olsun olmasın) için personel maliyeti; aylık maaşlar takvim günlerine dağılır.
@@ -81,7 +85,7 @@ extension Engine {
             other += ld.other
             for l in ld.lines {
                 var r = rows[l.employee.id] ?? LaborSummaryRow(employee: l.employee, days: 0, hours: 0, cost: 0)
-                if l.worked && (l.employee.payType != .monthly || l.hours > 0) { r.days += 1 }
+                if l.worked && (l.employee.terms(on: d).payType != .monthly || l.hours > 0) { r.days += 1 }
                 r.hours += l.hours; r.cost += l.cost
                 rows[l.employee.id] = r
             }
@@ -95,12 +99,21 @@ extension Engine {
 
     // MARK: - Fiyat uyarıları
 
-    /// Son `days` gün içinde birim maliyeti `threshold` oranından fazla artan kalemler
+    /// Son `days` gün içinde birim maliyeti `threshold` oranından fazla artan kalemler.
+    /// Dönem başındaki fiyat ile `date` günündeki fiyat karşılaştırılır (arada birden çok değişiklik olsa da
+    /// toplam artış görünür); `date` son fiyat değişikliğinin günüdür.
     public func priceAlerts(asOf date: String, days: Int = 30, threshold: Double) -> [(item: Item, from: Double, to: Double, ratio: Double, date: String)] {
         let since = DateKey.addDays(-days, to: date)
         return activeItems.compactMap { item in
-            guard let c = item.lastPriceChange, let d = c.date, d >= since, d <= date, c.ratio >= threshold else { return nil }
-            return (item, c.from, c.to, c.ratio, d)
+            guard let h = item.costHistory, h.count >= 2, let now = item.cost(on: date) else { return nil }
+            let changes = h.compactMap { p -> String? in
+                guard let d = p.date, d > since, d <= date else { return nil }
+                return d
+            }
+            guard let lastChange = changes.last, let before = item.cost(on: since), before > 0 else { return nil }
+            let ratio = (now - before) / before
+            guard ratio >= threshold else { return nil }
+            return (item, before, now, ratio, lastChange)
         }.sorted { $0.ratio > $1.ratio }
     }
 

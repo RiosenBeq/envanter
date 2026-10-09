@@ -28,15 +28,39 @@ public struct Item: Codable, Identifiable, Hashable {
         self.unitCost = unitCost; self.minStock = minStock; self.tolerance = tolerance; self.costHistory = costHistory
     }
 
-    /// Birim maliyeti değiştirir ve değişikliği geçmişe yazar (aynı gün içindeki değişiklikler tek kayıt olur).
+    /// Birim maliyeti `date` gününden geçerli olarak değiştirir ve geçmişe tarih sırasıyla yazar
+    /// (aynı güne ait değişiklikler tek kayıt olur). Daha yeni tarihli bir fiyat zaten varsa (ör. geçmiş tarihli
+    /// bir fatura sonradan girildiğinde) güncel maliyet değişmez; fiyat yalnızca geçmişe işlenir.
+    /// `nil` maliyeti kaldırır (geçmiş korunur).
     public mutating func setCost(_ cost: Double?, on date: String) {
-        let old = unitCost
-        unitCost = cost
-        guard let cost, cost != old else { return }
+        guard let cost else { unitCost = nil; return }
         var h = costHistory ?? []
-        if h.isEmpty, let old { h.append(PricePoint(date: nil, cost: old)) }
-        if let last = h.last, last.date == date { h[h.count - 1].cost = cost } else { h.append(PricePoint(date: date, cost: cost)) }
+        if h.isEmpty {
+            guard cost != unitCost else { return }
+            if let old = unitCost { h.append(PricePoint(date: nil, cost: old)) }
+        }
+        if let i = h.firstIndex(where: { $0.date == date }) {
+            h[i].cost = cost
+        } else {
+            // O gün zaten bu fiyat geçerliyse yeni kayıt açılmaz
+            if !h.isEmpty, Self.cost(in: h, on: date) == cost, unitCost != nil { costHistory = h; return }
+            let at = h.firstIndex(where: { ($0.date ?? "") > date }) ?? h.count
+            h.insert(PricePoint(date: date, cost: cost), at: at)
+        }
         costHistory = h
+        unitCost = h.last?.cost
+    }
+
+    /// `date` gününde geçerli birim maliyet: o güne kadarki son fiyat kaydı (geçmiş yoksa güncel maliyet).
+    /// Geçmiş dönemlerin maliyet oranları o günkü fiyatla hesaplansın diye kullanılır.
+    public func cost(on date: String) -> Double? {
+        guard unitCost != nil, let h = costHistory, !h.isEmpty else { return unitCost }
+        return Self.cost(in: h, on: date)
+    }
+
+    static func cost(in h: [PricePoint], on date: String) -> Double? {
+        if let p = h.last(where: { $0.date.map { $0 <= date } ?? true }) { return p.cost }
+        return h.first?.cost
     }
 
     /// Son fiyat değişimi: önceki ve yeni maliyet, oran (ör. 0,12 = %12 artış)
@@ -120,13 +144,16 @@ public struct Employee: Codable, Identifiable, Hashable {
     public var endDate: String?
     /// Saatlik çalışanlar için varsayılan vardiya süresi (saat)
     public var defaultHours: Double?
+    /// Ücret değişiklikleri (tarih sırasıyla). Zam gibi değişiklikler geçmiş günlerin maliyetini değiştirmesin diye
+    /// her gün o gün geçerli koşullarla hesaplanır. Boşsa `payType`/`rate`/`costFactor` her gün için geçerlidir.
+    public var payHistory: [PayTerms]?
 
     public init(id: String = UUID().uuidString, name: String, role: String = "", payType: PayType, rate: Double,
                 costFactor: Double = 1, active: Bool = true, startDate: String? = nil, endDate: String? = nil,
-                defaultHours: Double? = nil) {
+                defaultHours: Double? = nil, payHistory: [PayTerms]? = nil) {
         self.id = id; self.name = name; self.role = role; self.payType = payType; self.rate = rate
         self.costFactor = costFactor; self.active = active; self.startDate = startDate; self.endDate = endDate
-        self.defaultHours = defaultHours
+        self.defaultHours = defaultHours; self.payHistory = payHistory
     }
 
     /// O gün işte kayıtlı mı (giriş/çıkış tarihlerine göre)
@@ -134,6 +161,52 @@ public struct Employee: Codable, Identifiable, Hashable {
         if let s = startDate, date < s { return false }
         if let e = endDate, date > e { return false }
         return true
+    }
+
+    /// `date` gününde geçerli ücret koşulları
+    public func terms(on date: String) -> PayTerms {
+        let current = PayTerms(from: nil, payType: payType, rate: rate, costFactor: costFactor)
+        guard let h = payHistory, !h.isEmpty else { return current }
+        return h.last(where: { $0.from.map { $0 <= date } ?? true }) ?? h[0]
+    }
+
+    /// Ücret koşullarını değiştirir. `from` verilirse o günden itibaren geçerli olur (önceki günler eski koşullarla
+    /// kalır); `nil` ise tüm dönem için düzeltme sayılır ve geçmiş silinir.
+    public mutating func setTerms(payType: PayType, rate: Double, costFactor: Double, from date: String?) {
+        let new = PayTerms(from: date, payType: payType, rate: rate, costFactor: costFactor)
+        if let date {
+            var h = payHistory ?? [PayTerms(from: nil, payType: self.payType, rate: self.rate, costFactor: self.costFactor)]
+            if let i = h.firstIndex(where: { $0.from == date }) {
+                h[i] = new
+            } else {
+                let at = h.firstIndex(where: { ($0.from ?? "") > date }) ?? h.count
+                h.insert(new, at: at)
+            }
+            // Art arda aynı koşullar tek kayıt olur
+            var merged: [PayTerms] = []
+            for t in h {
+                if let l = merged.last, l.payType == t.payType, l.rate == t.rate, l.costFactor == t.costFactor { continue }
+                merged.append(t)
+            }
+            payHistory = merged.count > 1 ? merged : nil
+            let last = merged.last ?? new
+            self.payType = last.payType; self.rate = last.rate; self.costFactor = last.costFactor
+        } else {
+            payHistory = nil
+            self.payType = payType; self.rate = rate; self.costFactor = costFactor
+        }
+    }
+}
+
+/// Belirli bir günden itibaren geçerli ücret koşulları
+public struct PayTerms: Codable, Hashable {
+    /// Geçerlilik başlangıcı (yyyy-MM-dd); nil = kaydın başından beri
+    public var from: String?
+    public var payType: PayType
+    public var rate: Double
+    public var costFactor: Double
+    public init(from: String?, payType: PayType, rate: Double, costFactor: Double) {
+        self.from = from; self.payType = payType; self.rate = rate; self.costFactor = costFactor
     }
 }
 
@@ -324,10 +397,15 @@ public struct DayRecord: Codable, Hashable {
     }
 
     public var isEmpty: Bool {
-        sales.isEmpty && entries.values.allSatisfy { $0.isEmpty }
-            && (legacySold ?? [:]).isEmpty && (legacyWaste ?? [:]).isEmpty
+        !hasInventoryData
             && (note ?? "").isEmpty && (countedBy ?? "").isEmpty
             && (shifts ?? [:]).values.allSatisfy { $0.isEmpty } && (otherLabor ?? 0) == 0
+    }
+
+    /// Sayım veya satış verisi var mı (personel/not hariç). Excel aktarımında çakışma buna göre belirlenir.
+    public var hasInventoryData: Bool {
+        !sales.isEmpty || !entries.values.allSatisfy { $0.isEmpty }
+            || !(legacySold ?? [:]).isEmpty || !(legacyWaste ?? [:]).isEmpty
     }
 }
 
@@ -413,3 +491,20 @@ public struct AppData: Codable {
         return AppData(items: seed.items, products: seed.products)
     }
 }
+
+// Değer tipleri iş parçacıkları arasında güvenle taşınır (arka planda kayıt için)
+extension Item: Sendable {}
+extension PricePoint: Sendable {}
+extension PayType: Sendable {}
+extension Employee: Sendable {}
+extension PayTerms: Sendable {}
+extension ShiftEntry: Sendable {}
+extension OrderStatus: Sendable {}
+extension OrderLine: Sendable {}
+extension PurchaseOrder: Sendable {}
+extension Product: Sendable {}
+extension SaleLine: Sendable {}
+extension DayEntry: Sendable {}
+extension DayRecord: Sendable {}
+extension AppSettings: Sendable {}
+extension AppData: Sendable {}

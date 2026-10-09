@@ -81,7 +81,7 @@ enum SelfTest {
         store.confirmImport(report: report, date: d1)
         calc = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
         check(near(calc?.sold, 28), "Dublex 14 adet → 90 gr satılan 28")
-        check(near(calc?.waste, 1), "ZAYİ köfte → zaiyat 1")
+        check(near(calc?.waste, 1), "ZAYİ köfte → zayi 1")
         check(near(calc?.diff, -1), "fark = 28 + 1 − 30 = −1")
         check(store.engine.overview(date: d1).unknownLines == 1, "reçetesi tanımsız 1 ürün işaretlendi")
         check(near(store.data.days[d1]?.salesRevenue, 6860), "satış tutarı 6.860 ₺")
@@ -116,7 +116,8 @@ enum SelfTest {
         check(!store.engine.priceAlerts(asOf: DateKey.today(), threshold: 0.05).isEmpty, "fiyat artışı uyarısı üretildi")
         step("tolerans") { store.updateItem("g90") { $0.tolerance = 2 } }
         check(store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }?.severity == .withinTolerance, "−1 fark tolerans (±2) içinde")
-        check(near(store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }?.diffValue, -42), "farkın tutarı −42 ₺")
+        // 01.08'de geçerli fiyat 38 ₺ (42 ₺ bugünden itibaren): geçmiş gün o günkü fiyatla değerlenir
+        check(near(store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }?.diffValue, -38), "farkın tutarı o günkü fiyatla −38 ₺")
 
         print("6) Açılış devri ve hareketsiz kalemler")
         let d2row = store.engine.calc(date: d2).rows.first { $0.itemID == "g90" }
@@ -150,8 +151,20 @@ enum SelfTest {
         let p = store.engine.periodStats(from: d1, to: d1)
         check(near(p.laborPct, 4_700.0 / 6_860), "personel oranı = 4.700 / 6.860")
         check(p.primeCostPct != nil, "prime cost oranı hesaplandı")
+        check(store.fillDefaultShifts(date: d1) == 0, "ikinci doldurmada boş vardiya kalmadı")
         step("ayrıldı") { store.markEmployeeLeft("k", on: d1) }
         check(store.engine.labor(date: d2).lines.first { $0.employee.id == "k" } == nil, "ayrılan personel ertesi gün maliyete girmiyor")
+        // Zam 02.08'den itibaren: 01.08 eski maaşla kalır
+        store.changePay("m", payType: .monthly, rate: 62_000, costFactor: 1.2, from: d2)
+        check(near(store.engine.labor(date: d1).lines.first { $0.employee.id == "m" }?.cost, 1_200), "zamdan önceki gün eski maaşla (1.200 ₺)")
+        check(near(store.engine.labor(date: d2).lines.first { $0.employee.id == "m" }?.cost, 2_400), "zam gününden itibaren yeni maaşla (2.400 ₺)")
+        // Yevmiyeli: saat girilince çalıştı sayılır, işaret kaldırılınca saat de silinir
+        let kurye2 = Employee(id: "k2", name: "Kurye 2", payType: .daily, rate: 1_500)
+        store.addEmployee(kurye2)
+        store.shiftBinding("k2", date: d2, \.hours).wrappedValue = 5
+        check(store.workedBinding("k2", date: d2).wrappedValue, "saat girilen yevmiyeli 'çalıştı' görünüyor")
+        store.workedBinding("k2", date: d2).wrappedValue = false
+        check(store.engine.labor(date: d2).lines.first { $0.employee.id == "k2" } == nil, "işaret kaldırılınca yevmiye yazılmıyor")
 
         print("9) Sipariş oluşturma ve teslim alma")
         store.selectedDate = d2
@@ -161,11 +174,17 @@ enum SelfTest {
         if let order = store.openOrders.first {
             let line = order.lines.first { $0.itemID == "g90" }
             check(line != nil, "siparişte 90 gr var")
+            let after = store.orderSuggestions(date: d2).first { $0.item.id == "g90" }
+            check(near(after?.onOrder, line?.qty ?? -1) && after?.suggested == 0, "açık siparişteki miktar öneriden düşüldü (çift sipariş yok)")
             let before = store.data.days[d2]?.entries["g90"]?.incoming ?? 0
             let ok = store.receiveOrder(order.id, on: d2, quantities: ["g90": 100], prices: ["g90": 44])
             check(ok, "sipariş teslim alındı")
             check(near(store.data.days[d2]?.entries["g90"]?.incoming, before + 100), "teslimat Gelen'e işlendi (+100)")
-            check(store.engine.itemsByID["g90"]?.unitCost == 44, "fatura fiyatı birim maliyete yazıldı")
+            // 02.08 tarihli fatura, bugün girilmiş daha yeni fiyatı (42) ezmez; fiyat geçmişine tarih sırasıyla girer
+            let g = store.engine.itemsByID["g90"]
+            check(g?.unitCost == 42, "geçmiş tarihli fatura güncel fiyatı ezmedi")
+            check(g?.cost(on: d2) == 44, "fatura fiyatı 02.08 için fiyat geçmişine işlendi")
+            check(g?.costHistory?.map { $0.date ?? "" } == (g?.costHistory?.map { $0.date ?? "" }.sorted()), "fiyat geçmişi tarih sırasında")
             check(store.openOrders.isEmpty, "sipariş kapandı")
         }
 
@@ -185,7 +204,7 @@ enum SelfTest {
         switch Persistence(directory: dir).load() {
         case .loaded(let back):
             check(back.days[d1]?.entries["g90"]?.closing == 120, "sayım diske yazıldı")
-            check(back.employees.count == 3, "personel diske yazıldı")
+            check(back.employees.count == 4 && back.employees.first { $0.id == "m" }?.payHistory?.count == 2, "personel ve ücret geçmişi diske yazıldı")
             check(back.purchaseOrders.first?.status == .received, "sipariş durumu diske yazıldı")
             check(back.items.first { $0.id == "g90" }?.costHistory?.count ?? 0 >= 2, "fiyat geçmişi diske yazıldı")
             check(back.settings.branchName == "Test Şube", "ayarlar diske yazıldı")

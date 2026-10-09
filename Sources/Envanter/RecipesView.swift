@@ -120,7 +120,7 @@ private struct RecipeEditor: View {
                             }.labelsHidden().frame(width: 260)
                         }
                         if p.isWaste {
-                            Pill(text: "Zayi ürünü: tüketim Zaiyat sütununa yazılır", color: Brand.warn)
+                            Pill(text: "Zayi ürünü: tüketim Zayi sütununa yazılır", color: Brand.warn)
                         }
                     }
 
@@ -194,6 +194,7 @@ private struct RecipeEditor: View {
         if p.isTracked {
             let rc = store.engine.recipeCost(p)
             let price = store.engine.lastUnitPrice(code: p.code)
+            let limit = store.settings.targetFoodCostPct ?? 0.35
             StatRow {
                 StatCard(title: "Maliyet", value: rc.cost > 0 || rc.isComplete ? Fmt.money(rc.cost, fraction: 2) : "—",
                          detail: rc.isComplete ? "1 adet için hammadde maliyeti" : "Maliyeti eksik: " + rc.missing.joined(separator: ", "),
@@ -203,8 +204,8 @@ private struct RecipeEditor: View {
                          icon: "tag", color: Brand.positive)
                 let pct: Double? = (rc.isComplete && (price?.price ?? 0) > 0) ? rc.cost / price!.price : nil
                 StatCard(title: "Oran", value: pct.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—",
-                         detail: pct.map { $0 > 0.35 ? "Yüksek: fiyatı veya porsiyonu gözden geçirin" : "Kâr payı: \(Fmt.money(price!.price - rc.cost, fraction: 2))" } ?? "Maliyet ve fiyat gerekli",
-                         icon: "percent", color: (pct ?? 0) > 0.35 ? Brand.negative : Brand.ok)
+                         detail: pct.map { $0 > limit ? "Hedefin (%\(Fmt.number(limit * 100, maxFraction: 1))) üzerinde: fiyatı veya porsiyonu gözden geçirin" : "Kâr payı: \(Fmt.money(price!.price - rc.cost, fraction: 2))" } ?? "Maliyet ve fiyat gerekli",
+                         icon: "percent", color: (pct ?? 0) > limit ? Brand.negative : Brand.ok)
             }
         }
     }

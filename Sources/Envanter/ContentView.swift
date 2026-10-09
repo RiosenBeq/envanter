@@ -1,36 +1,41 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import EnvanterCore
-
-/// Yan menü arka planı (macOS'un yerel "sidebar" malzemesi)
-struct SidebarBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .sidebar
-        v.blendingMode = .behindWindow
-        v.state = .followsWindowActiveState
-        return v
-    }
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
 
 struct ContentView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.undoManager) private var undoManager
+    @State private var dropTargeted = false
 
     // Not: NavigationSplitView yerine sabit yükseklikli bir yerleşim kullanılır; NavigationSplitView,
     // uzun listeleri olan ekranlarda içeriğin "ideal" yüksekliğini pencere yüksekliği sayıp pencereden taşıyordu.
     var body: some View {
         HStack(spacing: 0) {
+            // Yüzen cam yan menü (macOS 26 Liquid Glass; önceki sürümlerde buzlu cam)
             sidebar
                 .frame(width: 228)
                 .frame(maxHeight: .infinity)
-                .background(SidebarBackground())
-            Divider()
+                .glassSurface(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .padding(.leading, 10).padding(.vertical, 10)
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(AmbientBackground())
         .onAppear { store.undoManager = undoManager }
+        // Satış raporu / Excel dosyası her ekranda pencereye bırakılabilir (Günlük Envanter'e geçilir)
+        .overlay { if dropTargeted { dropOverlay } }
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            guard let p = providers.first else { return false }
+            _ = p.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                DispatchQueue.main.async {
+                    store.section = .daily
+                    store.beginImport(url: url)
+                }
+            }
+            return true
+        }
         .sheet(item: $store.importPreview) { p in
             ImportSheet(report: p.report, initialDate: store.selectedDate).environmentObject(store)
         }
@@ -41,6 +46,20 @@ struct ContentView: View {
                presenting: store.alert) { _ in
             Button("Tamam", role: .cancel) {}
         } message: { a in Text(a.message) }
+    }
+
+    private var dropOverlay: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+            .background(Brand.accent.opacity(0.08))
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 40))
+                    Text("Satış raporunu veya Excel envanter dosyasını buraya bırakın").font(.title3.weight(.semibold))
+                }.foregroundStyle(Brand.accent)
+            }
+            .padding(10)
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder private var detail: some View {
@@ -153,8 +172,8 @@ private struct SidebarRow: View {
             .foregroundStyle(selected ? Brand.accent : Color.primary)
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(selected ? Brand.accent.opacity(0.13) : (hovering ? Color.primary.opacity(0.06) : Color.clear))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selected ? Brand.accent.opacity(0.15) : (hovering ? Color.primary.opacity(0.06) : Color.clear))
             )
             .overlay(alignment: .leading) {
                 if selected {

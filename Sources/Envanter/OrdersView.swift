@@ -91,15 +91,23 @@ struct OrdersView: View {
                             Text(s.item.unit.lowercased()).font(.caption2).foregroundStyle(.secondary)
                         }
                     }
-                    TableColumn("Son stok") { s in
+                    TableColumn("Mevcut stok") { s in
                         VStack(alignment: .trailing, spacing: 1) {
                             Text(s.stock.map { num($0, s.item) } ?? "—").monospacedDigit()
                             if let d = s.stockDate, d != store.selectedDate {
-                                Text(DateKey.short(d)).font(.caption2).foregroundStyle(.secondary)
+                                Text("sayım \(DateKey.short(d))" + (s.stock != s.countedStock ? " + hareket" : ""))
+                                    .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                    }.width(90)
+                        .help(stockHelp(s))
+                    }.width(100)
+                    TableColumn("Siparişte") { s in
+                        Text(s.onOrder > 0 ? num(s.onOrder, s.item) : "—").monospacedDigit()
+                            .foregroundStyle(s.onOrder > 0 ? Brand.positive : Color.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .help("Açık siparişlerde teslim alınmayı bekleyen miktar; öneriden düşülür")
+                    }.width(80)
                     TableColumn("Günlük tüketim") { s in
                         Text(s.sampleDays > 0 ? Fmt.number(s.dailyUsage, maxFraction: s.item.isKg ? 2 : 1) : "—").monospacedDigit()
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -154,6 +162,13 @@ struct OrdersView: View {
     }
 
     private func num(_ v: Double, _ item: Item) -> String { Fmt.number(v, maxFraction: item.maxFraction) }
+
+    private func stockHelp(_ s: OrderSuggestion) -> String {
+        guard let counted = s.countedStock, let d = s.stockDate else { return "Henüz sayım yok" }
+        let base = "Son sayım (\(DateKey.short(d))): \(num(counted, s.item))"
+        guard let now = s.stock, now != counted else { return base }
+        return base + "; sonraki günlerin gelen/transfer ve satışlarıyla tahmini \(num(now, s.item))"
+    }
 }
 
 
@@ -238,14 +253,15 @@ private struct ReceiveSheet: View {
         let date = store.selectedDate
         VStack(alignment: .leading, spacing: 14) {
             Text("Teslim al").font(.title2.weight(.semibold))
-            Text("Gelen miktarlar \(DateKey.long(date)) gününün Gelen sütununa eklenecek. Fatura fiyatı girerseniz kalemin birim maliyeti güncellenir ve fiyat geçmişine yazılır.")
+            Text("Gelen miktarlar \(DateKey.long(date)) gününün Gelen sütununa eklenecek. Fatura fiyatı girerseniz fiyat geçmişine yazılır ve kalemin birim maliyeti güncellenir (daha yeni tarihli bir fiyat varsa o korunur).")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
                 GridRow {
                     Text("Kalem").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text("Sipariş").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text("Gelen").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text("Fatura birim fiyatı (₺)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Fatura fiyatı (₺ / envanter birimi)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .help("Koli/paket fiyatı değil; 1 adet veya 1 kg'ın KDV hariç fiyatı")
                 }
                 ForEach(order.lines) { l in
                     let item = items[l.itemID]
@@ -253,9 +269,17 @@ private struct ReceiveSheet: View {
                         Text(item?.name ?? l.itemID)
                         Text("\(Fmt.number(l.qty, maxFraction: 2)) \(item?.unit.lowercased() ?? "")").monospacedDigit().foregroundStyle(.secondary)
                         OptionalDecimalField(value: Binding(get: { quantities[l.itemID] ?? l.qty }, set: { quantities[l.itemID] = $0 }),
-                                             placeholder: "0", maxFraction: 3, width: 100)
-                        OptionalDecimalField(value: Binding(get: { prices[l.itemID] ?? nil }, set: { prices[l.itemID] = $0 }),
-                                             placeholder: item?.unitCost.map { Fmt.number($0, maxFraction: 2) } ?? "—", maxFraction: 2, width: 120)
+                                             placeholder: "0", maxFraction: 3, width: 100, live: true)
+                        HStack(spacing: 6) {
+                            OptionalDecimalField(value: Binding(get: { prices[l.itemID] ?? nil }, set: { prices[l.itemID] = $0 }),
+                                                 placeholder: item?.unitCost.map { Fmt.number($0, maxFraction: 2) } ?? "—", maxFraction: 2, width: 110, live: true)
+                            Text("/ \(item?.unit.lowercased() ?? "birim")").font(.caption).foregroundStyle(.secondary)
+                            // Koli fiyatı gibi yanlış birimle girilen fiyatlara karşı uyarı (güncel maliyetten %50'den fazla sapma)
+                            if let p = prices[l.itemID] ?? nil, let c = item?.unitCost, c > 0, abs(p - c) / c > 0.5 {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.warn)
+                                    .help("Güncel birim maliyetten (\(Fmt.money(c))) çok farklı. Koli/paket fiyatı değil, 1 \(item?.unit.lowercased() ?? "birim") fiyatı girildiğinden emin olun.")
+                            }
+                        }
                     }
                 }
             }
@@ -278,6 +302,6 @@ private struct ReceiveSheet: View {
                 .disabled(store.isLocked(date))
             }
         }
-        .padding(22).frame(width: 620)
+        .padding(22).frame(width: 700)
     }
 }

@@ -7,6 +7,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    /// Çıkışta odaktaki alanın yazısı kaybolmasın: önce düzenlemeyi bitir (alan değerini kaydeder),
+    /// bir sonraki turda çıkışa izin ver; son kayıt willTerminate'te yapılır.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let window = NSApp.keyWindow, window.firstResponder is NSTextView else { return .terminateNow }
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            MainActor.assumeIsolated { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        return .terminateLater
+    }
 }
 
 @main
@@ -27,6 +38,8 @@ struct EnvanterApp: App {
                 }
         }
         .defaultSize(width: 1440, height: 920)
+        // Başlık çubuğu içerikle birleşir (cam yüzeyler pencerenin tepesine kadar ortam ışığını gösterir)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("\(Brand.appName) Hakkında") { showAbout() }

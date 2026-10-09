@@ -43,7 +43,7 @@ public enum Purchasing {
             }
             if let p = prices[id], p > 0, let ii = data.items.firstIndex(where: { $0.id == id }) {
                 order.lines[li].unitPrice = p
-                if data.items[ii].unitCost != p { data.items[ii].setCost(p, on: date); priceUpdates += 1 }
+                if data.items[ii].cost(on: date) != p { data.items[ii].setCost(p, on: date); priceUpdates += 1 }
             }
         }
         guard received > 0 else { throw Failure.nothingReceived }

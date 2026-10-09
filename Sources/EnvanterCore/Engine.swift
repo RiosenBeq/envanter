@@ -86,8 +86,16 @@ public struct DayOverview: Identifiable {
     /// Tüm farkların net parasal toplamı (₺)
     public var netValue: Double
     public var isLocked: Bool
+    /// Günün satış tutarı (rapor tutar içeriyorsa)
+    public var revenue: Double? = nil
 
     public var isFullyCounted: Bool { itemCount > 0 && countedItems == itemCount }
+    /// Kayıp satışın %1'ini (satış tutarı yoksa 500 ₺'yi) aşıyorsa belirgin sayılır
+    public var hasSignificantLoss: Bool {
+        guard lossValue > 0 else { return false }
+        if let revenue, revenue > 0 { return lossValue >= revenue * 0.01 }
+        return lossValue >= 500
+    }
     public var hasAnyCount: Bool { countedItems > 0 }
 }
 
@@ -95,9 +103,14 @@ public struct DayOverview: Identifiable {
 public struct OrderSuggestion: Identifiable {
     public var id: String { item.id }
     public var item: Item
-    /// Son sayılan stok (kapanış)
+    /// Tahmini mevcut stok: son sayılan kapanış + sonraki (henüz sayılmamış) günlerin hareketleri
     public var stock: Double?
+    /// Son sayımın günü
     public var stockDate: String?
+    /// Son sayımdaki kapanış (hareketler eklenmeden)
+    public var countedStock: Double?
+    /// Açık siparişlerde bekleyen miktar (henüz teslim alınmamış)
+    public var onOrder: Double
     /// Ortalama günlük tüketim (envanter birimi)
     public var dailyUsage: Double
     /// Ortalamanın hesaplandığı gün sayısı
@@ -221,7 +234,7 @@ public struct Engine {
             let d = Self.clean(sold + waste - a)
             diff = d
             severity = item.severity(of: d)
-            if let cost = item.unitCost { diffValue = Self.clean(d * cost) }
+            if let cost = item.cost(on: date) { diffValue = Self.clean(d * cost) }
         }
         return ItemCalc(itemID: item.id, opening: opening, openingIsAuto: entry.opening == nil,
                         incoming: incoming, transferIn: tin, transferOut: tout, closing: entry.closing,
@@ -259,6 +272,7 @@ public struct Engine {
             if let v = r.diffValue { o.netValue += v }
         }
         o.lossValue = Self.clean(o.lossValue); o.netValue = Self.clean(o.netValue)
+        o.revenue = day?.salesRevenue
         return o
     }
 
@@ -284,6 +298,10 @@ public struct Engine {
         public var diff: Double
         /// Toplam farkın parasal karşılığı (₺; maliyet tanımlı değilse nil)
         public var diffValue: Double?
+        /// Kayıp: tolerans dışı fazla çıkış olan günlerin tutarı (pozitif ₺; az çıkışlarla mahsup edilmez)
+        public var shortageValue: Double = 0
+        /// Tolerans dışı fazla çıkış olan günlerin miktarı (pozitif, envanter birimi)
+        public var shortageQty: Double = 0
         /// Tolerans dışı fazla çıkış olan gün sayısı
         public var shortageDays: Int
         public var daily: [(date: String, diff: Double)]
@@ -311,22 +329,40 @@ public struct Engine {
                 r.lastClosing = c.closing
                 r.incoming += c.incoming; r.transferIn += c.transferIn; r.transferOut += c.transferOut
                 r.sold += c.sold; r.waste += c.waste; r.actual += actual; r.diff += diff
-                if c.severity == .shortage { r.shortageDays += 1 }
+                if let v = c.diffValue { r.diffValue = (r.diffValue ?? 0) + v }
+                if c.severity == .shortage {
+                    r.shortageDays += 1
+                    r.shortageQty -= diff
+                    if let v = c.diffValue { r.shortageValue -= v }
+                }
                 r.daily.append((d, diff))
             }
             r.incoming = Self.clean(r.incoming); r.transferIn = Self.clean(r.transferIn)
             r.transferOut = Self.clean(r.transferOut); r.sold = Self.clean(r.sold)
             r.waste = Self.clean(r.waste); r.actual = Self.clean(r.actual); r.diff = Self.clean(r.diff)
-            if let cost = item.unitCost, r.daysCounted > 0 { r.diffValue = Self.clean(r.diff * cost) }
+            // Fark tutarı her günün o günkü birim maliyetiyle hesaplanıp toplanır
+            r.diffValue = r.diffValue.map(Self.clean)
+            r.shortageValue = Self.clean(r.shortageValue); r.shortageQty = Self.clean(r.shortageQty)
             return r
         }
     }
 
     // MARK: - Sipariş önerisi
 
+    /// `date` itibarıyla açık siparişlerde bekleyen (teslim alınmamış) miktarlar
+    public func onOrder(asOf date: String) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for o in data.purchaseOrders where o.status == .open && o.date <= date {
+            for l in o.lines { out[l.itemID, default: 0] += max(l.qty - (l.received ?? 0), 0) }
+        }
+        return out
+    }
+
     /// `date` itibarıyla her aktif kalem için sipariş önerisi.
     /// Günlük tüketim, son `lookbackDays` gün içinde sayımı yapılmış günlerin fiili tüketim ortalamasıdır;
     /// sayım yoksa satış raporundan (satılan + zayi) hesaplanır.
+    /// Mevcut stok = son sayılan kapanış + sonraki sayılmamış günlerin gelen/transferi − satış ve zayisi;
+    /// açık siparişlerde bekleyen miktar öneriden düşülür (aynı mal iki kez sipariş edilmesin).
     public func orderSuggestions(asOf date: String, lookbackDays: Int, coverDays: Double) -> [OrderSuggestion] {
         let lookback = max(1, lookbackDays)
         let window = (0..<lookback).map { DateKey.addDays(-$0, to: date) }.filter { data.days[$0] != nil }
@@ -340,18 +376,37 @@ public struct Engine {
             }
         }
         let tomorrow = DateKey.addDays(1, to: date)
+        let pending = onOrder(asOf: date)
+        var rowCache: [String: [String: ItemCalc]] = [:]
+        func row(_ itemID: String, _ d: String) -> ItemCalc? {
+            if rowCache[d] == nil {
+                rowCache[d] = Dictionary(calc(date: d).rows.map { ($0.itemID, $0) }, uniquingKeysWith: { a, _ in a })
+            }
+            return rowCache[d]?[itemID]
+        }
         return activeItems.map { item in
             let samples = counted[item.id].flatMap { $0.isEmpty ? nil : $0 } ?? fromSales[item.id] ?? []
             let usage = samples.isEmpty ? 0 : samples.reduce(0, +) / Double(samples.count)
             let last = lastClosing(itemID: item.id, before: tomorrow)
-            let stock = last?.value
+            var stock = last?.value
+            if let last, last.date < date {
+                // Sayımdan sonraki günlerin hareketleri (ör. sabah gelen mal, gün içi satış)
+                var moved = 0.0
+                for d in sortedDates where d > last.date && d <= date {
+                    guard let c = row(item.id, d) else { continue }
+                    moved += c.incoming + c.transferIn - c.transferOut - c.sold - c.waste
+                }
+                stock = max((stock ?? 0) + moved, 0)
+            }
+            let onOrder = pending[item.id] ?? 0
             let target = usage * max(coverDays, 0) + max(item.minStock ?? 0, 0)
-            var suggested = max(0, target - (stock ?? 0))
+            var suggested = max(0, target - (stock ?? 0) - onOrder)
             // Adet kalemler tam sayıya, kg kalemler 0,1'e yukarı yuvarlanır
             suggested = item.isKg ? (suggested * 10 - 1e-9).rounded(.up) / 10 : (suggested - 1e-9).rounded(.up)
             suggested = max(suggested, 0)
             return OrderSuggestion(
-                item: item, stock: stock, stockDate: last?.date, dailyUsage: Self.clean(usage), sampleDays: samples.count,
+                item: item, stock: stock.map(Self.clean), stockDate: last?.date, countedStock: last?.value, onOrder: Self.clean(onOrder),
+                dailyUsage: Self.clean(usage), sampleDays: samples.count,
                 daysOfCover: (stock != nil && usage > 0) ? Self.clean(stock! / usage) : nil,
                 target: Self.clean(target), suggested: Self.clean(suggested),
                 cost: item.unitCost.map { Self.clean($0 * suggested) })

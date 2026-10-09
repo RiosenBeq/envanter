@@ -107,12 +107,10 @@ struct SummaryView: View {
     private func kpis(_ rows: [Engine.SummaryRow]) -> some View {
         let counted = rows.filter { $0.daysCounted > 0 }
         let problems = counted.filter { $0.severity.isProblem }.count
-        let loss = counted.compactMap { r -> Double? in
-            guard let v = r.diffValue, r.severity == .shortage else { return nil }
-            return -v
-        }.reduce(0, +)
+        // Kayıp, İstatistikler ekranıyla aynı tanım: tolerans dışı fazla çıkış olan günlerin toplamı (mahsupsuz)
+        let loss = counted.reduce(0) { $0 + $1.shortageValue }
         let net = counted.compactMap { $0.diffValue }.reduce(0, +)
-        let worst = counted.filter { $0.severity == .shortage }.min { ($0.diffValue ?? 0) < ($1.diffValue ?? 0) }
+        let worst = counted.filter { $0.shortageValue > 0 }.max { $0.shortageValue < $1.shortageValue }
         let hasCosts = counted.contains { $0.diffValue != nil }
         return StatRow {
             StatCard(title: "Sayılan kalem", value: "\(counted.count) / \(rows.count)", icon: "checklist", color: Brand.accent)
@@ -121,16 +119,16 @@ struct SummaryView: View {
             StatCard(title: "Dönem kaybı", value: hasCosts ? Fmt.money(loss) : "—",
                      detail: hasCosts ? "Net fark: \(Fmt.money(net))" : "Birim maliyet tanımlı değil",
                      icon: "turkishlirasign.circle", color: loss > 0 ? Brand.negative : Brand.ok, info: .loss)
-            StatCard(title: "En büyük açık", value: worst?.item.name ?? "—",
-                     detail: worst.map { r in "\(Fmt.number(r.diff, maxFraction: r.item.maxFraction)) \(r.item.unit.lowercased())" + (r.diffValue.map { " · \(Fmt.money($0))" } ?? "") } ?? "Fazla çıkış yok",
-                     icon: "arrow.down.right.circle", color: Brand.negative)
+            StatCard(title: "En büyük kayıp", value: worst?.item.name ?? "—",
+                     detail: worst.map { r in "\(Fmt.money(r.shortageValue)) · \(r.shortageDays) gün fazla çıkış" } ?? "Tolerans dışı fazla çıkış yok",
+                     icon: "arrow.down.right.circle", color: Brand.negative, info: .loss)
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
     }
 
     private let widths: [CGFloat] = [80, 80, 86, 84, 86, 80, 90, 92, 96]
     private let titles = ["İlk Açılış", "Toplam Gelen", "Net Transfer", "Son Kapanış", "Toplam Satılan",
-                          "Toplam Zaiyat", "Fiili Tüketim", "Toplam Fark", "Fark Tutarı"]
+                          "Toplam Zayi", "Fiili Tüketim", "Toplam Fark", "Fark Tutarı"]
     private let terms: [Term] = [.opening, .incoming, .transfer, .closing, .sold, .waste, .actualUsage, .diff, .netDiff]
 
     private var header: some View {

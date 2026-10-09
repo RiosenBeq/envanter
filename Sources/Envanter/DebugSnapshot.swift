@@ -69,8 +69,19 @@ enum DebugSnapshot {
     }
 
     static func snapshot(to path: String) {
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
-              let view = window.contentView?.superview ?? window.contentView,
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) else { return }
+        // Pencere sunucusunun birleştirdiği gerçek görüntü (Liquid Glass gibi efektler ancak böyle görünür);
+        // izin yoksa ya da başarısız olursa görünüm hiyerarşisi çizilerek alınır.
+        if ProcessInfo.processInfo.environment["ENVANTER_SNAPSHOT_MODE"] != "view" {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            p.arguments = ["-x", "-o", "-l\(window.windowNumber)", path]
+            if (try? p.run()) != nil {
+                p.waitUntilExit()
+                if p.terminationStatus == 0, FileManager.default.fileExists(atPath: path) { return }
+            }
+        }
+        guard let view = window.contentView?.superview ?? window.contentView,
               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }

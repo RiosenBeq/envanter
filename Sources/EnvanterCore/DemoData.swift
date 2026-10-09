@@ -194,9 +194,12 @@ public enum DemoData {
                                                  lines: [OrderLine(itemID: "g90", qty: 600, received: 600, unitPrice: 38),
                                                          OrderLine(itemID: "g130", qty: 200, received: 190, unitPrice: 62)],
                                                  status: .received, receivedOn: past))
-        let suggestions = Engine(data: data).orderSuggestions(asOf: end, lookbackDays: 14, coverDays: 3)
-        if var open = Purchasing.makeOrder(from: suggestions.filter { ["g90", "smash70", "ekmekSusamli", "patates"].contains($0.item.id) },
-                                           date: end, supplier: "Haftalık Tedarik") {
+        // Dün verilmiş, henüz gelmemiş sipariş (Sipariş Önerisi ekranında "Siparişte" olarak görünür)
+        let yesterday = DateKey.addDays(-1, to: end)
+        let suggestions = Engine(data: data).orderSuggestions(asOf: yesterday, lookbackDays: 14, coverDays: 3).filter { $0.suggested > 0 }
+        let preferred = suggestions.filter { ["g90", "smash70", "ekmekSusamli", "patates"].contains($0.item.id) }
+        if var open = Purchasing.makeOrder(from: preferred.isEmpty ? Array(suggestions.prefix(4)) : preferred,
+                                           date: yesterday, supplier: "Haftalık Tedarik") {
             open.note = "Sipariş Önerisi ekranından oluşturuldu"
             data.purchaseOrders.append(open)
         }

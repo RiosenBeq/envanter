@@ -41,7 +41,7 @@ struct ItemsView: View {
                 Text("Katsayı").frame(width: IW.factor + 10).explains(.factor)
                 Text("Birim maliyet\n(₺)").frame(width: IW.money + 10).explains(.unitCost)
                 Text("Kritik\nseviye").frame(width: IW.min + 10).explains(.minStock)
-                Text("Tolerans\n(±)").frame(width: IW.tol + 10).explains(.tolerance)
+                Text("Tolerans\n(± birim)").frame(width: IW.tol + 10).explains(.tolerance)
                 Color.clear.frame(width: IW.delete, height: 1)
             }
             .font(.caption.weight(.semibold)).multilineTextAlignment(.center)

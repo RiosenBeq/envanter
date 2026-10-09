@@ -43,7 +43,7 @@ struct OverviewView: View {
     private func dayCards(_ o: DayOverview, hasCosts: Bool, trend: [DayOverview]) -> some View {
         StatRow(spacing: 14) {
             StatCard(title: "Sayım", value: "\(o.countedItems) / \(o.itemCount)",
-                     detail: o.isFullyCounted ? "Tüm kalemler sayıldı" : (o.hasAnyCount ? "\(o.itemCount - o.countedItems) kalem bekliyor" : "Bugün henüz sayım girilmedi"),
+                     detail: o.isFullyCounted ? "Tüm kalemler sayıldı" : (o.hasAnyCount ? "\(o.itemCount - o.countedItems) kalem bekliyor" : (o.date == DateKey.today() ? "Bugün henüz sayım girilmedi" : "Bu gün için sayım girilmedi")),
                      icon: "checklist", color: o.isFullyCounted ? Brand.ok : Brand.accent,
                      progress: o.itemCount > 0 ? Double(o.countedItems) / Double(o.itemCount) : 0, info: .closing)
             StatCard(title: "Satış raporu", value: o.hasSales ? (o.salesLines > 0 ? "\(o.salesLines) satır" : "Excel'den") : "Yok",
@@ -302,7 +302,7 @@ private struct MonthCards: View {
                      color: tone(p.actualCostPct, s.targetFoodCostPct), info: .foodCostPct,
                      targetValue: p.actualCostPct, target: s.targetFoodCostPct)
             StatCard(title: "Personel oranı", value: pct(p.laborPct),
-                     detail: p.hasLabor ? target(s.targetLaborPct, label) : "Personel ekranından çalışanları ekleyin",
+                     detail: p.hasLabor ? target(s.targetLaborPct, label) : (store.employees.isEmpty ? "Personel ekranından çalışanları ekleyin" : "Bu dönemde personel kaydı yok"),
                      icon: "person.2", color: tone(p.laborPct, s.targetLaborPct), info: .laborPct,
                      targetValue: p.laborPct, target: s.targetLaborPct)
             StatCard(title: "Prime cost", value: pct(p.primeCostPct),

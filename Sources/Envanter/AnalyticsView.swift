@@ -173,7 +173,7 @@ private struct GeneralStatsView: View {
             }
             StatRow {
                 StatCard(title: "Personel maliyeti", value: stats.hasLabor ? Fmt.money(stats.laborCost) : "—",
-                         detail: stats.hasLabor ? "Satışın " + percent(stats.laborPct) + (s.targetLaborPct.map { " · hedef " + percent($0) } ?? "") : "Personel ekranından çalışanları ekleyin",
+                         detail: stats.hasLabor ? "Satışın " + percent(stats.laborPct) + (s.targetLaborPct.map { " · hedef " + percent($0) } ?? "") : (store.employees.isEmpty ? "Personel ekranından çalışanları ekleyin" : "Bu dönemde personel kaydı yok"),
                          icon: "person.2", color: tone(stats.laborPct, s.targetLaborPct), info: .laborPct,
                          targetValue: stats.laborPct, target: s.targetLaborPct)
                 StatCard(title: "Prime cost", value: stats.hasLabor ? Fmt.money(stats.primeCost) : "—",
@@ -257,9 +257,10 @@ private struct TopLossChart: View {
 
     var body: some View {
         let hasCosts = rows.contains { $0.diffValue != nil }
+        // Kayıp tanımı İstatistikler kartı ve Özet ile aynı: tolerans dışı fazla çıkış günleri, az çıkışlarla mahsup edilmez
         let losses: [(name: String, value: Double)] = Array(rows
-            .filter { $0.daysCounted > 0 && $0.severity == .shortage }
-            .map { r -> (name: String, value: Double) in (r.item.name, hasCosts ? -(r.diffValue ?? 0) : -r.diff) }
+            .filter { $0.daysCounted > 0 && $0.shortageDays > 0 }
+            .map { r -> (name: String, value: Double) in (r.item.name, hasCosts ? r.shortageValue : r.shortageQty) }
             .filter { $0.value > 0 }
             .sorted { $0.value > $1.value }
             .prefix(8))
@@ -294,7 +295,7 @@ private struct WasteChart: View {
         var totals: [String: Double] = [:]
         for d in store.engine.datesWithData where d >= from && d <= to {
             for c in store.engine.calc(date: d).rows where c.waste > 0 {
-                let cost = store.engine.itemsByID[c.itemID]?.unitCost
+                let cost = store.engine.itemsByID[c.itemID]?.cost(on: d)
                 totals[c.itemID, default: 0] += hasCosts ? c.waste * (cost ?? 0) : c.waste
             }
         }
@@ -554,6 +555,18 @@ private struct ABCView: View {
                 }
                 Card(padding: 0) {
                     VStack(spacing: 0) {
+                        HStack {
+                            Text("Sınıf").frame(width: 26)
+                            Text("Kalem")
+                            Spacer()
+                            Text("Tüketim").frame(width: 120, alignment: .trailing)
+                            Text("Tutar").frame(width: 110, alignment: .trailing)
+                            Text("Pay").frame(width: 70, alignment: .trailing).help("Kalemin dönem tüketim değerindeki payı")
+                            Text("Birikimli").frame(width: 70, alignment: .trailing).explains(.abc)
+                        }
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.05))
                         ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
                             HStack {
                                 Text(r.klass.rawValue).font(.headline).foregroundStyle(.white)
@@ -594,6 +607,8 @@ private struct MenuEngineeringView: View {
     var body: some View {
         let stats = store.engine.menuEngineering(from: from, to: to)
         let classified = stats.filter { $0.klass != nil }
+        // Ürün maliyet oranı, Ayarlar'daki hammadde hedefini aşınca kırmızı
+        let costLimit = store.settings.targetFoodCostPct ?? 0.35
         VStack(alignment: .leading, spacing: 16) {
             Text("Menü mühendisliği, reçeteli ürünleri popülerlik (satış payı) ve birim kâra (fiyat − reçete maliyeti) göre dört gruba ayırır. Satış raporunda \"Tutar\" sütunu ve ürünün tüm hammaddelerinde birim maliyet olmalıdır.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -609,16 +624,17 @@ private struct MenuEngineeringView: View {
                                  detail: k.advice, icon: icon(k), color: color(k), info: .menuEngineering)
                     }
                 }
-                MenuMatrixChart(stats: classified, color: color)
+                MenuMatrixChart(stats: classified, productCount: stats.count, color: color)
                 Card(padding: 0) {
                     VStack(spacing: 0) {
                         HStack {
                             Text("Ürün").frame(maxWidth: .infinity, alignment: .leading)
                             Text("Adet").frame(width: 70, alignment: .trailing)
                             Text("Ort. fiyat").frame(width: 90, alignment: .trailing).help("Satış raporundaki tutar ÷ adet")
-                            Text("Reçete maliyeti").frame(width: 110, alignment: .trailing).explains(.unitCost)
+                            Text("Reçete maliyeti").frame(width: 110, alignment: .trailing).explains(.recipeCost)
                             Text("Maliyet %").frame(width: 80, alignment: .trailing).explains(.foodCostPct)
-                            Text("Toplam kâr").frame(width: 110, alignment: .trailing).explains(.unitMargin)
+                            Text("Birim kâr").frame(width: 90, alignment: .trailing).explains(.unitMargin)
+                            Text("Toplam kâr").frame(width: 110, alignment: .trailing).help("Birim kâr × satış adedi")
                             Text("Sınıf").frame(width: 80, alignment: .center).explains(.menuEngineering)
                         }
                         .font(.caption.weight(.semibold)).padding(.horizontal, 14).padding(.vertical, 8)
@@ -634,8 +650,9 @@ private struct MenuEngineeringView: View {
                                 Text(Fmt.money(s.unitPrice)).frame(width: 90, alignment: .trailing)
                                 Text(s.unitCost.map { Fmt.money($0) } ?? "eksik").foregroundStyle(s.unitCost == nil ? Brand.warn : .primary)
                                     .frame(width: 110, alignment: .trailing)
-                                Text(percent(s.foodCostPct)).foregroundStyle((s.foodCostPct ?? 0) > 0.35 ? Brand.negative : .primary)
+                                Text(percent(s.foodCostPct)).foregroundStyle((s.foodCostPct ?? 0) > costLimit ? Brand.negative : .primary)
                                     .frame(width: 80, alignment: .trailing)
+                                Text(s.unitMargin.map { Fmt.money($0) } ?? "—").frame(width: 90, alignment: .trailing)
                                 Text(s.totalMargin.map { Fmt.money($0) } ?? "—").frame(width: 110, alignment: .trailing)
                                 Group {
                                     if let k = s.klass { Pill(text: k.rawValue, color: color(k)) } else { Text("—").foregroundStyle(.tertiary) }
@@ -673,10 +690,12 @@ private struct MenuEngineeringView: View {
 
 private struct MenuMatrixChart: View {
     let stats: [MenuItemStat]
+    /// Sınıflandırmadaki ürün sayısı (maliyeti eksik olanlar dahil; motorla aynı eşik)
+    let productCount: Int
     let color: (MenuClass) -> Color
 
     var body: some View {
-        let threshold = 70.0 / Double(max(stats.count, 1))
+        let threshold = 70.0 / Double(max(productCount, 1))
         let totalQty = stats.reduce(0) { $0 + $1.qty }
         let avgMargin = totalQty > 0 ? stats.reduce(0) { $0 + ($1.totalMargin ?? 0) } / totalQty : 0
         let maxX = (stats.map { $0.popularity * 100 }.max() ?? 1) * 1.08

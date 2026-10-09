@@ -35,7 +35,8 @@ struct LaborView: View {
                     }
                 } else {
                     LaborKPIs(date: date)
-                    ShiftTable(date: date)
+                    // Gün değişince alanlar yeniden kurulur: odaktaki yazı yeni güne kaydedilmesin
+                    ShiftTable(date: date).id(date)
                     HStack(alignment: .top, spacing: 16) {
                         LaborMonthChart(date: date).frame(maxWidth: .infinity)
                         LaborBreakdown(date: date).frame(width: 380)
@@ -126,6 +127,7 @@ private struct ShiftTable: View {
                 .background(Color.primary.opacity(0.04))
                 ForEach(Array(list.enumerated()), id: \.element.id) { i, e in
                     let cost = labor.lines.first { $0.employee.id == e.id }?.cost ?? 0
+                    let terms = e.terms(on: date)
                     HStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(e.name).fontWeight(.medium)
@@ -133,20 +135,21 @@ private struct ShiftTable: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(e.payType.title).font(.callout)
-                            Text("\(Fmt.money(e.rate, fraction: 0)) \(e.payType.rateLabel.replacingOccurrences(of: "₺ ", with: ""))")
+                            Text(terms.payType.title).font(.callout)
+                            Text("\(Fmt.money(terms.rate, fraction: 0)) \(terms.payType.rateLabel.replacingOccurrences(of: "₺ ", with: ""))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .frame(width: 150, alignment: .leading)
-                        OptionalDecimalField(value: store.shiftBinding(e.id, date: date, \.hours), placeholder: e.payType == .hourly ? "0" : "—",
+                        OptionalDecimalField(value: store.shiftBinding(e.id, date: date, \.hours), placeholder: terms.payType == .hourly ? "0" : "—",
                                              maxFraction: 2, width: 80)
                             .frame(width: 96)
-                            .help(e.payType == .hourly ? "Çalışılan saat (maliyet bu saate göre hesaplanır)" : "Bilgi amaçlı çalışma saati")
+                            .help(terms.payType == .hourly ? "Çalışılan saat (maliyet bu saate göre hesaplanır)"
+                                  : terms.payType == .daily ? "Saat girilirse o gün çalıştı sayılır ve yevmiye yazılır" : "Bilgi amaçlı çalışma saati")
                         Group {
-                            if e.payType == .daily {
+                            if terms.payType == .daily {
                                 Toggle("", isOn: store.workedBinding(e.id, date: date)).labelsHidden()
                             } else {
-                                Text(e.payType == .monthly ? "maaş" : "—").font(.caption).foregroundStyle(.tertiary)
+                                Text(terms.payType == .monthly ? "maaş" : "—").font(.caption).foregroundStyle(.tertiary)
                             }
                         }
                         .frame(width: 70)
@@ -275,9 +278,7 @@ private struct EmployeeList: View {
                 HStack(spacing: 8) {
                     Text("Ad").frame(maxWidth: .infinity, alignment: .leading)
                     Text("Görev").frame(width: 150, alignment: .leading)
-                    Text("Ücret türü").frame(width: 140, alignment: .leading)
-                    Text("Ücret (₺)").frame(width: 100)
-                    HStack(spacing: 2) { Text("Çarpan"); InfoTip(term: .costFactor) }.frame(width: 80)
+                    HStack(spacing: 2) { Text("Ücret · işveren çarpanı"); InfoTip(term: .costFactor) }.frame(width: 240, alignment: .leading)
                     Text("Vard. saati").frame(width: 80).help("Varsayılan vardiya süresi (\"Vardiyaları Doldur\" bunu kullanır)")
                     Text("Aktif").frame(width: 46)
                     Color.clear.frame(width: 28, height: 1)
@@ -293,7 +294,7 @@ private struct EmployeeList: View {
         }
         .confirmationDialog("\"\(deleting?.name ?? "")\" silinsin mi?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible) {
-            Button("Ayrıldı olarak işaretle (geçmiş korunur)") {
+            Button("Ayrıldı olarak işaretle (son gün \(DateKey.short(store.selectedDate)))") {
                 if let d = deleting { store.markEmployeeLeft(d.id, on: store.selectedDate) }; deleting = nil
             }
             Button("Tamamen sil (tüm vardiya kayıtlarıyla)", role: .destructive) {
@@ -301,7 +302,7 @@ private struct EmployeeList: View {
             }
             Button("Vazgeç", role: .cancel) { deleting = nil }
         } message: {
-            Text("İşten ayrılan personel için \"Ayrıldı\" seçin: o günden sonra maliyet yazılmaz, geçmiş raporlar değişmez.")
+            Text("İşten ayrılan personel için \"Ayrıldı\" seçin: seçili günden (\(DateKey.short(store.selectedDate))) sonra maliyet yazılmaz, geçmiş raporlar değişmez. Tarihi sonradan satırdaki tarih bağlantısından değiştirebilirsiniz.")
         }
     }
 }
@@ -310,6 +311,8 @@ private struct EmployeeRow: View {
     @EnvironmentObject var store: AppStore
     let employee: Employee
     var onDelete: () -> Void
+    @State private var editingPay = false
+    @State private var editingDates = false
 
     var body: some View {
         let e = employee
@@ -319,23 +322,46 @@ private struct EmployeeRow: View {
                     guard !v.isEmpty else { return }
                     store.updateEmployee(e.id) { $0.name = v }
                 }))
-                if let end = e.endDate {
-                    Text("Ayrılış: \(DateKey.short(end))").font(.caption2).foregroundStyle(Brand.warn)
-                } else if let start = e.startDate {
-                    Text("Giriş: \(DateKey.short(start))").font(.caption2).foregroundStyle(.secondary)
+                Button { editingDates = true } label: {
+                    Group {
+                        if let end = e.endDate {
+                            Text("Ayrılış: \(DateKey.short(end))").foregroundStyle(Brand.warn)
+                        } else if let start = e.startDate {
+                            Text("Giriş: \(DateKey.short(start))").foregroundStyle(.secondary)
+                        } else {
+                            Text("Giriş/ayrılış tarihi…").foregroundStyle(.tertiary)
+                        }
+                    }
+                    .font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .help("İşe giriş ve ayrılış tarihlerini düzenle")
+                .popover(isPresented: $editingDates, arrowEdge: .bottom) {
+                    EmployeeDatesForm(employee: e) { editingDates = false }.environmentObject(store)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             CommitTextField(title: "Görev", value: Binding(get: { e.role }, set: { v in store.updateEmployee(e.id) { $0.role = v } }))
                 .frame(width: 150)
-            Picker("", selection: Binding(get: { e.payType }, set: { v in store.updateEmployee(e.id) { $0.payType = v } })) {
-                ForEach(PayType.allCases) { Text($0.title).tag($0) }
+            // Ücret doğrudan düzenlenmez: zam geçmiş günleri değiştirmesin diye geçerlilik tarihiyle değiştirilir
+            Button { editingPay = true } label: {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(e.payType.title).font(.callout)
+                    Text("\(Fmt.money(e.rate, fraction: 0))" + (e.costFactor != 1 ? " × \(Fmt.number(e.costFactor, maxFraction: 3))" : ""))
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    if let h = e.payHistory, h.count > 1, let last = h.last?.from {
+                        Text("\(DateKey.short(last))'dan beri").font(.caption2).foregroundStyle(Brand.positive)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .labelsHidden().frame(width: 140)
-            DecimalField(value: Binding(get: { e.rate }, set: { v in store.updateEmployee(e.id, actionName: "Ücret") { $0.rate = v } }),
-                         maxFraction: 2, width: 100)
-            DecimalField(value: Binding(get: { e.costFactor }, set: { v in store.updateEmployee(e.id) { $0.costFactor = max(v, 0) } }),
-                         maxFraction: 3, width: 80)
+            .buttonStyle(.plain)
+            .frame(width: 240, alignment: .leading)
+            .help("Ücreti, ücret türünü veya işveren çarpanını değiştirmek için tıklayın")
+            .popover(isPresented: $editingPay, arrowEdge: .bottom) {
+                PayChangeForm(employee: e) { editingPay = false }.environmentObject(store)
+            }
             OptionalDecimalField(value: Binding(get: { e.defaultHours }, set: { v in store.updateEmployee(e.id) { $0.defaultHours = v } }),
                                  placeholder: "—", maxFraction: 1, width: 80)
             Toggle("", isOn: Binding(get: { e.active }, set: { v in store.updateEmployee(e.id) { $0.active = v } }))
@@ -346,6 +372,128 @@ private struct EmployeeRow: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 6)
         .opacity(e.active ? 1 : 0.6)
+    }
+}
+
+// MARK: - Ücret değişikliği ve tarihler
+
+/// Ücret değişikliği: zam bir günden itibaren geçerli olur (geçmiş günler eski ücretle kalır);
+/// yanlış girilen ücret ise "tüm dönem" seçilerek düzeltilir.
+private struct PayChangeForm: View {
+    @EnvironmentObject var store: AppStore
+    let employee: Employee
+    var done: () -> Void
+    @State private var payType: PayType = .monthly
+    @State private var rate: Double? = nil
+    @State private var factor: Double = 1
+    @State private var fromDate = Date()
+    @State private var correction = false
+
+    var body: some View {
+        let from = DateKey.string(from: fromDate)
+        let affectedLocked = store.lockedDays(from: correction ? "0000-00-00" : from)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(employee.name) · ücret").font(.headline)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Ücret türü")
+                    Picker("", selection: $payType) { ForEach(PayType.allCases) { Text($0.title).tag($0) } }
+                        .labelsHidden().pickerStyle(.segmented).frame(width: 300)
+                }
+                GridRow {
+                    Text("Ücret")
+                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120, live: true); Text(payType.rateLabel).foregroundStyle(.secondary) }
+                }
+                GridRow {
+                    HStack(spacing: 4) { Text("İşveren çarpanı"); InfoTip(term: .costFactor) }
+                    DecimalField(value: $factor, maxFraction: 3, width: 80, live: true)
+                }
+                GridRow {
+                    Text("Geçerlilik")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("", selection: $correction) {
+                            Text("Bir tarihten itibaren (zam)").tag(false)
+                            Text("Tüm dönem (yanlış girişi düzelt)").tag(true)
+                        }
+                        .labelsHidden().pickerStyle(.radioGroup)
+                        if !correction {
+                            DatePicker("", selection: $fromDate, displayedComponents: .date).labelsHidden().fixedSize()
+                        }
+                    }
+                }
+            }
+            Text(correction ? "Bu personelin geçmiş tüm günleri yeni ücretle yeniden hesaplanır."
+                 : "\(DateKey.short(from)) ve sonrası yeni ücretle hesaplanır; önceki günler değişmez.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if affectedLocked > 0 {
+                Label("Kapatılmış \(affectedLocked) günün personel maliyeti değişecek.", systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(Brand.warn)
+            }
+            HStack {
+                Spacer()
+                Button("Vazgeç", action: done).keyboardShortcut(.cancelAction)
+                Button("Kaydet") {
+                    store.changePay(employee.id, payType: payType, rate: rate ?? 0, costFactor: max(factor, 0),
+                                    from: correction ? nil : from)
+                    done()
+                }
+                .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                .disabled((rate ?? 0) <= 0)
+            }
+        }
+        .padding(18).frame(width: 470)
+        .onAppear {
+            payType = employee.payType; rate = employee.rate; factor = employee.costFactor
+            fromDate = DateKey.date(from: DateKey.today()) ?? Date()
+        }
+    }
+}
+
+/// İşe giriş / ayrılış tarihleri
+private struct EmployeeDatesForm: View {
+    @EnvironmentObject var store: AppStore
+    let employee: Employee
+    var done: () -> Void
+    @State private var hasStart = false
+    @State private var hasEnd = false
+    @State private var start = Date()
+    @State private var end = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(employee.name) · tarihler").font(.headline)
+            HStack {
+                Toggle("İşe giriş", isOn: $hasStart).frame(width: 120, alignment: .leading)
+                DatePicker("", selection: $start, displayedComponents: .date).labelsHidden().disabled(!hasStart)
+            }
+            HStack {
+                Toggle("Ayrılış (son gün)", isOn: $hasEnd).frame(width: 120, alignment: .leading)
+                DatePicker("", selection: $end, displayedComponents: .date).labelsHidden().disabled(!hasEnd)
+            }
+            Text("Maaş ve vardiya maliyeti yalnızca bu tarihler arasında yazılır. Ayrılış kaldırılırsa personel yeniden aktif olur.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if hasStart && hasEnd && end < start {
+                Text("Ayrılış tarihi girişten önce olamaz.").font(.callout).foregroundStyle(Brand.negative)
+            }
+            HStack {
+                Spacer()
+                Button("Vazgeç", action: done).keyboardShortcut(.cancelAction)
+                Button("Kaydet") {
+                    store.setEmployeeDates(employee.id, start: hasStart ? DateKey.string(from: start) : nil,
+                                           end: hasEnd ? DateKey.string(from: end) : nil)
+                    done()
+                }
+                .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                .disabled(hasStart && hasEnd && end < start)
+            }
+        }
+        .padding(18).frame(width: 400)
+        .onAppear {
+            hasStart = employee.startDate != nil
+            hasEnd = employee.endDate != nil
+            start = employee.startDate.flatMap { DateKey.date(from: $0) } ?? Date()
+            end = employee.endDate.flatMap { DateKey.date(from: $0) } ?? (DateKey.date(from: store.selectedDate) ?? Date())
+        }
     }
 }
 
@@ -361,7 +509,8 @@ private struct AddEmployeeSheet: View {
     @State private var rate: Double? = nil
     @State private var factor: Double = 1
     @State private var hours: Double? = nil
-    @State private var newHire = false
+    /// Maliyet başlangıcı: bu tarihten önceki günlere maaş yazılmaz (eski Excel geçmişi şişmesin)
+    @State private var start = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -376,23 +525,26 @@ private struct AddEmployeeSheet: View {
                 }
                 GridRow {
                     Text("Ücret")
-                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120); Text(payType.rateLabel).foregroundStyle(.secondary) }
+                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120, live: true); Text(payType.rateLabel).foregroundStyle(.secondary) }
                 }
                 GridRow {
                     HStack(spacing: 4) { Text("İşveren çarpanı"); InfoTip(term: .costFactor) }
-                    HStack { DecimalField(value: $factor, maxFraction: 3, width: 80); Text("1 = ek yok").font(.caption).foregroundStyle(.secondary) }
+                    HStack { DecimalField(value: $factor, maxFraction: 3, width: 80, live: true); Text("1 = ek yok").font(.caption).foregroundStyle(.secondary) }
                 }
                 GridRow {
                     Text("Varsayılan vardiya")
-                    HStack { OptionalDecimalField(value: $hours, placeholder: "—", maxFraction: 1, width: 80); Text("saat").foregroundStyle(.secondary) }
+                    HStack { OptionalDecimalField(value: $hours, placeholder: "—", maxFraction: 1, width: 80, live: true); Text("saat").foregroundStyle(.secondary) }
                 }
                 GridRow {
-                    Text("")
-                    Toggle("Yeni işe başladı (giriş: \(DateKey.short(date)))", isOn: $newHire)
+                    Text("İşe giriş")
+                    HStack {
+                        DatePicker("", selection: $start, displayedComponents: .date).labelsHidden().fixedSize()
+                        Text("Bu tarihten önceki günlere maliyet yazılmaz").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Text(payType == .monthly ? "Aylık maaş, ayın her gününe eşit dağıtılır (çalışılan gün sayısından bağımsız)."
-                 : payType == .daily ? "Yevmiye, vardiya listesinde \"çalıştı\" işaretlenen günlere yazılır."
+                 : payType == .daily ? "Yevmiye, vardiya listesinde \"çalıştı\" işaretlenen ya da saat girilen günlere yazılır."
                  : "Saatlik ücret, vardiya listesine girilen saat kadar yazılır.")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
@@ -401,13 +553,15 @@ private struct AddEmployeeSheet: View {
                 Button("Ekle") {
                     store.addEmployee(Employee(name: name.trimmingCharacters(in: .whitespaces), role: role.trimmingCharacters(in: .whitespaces),
                                                payType: payType, rate: rate ?? 0, costFactor: factor,
-                                               startDate: newHire ? date : nil, defaultHours: hours))
+                                               startDate: DateKey.string(from: start), defaultHours: hours))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || (rate ?? 0) <= 0)
             }
         }
-        .padding(22).frame(width: 520)
+        .padding(22).frame(width: 560)
+        // Varsayılan giriş: seçili ayın ilk günü (ayın personel oranı eksiksiz hesaplansın)
+        .onAppear { start = DateKey.date(from: DateKey.startOfMonth(date)) ?? Date() }
     }
 }

@@ -157,7 +157,7 @@ struct DailyView: View {
                      ("Giden\nTransfer (−)", .transfer), ("Kapanış", .closing)], id: \.0) { t, term in
                 Text(t).frame(width: W.input + 8).explains(term)
             }
-            ForEach([("Satılan", Term.sold), ("Zaiyat", .waste), ("Fiili\nTüketim", .actualUsage), ("Fark", .diff)], id: \.0) { t, term in
+            ForEach([("Satılan", Term.sold), ("Zayi", .waste), ("Fiili\nTüketim", .actualUsage), ("Fark", .diff)], id: \.0) { t, term in
                 Text(t).frame(width: W.calc).foregroundStyle(.secondary).explains(term)
             }
             Color.clear.frame(width: W.info, height: 1)
@@ -172,7 +172,7 @@ struct DailyView: View {
         let loss = rows.compactMap { $0.severity == .shortage ? $0.diffValue : nil }.reduce(0, +)
         return HStack(spacing: 16) {
             Label("Açılış boşsa önceki günün kapanışı kullanılır", systemImage: "arrow.turn.down.right")
-            Label("Fark = (Satılan + Zaiyat) − Fiili Tüketim", systemImage: "function")
+            Label("Fark = (Satılan + Zayi) − Fiili Tüketim", systemImage: "function")
             Label("Kırmızı: fazla stok çıkışı · Mavi: eksik çıkış · Yeşil: tolerans içinde", systemImage: "paintpalette")
             Spacer()
             if loss < 0 {
@@ -213,9 +213,12 @@ private struct DayNotePopover: View {
             HStack {
                 Text("Sayımı yapan").foregroundStyle(.secondary)
                 TextField("Ad Soyad", text: $countedBy).textFieldStyle(.roundedBorder).frame(width: 180)
-                if !store.settings.staff.isEmpty {
+                // Ayarlar'daki hızlı seçim listesi + Personel ekranındaki aktif çalışanlar
+                let names = Array(Set(store.settings.staff + store.employees.filter { $0.active }.map { $0.name }))
+                    .sorted { $0.localizedCompare($1) == .orderedAscending }
+                if !names.isEmpty {
                     Menu {
-                        ForEach(store.settings.staff, id: \.self) { n in Button(n) { countedBy = n } }
+                        ForEach(names, id: \.self) { n in Button(n) { countedBy = n } }
                     } label: { Image(systemName: "person.crop.circle") }
                         .menuStyle(.borderlessButton).fixedSize()
                 }
@@ -363,7 +366,7 @@ private struct SalesStatusBar: View {
             Image(systemName: "clock.arrow.circlepath").font(.title2).foregroundStyle(Brand.positive)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Excel'den aktarılan geçmiş kayıt").font(.headline)
-                Text("Bu günün Satılan ve Zaiyat değerleri Excel'de hesaplandığı haliyle aktarıldı; satış dökümü yok. ModPos raporunu aktarırsanız değerler yeniden hesaplanır.")
+                Text("Bu günün Satılan ve Zayi değerleri Excel'de hesaplandığı haliyle aktarıldı; satış dökümü yok. ModPos raporunu aktarırsanız değerler yeniden hesaplanır.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)
@@ -453,8 +456,8 @@ struct ItemDetailView: View {
                     Divider().gridCellColumns(2)
                     line("= Fiili tüketim", calc.actual.map(f) ?? "—", bold: true)
                     line("Satılan (reçeteden)", f(calc.sold))
-                    line("Zaiyat", f(calc.waste))
-                    line("Fark (Satılan + Zaiyat − Fiili)", calc.diff.map(f) ?? "—", bold: true)
+                    line("Zayi", f(calc.waste))
+                    line("Fark (Satılan + Zayi − Fiili)", calc.diff.map(f) ?? "—", bold: true)
                     if let v = calc.diffValue { line("Farkın tutarı", Fmt.money(v), bold: true) }
                     if let t = item.tolerance, t > 0 { line("Tolerans", "± " + f(t)) }
                     if let m = item.minStock, m > 0 { line("Kritik seviye", f(m)) }

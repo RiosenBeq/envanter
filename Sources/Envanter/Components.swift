@@ -37,6 +37,7 @@ struct CellID: Hashable {
     var col: Int
 }
 
+/// İçerik kartı: Liquid Glass yüzey (macOS 26) ya da buzlu cam (önceki sürümler)
 struct Card<Content: View>: View {
     var padding: CGFloat = 14
     @ViewBuilder var content: Content
@@ -44,9 +45,7 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Brand.card))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Brand.line.opacity(0.55), lineWidth: 1))
-            .shadow(color: .black.opacity(0.035), radius: 2, x: 0, y: 1)
+            .contentGlass()
     }
 }
 
@@ -219,7 +218,7 @@ struct TrackerStrip: View {
     private func color(_ d: DayOverview) -> Color {
         if !d.hasAnyCount && !d.hasSales { return Color.primary.opacity(0.08) }
         if !d.hasAnyCount { return Color.secondary.opacity(0.35) }
-        if d.problemItems >= 3 || (d.shortageItems > 0 && d.lossValue >= 500) { return Brand.negative.opacity(0.85) }
+        if d.hasSignificantLoss { return Brand.negative.opacity(0.85) }
         if d.problemItems > 0 || !d.isFullyCounted { return Brand.warn.opacity(0.85) }
         return Brand.ok.opacity(0.85)
     }
@@ -229,7 +228,10 @@ struct TrackerStrip: View {
         parts.append(d.hasAnyCount ? "Sayım \(d.countedItems)/\(d.itemCount)" : "Sayım yok")
         parts.append(d.hasSales ? "Satış raporu var" : "Satış raporu yok")
         if d.problemItems > 0 { parts.append("\(d.problemItems) sorunlu kalem") }
-        if d.lossValue > 0 { parts.append("Kayıp \(Fmt.money(d.lossValue))") }
+        if d.lossValue > 0 {
+            let share = d.revenue.flatMap { $0 > 0 ? " (satışın %\(Fmt.number(d.lossValue / $0 * 100, maxFraction: 1)))" : nil } ?? ""
+            parts.append("Kayıp \(Fmt.money(d.lossValue))" + share)
+        }
         if d.isLocked { parts.append("Kapatıldı") }
         return parts.joined(separator: " · ")
     }
@@ -240,8 +242,8 @@ struct TrackerLegend: View {
     var body: some View {
         HStack(spacing: 12) {
             item(Brand.ok.opacity(0.85), "Sayım tam, sorun yok")
-            item(Brand.warn.opacity(0.85), "Eksik sayım / az sorun")
-            item(Brand.negative.opacity(0.85), "Belirgin kayıp")
+            item(Brand.warn.opacity(0.85), "Eksik sayım / tolerans dışı fark")
+            item(Brand.negative.opacity(0.85), "Kayıp ≥ satışın %1'i")
             item(Color.secondary.opacity(0.35), "Yalnızca satış")
             item(Color.primary.opacity(0.08), "Veri yok")
         }
@@ -252,27 +254,31 @@ struct TrackerLegend: View {
     }
 }
 
+/// Birincil düğme: marka turuncusuyla renklendirilmiş cam kapsül
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
-            .padding(.horizontal, 14).padding(.vertical, 7)
+            .padding(.horizontal, 15).padding(.vertical, 7)
             .foregroundStyle(.white)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Brand.accent.opacity(configuration.isPressed ? 0.8 : 1)))
+            .glassSurface(in: Capsule(), tint: Brand.accent, interactive: true)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(isEnabled ? 1 : 0.45)
     }
 }
 
+/// İkincil düğme: renksiz cam kapsül
 struct SoftButtonStyle: ButtonStyle {
     var tint: Color = .primary
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.medium))
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .padding(.horizontal, 13).padding(.vertical, 6)
             .foregroundStyle(tint)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(configuration.isPressed ? 0.14 : 0.07)))
+            .glassSurface(in: Capsule(), interactive: true)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(isEnabled ? 1 : 0.45)
     }
 }
@@ -285,18 +291,25 @@ struct DateNavigator: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button { store.shiftDay(-1) } label: { Image(systemName: "chevron.left") }
-                .help("Önceki gün (⌘[)")
-            VStack(alignment: .leading, spacing: 0) {
-                Text(DateKey.long(store.selectedDate))
-                    .font(compact ? .title3.weight(.semibold) : .title2.weight(.semibold))
-                if store.isLocked(store.selectedDate) {
-                    Label("Gün kapatıldı", systemImage: "lock.fill").font(.caption).foregroundStyle(Brand.warn)
+            // Gün adımı: cam kapsül içinde ◀ tarih ▶
+            HStack(spacing: 8) {
+                Button { store.shiftDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 22, height: 22).contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .help("Önceki gün (⌘[)")
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(DateKey.long(store.selectedDate))
+                        .font(compact ? .title3.weight(.semibold) : .title2.weight(.semibold))
+                    if store.isLocked(store.selectedDate) {
+                        Label("Gün kapatıldı", systemImage: "lock.fill").font(.caption).foregroundStyle(Brand.warn)
+                    }
                 }
+                .frame(minWidth: compact ? 210 : 250, alignment: .leading)
+                Button { store.shiftDay(1) } label: { Image(systemName: "chevron.right").frame(width: 22, height: 22).contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .help("Sonraki gün (⌘])")
             }
-            .frame(minWidth: compact ? 210 : 250, alignment: .leading)
-            Button { store.shiftDay(1) } label: { Image(systemName: "chevron.right") }
-                .help("Sonraki gün (⌘])")
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .glassSurface(in: Capsule())
             DatePicker("", selection: store.dateBinding, displayedComponents: .date)
                 .labelsHidden()
                 .datePickerStyle(.compact)
@@ -404,7 +417,11 @@ struct DecimalField: View {
     @Binding var value: Double
     var maxFraction: Int = 4
     var width: CGFloat = 80
+    /// Formlarda: geçerli her yazımda değeri hemen günceller (düğmeye basıldığında son yazılan kaybolmasın)
+    var live = false
     @State private var text = ""
+    /// Kullanıcı yazdı mı (yalnızca yazılan metin kaydedilir; gösterim yuvarlaması değeri bozmasın)
+    @State private var edited = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -416,15 +433,27 @@ struct DecimalField: View {
             .focused($focused)
             .onAppear { text = Fmt.number(value, maxFraction: maxFraction) }
             .onChange(of: value) { _, new in if !focused { text = Fmt.number(new, maxFraction: maxFraction) } }
-            .onChange(of: focused) { _, now in if !now { commit() } }
-            .onSubmit { commit() }
+            .onChange(of: focused) { _, now in if !now && edited { commit() } }
+            .onChange(of: text) { _, t in
+                guard focused else { return }
+                edited = true
+                if live, let v = parsed(t), v != value { value = v }
+            }
+            .onSubmit { if edited { commit() } }
+            // Alan odaktayken ekran/gün değişirse yazılan kaybolmasın
+            .onDisappear { if edited, let v = parsed(text), v != value { value = v } }
+    }
+
+    private func parsed(_ t: String) -> Double? {
+        guard let v = Fmt.parse(t), v >= 0 else { return nil }
+        return (v * 1_000_000).rounded() / 1_000_000
     }
 
     private func commit() {
-        if let v = Fmt.parse(text), v >= 0 {
-            let r = (v * 1_000_000).rounded() / 1_000_000
+        if let r = parsed(text) {
             if r != value { value = r }
         } else { NSSound.beep() }
+        edited = false
         text = Fmt.number(value, maxFraction: maxFraction)
     }
 }
@@ -435,7 +464,11 @@ struct OptionalDecimalField: View {
     var placeholder: String = "—"
     var maxFraction: Int = 3
     var width: CGFloat = 80
+    /// Formlarda: geçerli her yazımda değeri hemen günceller (düğmeye basıldığında son yazılan kaybolmasın)
+    var live = false
     @State private var text = ""
+    /// Kullanıcı yazdı mı (yalnızca yazılan metin kaydedilir; gösterim yuvarlaması değeri bozmasın)
+    @State private var edited = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -447,20 +480,32 @@ struct OptionalDecimalField: View {
             .focused($focused)
             .onAppear { text = display(value) }
             .onChange(of: value) { _, new in if !focused { text = display(new) } }
-            .onChange(of: focused) { _, now in if !now { commit() } }
-            .onSubmit { commit() }
+            .onChange(of: focused) { _, now in if !now && edited { commit() } }
+            .onChange(of: text) { _, t in
+                guard focused else { return }
+                edited = true
+                if live, let v = parsed(t), v != value { value = v }
+            }
+            .onSubmit { if edited { commit() } }
+            // Alan odaktayken ekran/gün değişirse yazılan kaybolmasın
+            .onDisappear { if edited, let v = parsed(text), v != value { value = v } }
     }
 
     private func display(_ v: Double?) -> String { v.map { Fmt.number($0, maxFraction: maxFraction) } ?? "" }
 
+    /// Boş metin → nil değer; geçersiz metin → nil (değişiklik yok)
+    private func parsed(_ t: String) -> Double?? {
+        let t = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return .some(nil) }
+        guard let v = Fmt.parse(t), v >= 0 else { return nil }
+        return .some((v * 1_000_000).rounded() / 1_000_000)
+    }
+
     private func commit() {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.isEmpty {
-            if value != nil { value = nil }
-        } else if let v = Fmt.parse(t), v >= 0 {
-            let r = (v * 1_000_000).rounded() / 1_000_000
+        if let r = parsed(text) {
             if r != value { value = r }
         } else { NSSound.beep() }
+        edited = false
         text = display(value)
     }
 }
@@ -515,13 +560,14 @@ struct SaveStatusView: View {
         HStack(spacing: 6) {
             switch store.saveState {
             case .saved:
-                Image(systemName: "checkmark.icloud").foregroundStyle(Brand.ok)
-                Text(store.lastSavedAt.map { "Kaydedildi · \(Self.time.string(from: $0))" } ?? "Kaydedildi")
+                // Veriler yalnızca bu Mac'te tutulur (bulut simgesi yanıltıcı olurdu)
+                Image(systemName: "checkmark.circle").foregroundStyle(Brand.ok)
+                Text(store.lastSavedAt.map { "Bu Mac'e kaydedildi · \(Self.time.string(from: $0))" } ?? "Bu Mac'e kaydedildi")
             case .saving:
                 ProgressView().controlSize(.mini)
                 Text("Kaydediliyor…")
             case .failed(let message):
-                Image(systemName: "exclamationmark.icloud.fill").foregroundStyle(Brand.negative)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.negative)
                 Text("Kaydedilemedi").help(message)
             }
         }

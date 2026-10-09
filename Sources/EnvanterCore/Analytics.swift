@@ -175,7 +175,8 @@ extension Engine {
         for r in rows {
             if r.isCounted { s.countedItems += 1 }
             if r.severity?.isProblem == true { s.problemItems += 1 }
-            guard let cost = itemsByID[r.itemID]?.unitCost else { continue }
+            // Geçmiş günler o günkü fiyatla değerlenir (sonradan gelen zam kapanmış ayları değiştirmez)
+            guard let cost = itemsByID[r.itemID]?.cost(on: date) else { continue }
             s.theoreticalCost += (r.sold + r.waste) * cost
             s.wasteCost += r.waste * cost
             if let v = r.diffValue {
@@ -190,6 +191,14 @@ extension Engine {
         return s
     }
 
+    /// Dönemin personel maliyetinin hesaplandığı takvim aralığı: `from`'dan dönemdeki son kayıtlı güne kadar
+    /// (henüz girilmemiş gelecek günlerin maaşı sayılmaz). Kayıtlı gün yoksa nil.
+    public func laborRange(from: String, to: String) -> (from: String, to: String, days: Int)? {
+        guard let last = datesWithData.last(where: { $0 >= from && $0 <= to }),
+              let n = DateKey.distance(from: from, to: last), n >= 0 else { return nil }
+        return (from, last, min(n, 3660))
+    }
+
     /// from...to (dahil) arasındaki verisi olan günlerin istatistikleri
     public func periodStats(from: String, to: String) -> PeriodStats {
         let dates = datesWithData.filter { $0 >= from && $0 <= to }
@@ -197,7 +206,7 @@ extension Engine {
         var incomingValue = 0.0
         for d in dates {
             for (id, e) in data.days[d]?.entries ?? [:] {
-                if let inc = e.incoming, let c = itemsByID[id]?.unitCost, itemsByID[id]?.active == true { incomingValue += inc * c }
+                if let inc = e.incoming, let c = itemsByID[id]?.cost(on: d), itemsByID[id]?.active == true { incomingValue += inc * c }
             }
         }
         let active = activeItems
@@ -215,12 +224,24 @@ extension Engine {
             salesDays: dates.filter { data.days[$0]?.hasSalesData ?? false }.count,
             costedItems: active.filter { $0.unitCost != nil }.count,
             totalItems: active.count)
-        p.laborCost = Self.clean(days.reduce(0) { $0 + $1.laborCost })
-        p.hasLabor = !data.employees.isEmpty || days.contains { $0.laborCost > 0 }
+        // Kaydı hiç olmayan günler (kapalı gün, bayram) satışsız geçmiştir ama aylık maaş yine işler:
+        // bu günlerin personel maliyeti de dönem maliyetine ve personel oranına girer (Personel ekranıyla aynı toplam).
+        var closedDayLabor = 0.0
+        if let range = laborRange(from: from, to: to) {
+            let recorded = Set(dates)
+            for i in 0...range.days {
+                let d = DateKey.addDays(i, to: range.from)
+                if !recorded.contains(d) { closedDayLabor += labor(date: d).total }
+            }
+        }
+        p.laborCost = Self.clean(days.reduce(0) { $0 + $1.laborCost } + closedDayLabor)
+        // Personel kaydı yoksa oran %0 değil "kayıt yok" gösterilir
+        p.hasLabor = p.laborCost > 0
         for d in days where d.hasRevenue && d.revenue > 0 {
             p.revenueDayTheoretical += d.theoreticalCost; p.revenueDayActual += d.actualCost
             p.revenueDayWaste += d.wasteCost; p.revenueDayLabor += d.laborCost
         }
+        p.revenueDayLabor += closedDayLabor
         return p
     }
 
@@ -306,7 +327,7 @@ extension Engine {
         for item in activeItems {
             guard let c = lastClosing(itemID: item.id, before: tomorrow) else { continue }
             counted += 1
-            if let cost = item.unitCost { value += c.value * cost; costed += 1 }
+            if let cost = item.cost(on: date) { value += c.value * cost; costed += 1 }
         }
         return (Self.clean(value), costed, counted)
     }

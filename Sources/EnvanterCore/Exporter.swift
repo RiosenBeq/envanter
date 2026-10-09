@@ -58,12 +58,25 @@ public enum Exporter {
     public static func dailyStatsSheet(engine: Engine, from: String, to: String) -> XlsxSheetData {
         let stats = engine.periodStats(from: from, to: to)
         func pct(_ v: Double, _ revenue: Double) -> XlsxCell { revenue > 0 ? .number((v / revenue * 1000).rounded() / 10) : XlsxCell(.blank) }
-        let rows: [[XlsxCell]] = stats.days.map { s in
+        func pctOpt(_ v: Double?) -> XlsxCell { v.map { .number(($0 * 1000).rounded() / 10) } ?? XlsxCell(.blank) }
+        // Personel kaydı yoksa personel ve prime cost sütunları boş bırakılır (0 ve hammaddeye eşit prime cost yanıltır)
+        let labor = stats.hasLabor
+        var rows: [[XlsxCell]] = stats.days.map { s in
             [DateKey.excelSerial(s.date).map { XlsxCell.date(serial: $0) } ?? .text(s.date),
              s.hasRevenue ? .number(s.revenue) : XlsxCell(.blank), .number(s.theoreticalCost), .number(s.actualCost),
-             .number(s.wasteCost), .number(s.lossValue), .diff(s.netValue), .number(s.laborCost), .number(s.primeCost),
-             pct(s.actualCost, s.revenue), pct(s.laborCost, s.revenue), pct(s.primeCost, s.revenue),
+             .number(s.wasteCost), .number(s.lossValue), .diff(s.netValue),
+             labor ? .number(s.laborCost) : XlsxCell(.blank), labor ? .number(s.primeCost) : XlsxCell(.blank),
+             pct(s.actualCost, s.revenue), labor ? pct(s.laborCost, s.revenue) : XlsxCell(.blank),
+             labor ? pct(s.primeCost, s.revenue) : XlsxCell(.blank),
              .number(Double(s.countedItems)), .number(Double(s.problemItems))]
+        }
+        if !stats.days.isEmpty {
+            // Dönem toplamı: personel, kaydı olmayan (kapalı) günlerin maaşını da içerir; oranlar satış tutarı olan günlere göre
+            rows.append([.text("DÖNEM", bold: true), .number(stats.revenue), .number(stats.theoreticalCost), .number(stats.actualCost),
+                         .number(stats.wasteCost), .number(stats.lossValue), .diff(stats.netValue),
+                         labor ? .number(stats.laborCost) : XlsxCell(.blank), labor ? .number(stats.primeCost) : XlsxCell(.blank),
+                         pctOpt(stats.actualCostPct), pctOpt(stats.laborPct), pctOpt(stats.primeCostPct),
+                         XlsxCell(.blank), XlsxCell(.blank)])
         }
         return XlsxSheetData(name: "Günlük Maliyet",
                              header: ["Tarih", "Satış Tutarı (₺)", "Teorik Maliyet (₺)", "Fiili Maliyet (₺)", "Zayi (₺)",
@@ -74,10 +87,15 @@ public enum Exporter {
 
     /// Dönemdeki personel maliyeti (kişi bazında; aylık maaşlar takvim günlerine dağıtılır)
     public static func laborSheet(engine: Engine, from: String, to: String) -> XlsxSheetData {
-        let s = engine.laborSummary(from: from, to: to)
+        // İstatistiklerle aynı aralık: dönem başından son kayıtlı güne kadar her takvim günü
+        let range = engine.laborRange(from: from, to: to)
+        let start = range?.from ?? from, end = range?.to ?? to
+        let s: (rows: [LaborSummaryRow], other: Double, total: Double, hours: Double) =
+            range.map { engine.laborSummary(from: $0.from, to: $0.to) } ?? ([], 0, 0, 0)
         var rows: [[XlsxCell]] = s.rows.map { r in
-            [.text(r.employee.name), .text(r.employee.role), .text(r.employee.payType.title), .number(r.employee.rate),
-             .number(r.employee.costFactor), .number(Double(r.days)), .number(r.hours), .number(r.cost)]
+            let t = r.employee.terms(on: end)
+            return [.text(r.employee.name), .text(r.employee.role), .text(t.payType.title), .number(t.rate),
+                    .number(t.costFactor), .number(Double(r.days)), .number(r.hours), .number(r.cost)]
         }
         if s.other > 0 {
             rows.append([.text("Diğer personel gideri"), .text(""), .text(""), XlsxCell(.blank), XlsxCell(.blank),
@@ -86,7 +104,7 @@ public enum Exporter {
         rows.append([.text("TOPLAM", bold: true), .text(""), .text(""), XlsxCell(.blank), XlsxCell(.blank),
                      XlsxCell(.blank), .number(s.hours), .number(s.total)])
         return XlsxSheetData(name: "Personel",
-                             header: ["Personel (\(DateKey.short(from)) – \(DateKey.short(to)))", "Görev", "Ücret Türü", "Ücret (₺)",
+                             header: ["Personel (\(DateKey.short(start)) – \(DateKey.short(end)))", "Görev", "Ücret Türü", "Ücret (₺)",
                                       "İşveren Çarpanı", "Çalıştığı Gün", "Saat", "Maliyet (₺)"],
                              rows: rows, widths: [28, 16, 16, 12, 14, 13, 10, 14])
     }
@@ -144,15 +162,15 @@ public enum Exporter {
 
     public static func orderSheet(_ suggestions: [OrderSuggestion], date: String) -> XlsxSheetData {
         let rows: [[XlsxCell]] = suggestions.map { s in
-            [.text(label(s.item)), .optNumber(s.stock), .text(s.stockDate.map(DateKey.short) ?? ""),
-             .number(s.dailyUsage), .optNumber(s.daysOfCover), .optNumber(s.item.minStock),
+            [.text(label(s.item)), .optNumber(s.stock), .optNumber(s.countedStock), .text(s.stockDate.map(DateKey.short) ?? ""),
+             .number(s.onOrder), .number(s.dailyUsage), .optNumber(s.daysOfCover), .optNumber(s.item.minStock),
              .number(s.target), .text(s.suggested > 0 ? "Sipariş ver" : "Yeterli"), .number(s.suggested), .optNumber(s.cost)]
         }
         return XlsxSheetData(
             name: "Sipariş",
-            header: ["Ürün (\(DateKey.short(date)))", "Son Stok", "Sayım Tarihi", "Günlük Tüketim", "Kaç Gün Yeter",
-                     "Kritik Seviye", "Hedef Stok", "Durum", "Önerilen Sipariş", "Tutar (₺)"],
-            rows: rows, widths: [28, 11, 12, 13, 12, 12, 11, 11, 14, 12])
+            header: ["Ürün (\(DateKey.short(date)))", "Mevcut Stok (tahmini)", "Son Sayım", "Sayım Tarihi", "Siparişte",
+                     "Günlük Tüketim", "Kaç Gün Yeter", "Kritik Seviye", "Hedef Stok", "Durum", "Önerilen Sipariş", "Tutar (₺)"],
+            rows: rows, widths: [28, 14, 11, 12, 10, 13, 12, 12, 11, 11, 14, 12])
     }
 
     public static func orders(_ suggestions: [OrderSuggestion], date: String) -> Data {

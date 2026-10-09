@@ -196,23 +196,35 @@ public enum WorkbookImporter {
 
     // MARK: - Uygulama
 
-    /// İçe aktarılan günleri veriye ekler. `overwrite` false ise veri girilmiş mevcut günlere dokunulmaz.
+    /// İçe aktarılan günleri veriye ekler. `overwrite` false ise sayım/satış verisi girilmiş mevcut günlere dokunulmaz.
+    /// Yalnızca sayım ve satış alanları aktarılır; günün vardiyaları, diğer personel gideri, notu, sayan kişisi
+    /// ve kilidi (Excel'de bulunmadıkları için) korunur. Kapatılmış günler hiç değiştirilmez.
     @discardableResult
     public static func apply(_ imp: WorkbookImport, to data: inout AppData, overwrite: Bool) -> WorkbookImportReport {
         var report = WorkbookImportReport()
         for (date, day) in imp.days {
-            if let existing = data.days[date], !existing.isEmpty {
-                if overwrite { data.days[date] = day; report.replaced += 1 } else { report.skippedExisting += 1 }
-            } else {
-                data.days[date] = day; report.added += 1
-            }
+            guard var existing = data.days[date] else { data.days[date] = day; report.added += 1; continue }
+            if existing.isLocked { report.skippedExisting += 1; continue }
+            let had = existing.hasInventoryData
+            if had && !overwrite { report.skippedExisting += 1; continue }
+            existing.entries = day.entries
+            existing.sales = day.sales
+            existing.salesSource = day.salesSource
+            existing.salesPeriod = day.salesPeriod
+            existing.salesImportedAt = day.salesImportedAt
+            existing.legacySold = day.legacySold
+            existing.legacyWaste = day.legacyWaste
+            existing.importedFrom = day.importedFrom
+            if existing.note == nil { existing.note = day.note }
+            data.days[date] = existing
+            if had { report.replaced += 1 } else { report.added += 1 }
         }
         return report
     }
 
-    /// Mevcut günlerden hangileri çakışır
+    /// Mevcut günlerden hangileri çakışır (sayım/satış verisi olan ya da kapatılmış günler)
     public static func conflicts(_ imp: WorkbookImport, in data: AppData) -> [String] {
-        imp.days.keys.filter { !(data.days[$0]?.isEmpty ?? true) }.sorted()
+        imp.days.keys.filter { data.days[$0].map { $0.hasInventoryData || $0.isLocked } ?? false }.sorted()
     }
 }
 

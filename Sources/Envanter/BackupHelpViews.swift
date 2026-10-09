@@ -22,12 +22,12 @@ struct BackupView: View {
                                     .frame(width: 320)
                             }
                             GridRow {
-                                Text("Sayım yapan personel").foregroundStyle(.secondary)
+                                Text("Sayım yapanlar (hızlı seçim)").foregroundStyle(.secondary)
                                 CommitTextField(title: "Virgülle ayırın: Ahmet, Ayşe", value: Binding(
                                     get: { store.settings.staff.joined(separator: ", ") },
                                     set: { v in
                                         let names = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                                        store.updateSettings("Personel Listesi") { $0.staff = names }
+                                        store.updateSettings("Sayım Yapanlar") { $0.staff = names }
                                     }))
                                     .frame(width: 320)
                             }
@@ -167,26 +167,27 @@ struct HelpView: View {
 
                 section("Günlük akış")
                 step(1, "Sayımı girin", "Günlük Envanter ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Genel Bakış'tan sayım formu alabilirsiniz.")
-                step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) pencereye sürükleyip bırakın ya da \"Dosyadan Aktar\"a tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa maliyet oranları ve menü analizi hesaplanır.")
+                step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) uygulama penceresine sürükleyip bırakın (hangi ekranda olursanız olun) ya da \"Dosyadan Aktar\"a (⌘O) tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa maliyet oranları ve menü analizi hesaplanır.")
                 step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
-                step(4, "Vardiyaları girin", "Personel ekranında saatlik çalışanların saatini, yevmiyelilerin \"çalıştı\" işaretini, varsa fazla mesai/prim tutarını girin. \"Vardiyaları Doldur\" boş vardiyalara varsayılanları yazar. Aylık maaşlar ayrıca girilmeden günlere dağıtılır.")
+                step(4, "Vardiyaları girin", "Personel ekranında saatlik çalışanların saatini, yevmiyelilerin \"çalıştı\" işaretini (saat girilirse de çalıştı sayılır), varsa fazla mesai/prim tutarını girin. \"Vardiyaları Doldur\" boş vardiyalara varsayılanları yazar. Aylık maaşlar ayrıca girilmeden günlere dağıtılır. Zam yapınca ücrete tıklayıp \"bir tarihten itibaren\" seçin: önceki günler eski ücretle kalır.")
                 step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin. Kilitli günün sayımı, satışı ve vardiyası değiştirilemez; gerekirse kilit açılır. Güne not ve sayımı yapan kişiyi ekleyebilirsiniz.")
 
                 section("Haftalık / aylık")
-                step(6, "Sipariş verin ve teslim alın", "Sipariş Önerisi son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince siparişte \"Teslim al\" deyin: gelen miktarlar Gelen sütununa işlenir, fatura fiyatı girerseniz birim maliyet güncellenir.")
+                step(6, "Sipariş verin ve teslim alın", "Sipariş Önerisi son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir; teslim alınmamış siparişlerdeki miktarlar öneriden düşülür (\"Siparişte\" sütunu), böylece aynı mal iki kez sipariş edilmez. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince, teslimatın geldiği güne geçip siparişte \"Teslim al\" deyin: gelen miktarlar o günün Gelen sütununa işlenir, fatura birim fiyatı (1 adet/kg fiyatı) girerseniz birim maliyet güncellenir.")
                 step(7, "Raporları okuyun", "Genel Bakış ayın hammadde, personel ve prime cost oranlarını hedeflerle; Özet dönem toplamlarını; İstatistikler maliyet eğilimini, en çok kayıp veren kalemleri, zayi dağılımını, kalem grafiklerini, ABC analizini ve menü mühendisliğini gösterir. Her şey Excel'e aktarılabilir.")
-                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Maliyet değişiklikleri fiyat geçmişine yazılır ve artışlar Genel Bakış'ta uyarılır.")
+                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Maliyet değişiklikleri tarihli olarak fiyat geçmişine yazılır: geçmiş günler o günkü fiyatla değerlenir, kapanmış ayların oranları sonradan değişmez. Artışlar Genel Bakış'ta uyarılır.")
 
                 section("Notlar ve ipuçları")
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
                         tip("clock", "Sayımı her gün aynı saatte (kapanıştan sonra) yapın. Açılış devri ve fark hesabı, günler arasındaki sayımların tutarlı olmasına dayanır.")
-                        tip("slider.horizontal.3", "Toleransı başlangıçta günlük tüketimin yaklaşık %1–2'si olarak verin; birkaç hafta sonra İstatistikler > Kalem Analizi'ndeki \"Tutarlılık\"a bakarak ayarlayın. Çok dar tolerans gereksiz alarm, çok geniş tolerans gözden kaçan kayıp demektir.")
+                        tip("slider.horizontal.3", "Toleransı kalemin kendi biriminde (adet/kg) girin, yüzde değil: başlangıç için günlük tüketimin %1–2'si kadar bir miktar verin (ör. günde 30 kg patates → 0,3–0,6 kg; günde 200 adet 90 gr → 2–4 adet). Birkaç hafta sonra İstatistikler > Kalem Analizi'ndeki \"Tutarlılık\"a bakarak ayarlayın. Çok dar tolerans gereksiz alarm, çok geniş tolerans gözden kaçan kayıp demektir.")
                         tip("arrow.triangle.2.circlepath", "Sayım ertesi sabah yapılıyorsa satış raporunu yine satışın olduğu güne aktarın; içe aktarma ekranı rapor tarihini gösterir.")
                         tip("exclamationmark.triangle", "Aynı kalemde her gün aynı yönde fark çıkıyorsa sorun genelde reçetededir (porsiyon, katsayı); farklar rastgele dağılıyorsa sayım hatası olasıdır.")
                         tip("equal.circle", "\"Hareketsizleri Doldur\"u yalnızca o gün gerçekten hiç kullanılmayan kalemlerde kullanın; kapanışa açılışı yazar.")
                         tip("turkishlirasign.circle", "Birim maliyetleri faturadan güncel tutun; teslim almada fatura fiyatını girmek en kolay yoldur. Maliyeti olmayan kalemler ₺ hesaplarına katılmaz.")
-                        tip("person.2", "Personel oranı yalnızca satış tutarı bilinen günlerden hesaplanır. Aylık maaşlar ayın günlerine eşit dağıtıldığından ay ortasında oran, ay sonundakine göre dalgalanabilir.")
+                        tip("person.2", "Personel oranı satış tutarı bilinen günlerden hesaplanır; kaydı hiç olmayan kapalı günlerin maaşı da eklenir. Aylık maaşlar ayın her gününe eşit dağıtıldığından ay ortasında oran, ay sonundakine göre dalgalanabilir. Personel eklerken işe giriş tarihini doğru verin: önceki günlere maaş yazılmaz.")
+                        tip("percent", "ModPos tutarları genelde KDV dahildir; sektördeki %25–35 hammadde hedefleri ise KDV hariç satışa göredir. Hedefinizi buna göre belirleyin.")
                         tip("target", "Hedefleri (hammadde %, personel %, prime cost %) Ayarlar'dan girin; kartlardaki çubukta dikey çizgi hedefi gösterir, aşılınca kırmızıya döner.")
                         tip("arrow.uturn.backward", "Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alın. Veriler otomatik kaydedilir, her gün yedek alınır (Ayarlar ve Veri).")
                         tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Maliyet, Personel, Notlar.")

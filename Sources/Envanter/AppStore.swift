@@ -521,6 +521,27 @@ final class AppStore: ObservableObject {
         updateEmployee(id, actionName: "Personel Ayrıldı") { $0.endDate = date; $0.active = false }
     }
 
+    /// Ücret değişikliği: `from` verilirse o günden itibaren (zam), nil ise tüm dönem için düzeltme
+    func changePay(_ id: String, payType: PayType, rate: Double, costFactor: Double, from: String?) {
+        updateEmployee(id, actionName: from == nil ? "Ücret Düzeltme" : "Ücret Değişikliği") {
+            $0.setTerms(payType: payType, rate: rate, costFactor: costFactor, from: from)
+        }
+    }
+
+    /// Giriş/ayrılış tarihlerini düzenler (ayrılış kaldırılırsa personel yeniden aktif olur)
+    func setEmployeeDates(_ id: String, start: String?, end: String?) {
+        updateEmployee(id, actionName: "Personel Tarihleri") {
+            $0.startDate = start
+            $0.endDate = end
+            if end == nil { $0.active = true }
+        }
+    }
+
+    /// Verilen tarihten itibaren kapatılmış gün sayısı (geriye dönük değişikliklerde uyarı için)
+    func lockedDays(from date: String) -> Int {
+        data.days.filter { $0.key >= date && $0.value.isLocked }.count
+    }
+
     /// Personeli ve tüm vardiya kayıtlarını siler (yanlış girilen kayıt için)
     func deleteEmployee(_ id: String) {
         mutateData("Personel Sil") { d in
@@ -548,9 +569,18 @@ final class AppStore: ObservableObject {
                 set: { v in self.updateShift(employeeID, date: date) { $0[keyPath: kp] = v } })
     }
 
+    /// Yevmiyeli için "çalıştı": saat girilmişse de çalışmış sayılır; işaret kaldırılınca saat de silinir
+    /// (yoksa işaret kapalı görünürken yevmiye yazılmaya devam ederdi).
     func workedBinding(_ employeeID: String, date: String) -> Binding<Bool> {
-        Binding(get: { self.data.days[date]?.shifts?[employeeID]?.worked == true },
-                set: { v in self.updateShift(employeeID, date: date) { $0.worked = v ? true : nil } })
+        Binding(get: {
+                    let s = self.data.days[date]?.shifts?[employeeID]
+                    return s?.worked == true || (s?.hours ?? 0) > 0
+                },
+                set: { v in
+                    self.updateShift(employeeID, date: date) {
+                        if v { $0.worked = true } else { $0.worked = nil; $0.hours = nil }
+                    }
+                })
     }
 
     func otherLaborBinding(_ date: String) -> Binding<Double?> {
@@ -564,19 +594,22 @@ final class AppStore: ObservableObject {
     /// Boş vardiyaları varsayılanla doldurur: saatlikler varsayılan saat, yevmiyeliler "çalıştı"
     func fillDefaultShifts(date: String) -> Int {
         guard !isLocked(date) else { return 0 }
-        var n = 0
+        let existing = data.days[date]?.shifts ?? [:]
+        var fills: [String: ShiftEntry] = [:]
+        for e in data.employees where e.active && e.isEmployed(on: date) && (existing[e.id]?.isEmpty ?? true) {
+            switch e.terms(on: date).payType {
+            case .daily: fills[e.id] = ShiftEntry(worked: true)
+            case .hourly, .monthly: if let h = e.defaultHours, h > 0 { fills[e.id] = ShiftEntry(hours: h) }
+            }
+        }
+        // Doldurulacak bir şey yoksa geri alma geçmişine boş adım eklenmez
+        guard !fills.isEmpty else { return 0 }
         updateDay(date, actionName: "Vardiyaları Doldur") { day in
             var shifts = day.shifts ?? [:]
-            for e in self.data.employees where e.active && e.isEmployed(on: date) && (shifts[e.id]?.isEmpty ?? true) {
-                switch e.payType {
-                case .hourly: if let h = e.defaultHours, h > 0 { shifts[e.id] = ShiftEntry(hours: h); n += 1 }
-                case .daily: shifts[e.id] = ShiftEntry(worked: true); n += 1
-                case .monthly: if let h = e.defaultHours, h > 0 { shifts[e.id] = ShiftEntry(hours: h); n += 1 }
-                }
-            }
-            day.shifts = shifts.isEmpty ? nil : shifts
+            for (id, s) in fills { shifts[id] = s }
+            day.shifts = shifts
         }
-        return n
+        return fills.count
     }
 
     // MARK: - Fiyat geçmişi

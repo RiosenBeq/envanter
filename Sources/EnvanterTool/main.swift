@@ -146,8 +146,13 @@ case "report":
     print("Satış tutarı        : \(Fmt.money(p.revenue))")
     print("Teorik hammadde     : \(Fmt.money(p.theoreticalCost))  \(pct(p.theoreticalCostPct))")
     print("Fiili hammadde      : \(Fmt.money(p.actualCost))  \(pct(p.actualCostPct))  hedef \(pct(s.targetFoodCostPct))")
-    print("Personel            : \(Fmt.money(p.laborCost))  \(pct(p.laborPct))  hedef \(pct(s.targetLaborPct))")
-    print("Prime cost          : \(Fmt.money(p.primeCost))  \(pct(p.primeCostPct))  hedef \(pct(s.targetPrimeCostPct))")
+    if p.hasLabor {
+        print("Personel            : \(Fmt.money(p.laborCost))  \(pct(p.laborPct))  hedef \(pct(s.targetLaborPct))")
+        print("Prime cost          : \(Fmt.money(p.primeCost))  \(pct(p.primeCostPct))  hedef \(pct(s.targetPrimeCostPct))")
+    } else {
+        print("Personel            : — (bu dönemde personel kaydı yok)")
+        print("Prime cost          : — (personel maliyeti olmadan hesaplanmaz)")
+    }
     print("Kayıp (fazla çıkış) : \(Fmt.money(p.lossValue))   Zayi: \(Fmt.money(p.wasteCost))")
     let alerts = engine.priceAlerts(asOf: to, threshold: s.priceAlertPct)
     for a in alerts { print("Fiyat artışı        : \(a.item.name) \(Fmt.money(a.from, fraction: 2)) → \(Fmt.money(a.to, fraction: 2)) (\(pct(a.ratio)))") }

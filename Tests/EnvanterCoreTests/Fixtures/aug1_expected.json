@@ -1,0 +1,114 @@
+{
+ "pivot_total": {
+  "Toplam 90 gr": 209.0,
+  "Toplam 120 gr": 11.0,
+  "Toplam 150 gr": 224.0,
+  "Toplam 220 gr": 21.0,
+  "Toplam Tavuk 160 gr": 0.0,
+  "Toplam 90 Gr Lezita": 0.0,
+  "Toplam Jr Tavuk": 0.0,
+  "Toplam Smash 80 gr": 292.0,
+  "Toplam Peynir ": 792.0,
+  "Toplam Patates Kg": 139.6,
+  "Toplam Ekmek Susamlı": 396.0,
+  "Toplam 60 Gr": 86.0,
+  "Toplam Ekmek Susamsız": 304.0,
+  "Toplam Füme": 181.0,
+  "Toplam Soğan Halkası": 313.0,
+  "Toplam Çıtır Peynir": 42.0,
+  "Toplam Fillet": 5.7,
+  "Toplam Tender": 13.100000000000001,
+  "Toplam Kanat": 5.300000000000001,
+  "Toplam Hot Shots": 5.262
+ },
+ "envanter": {
+  "90 Gr / Adet": {
+   "sold": 209.0,
+   "waste": 0.0
+  },
+  "120 Gr / Adet": {
+   "sold": 11.0,
+   "waste": 0.0
+  },
+  "130 Gr / Adet": {
+   "sold": 224.0,
+   "waste": 0.0
+  },
+  "220 Gr / Adet": {
+   "sold": 21.0,
+   "waste": 0.0
+  },
+  "Tavuk 160 gr / Adet": {
+   "sold": 0.0,
+   "waste": 0.0
+  },
+  "Tavuk 90 Gr Lezita / Adet": {
+   "sold": 0.0,
+   "waste": 0.0
+  },
+  "Smash 70 Gr / Adet": {
+   "sold": 288.0,
+   "waste": 0.0
+  },
+  "Peynir / Kg": {
+   "sold": 10.864,
+   "waste": 0.0
+  },
+  "Patates / Kg": {
+   "sold": 139.6,
+   "waste": 0.0
+  },
+  "Ekmek Susamlı / Adet": {
+   "sold": 396.0,
+   "waste": 0.0
+  },
+  "Ekmek Susamsız / Adet": {
+   "sold": 304.0,
+   "waste": 0.0
+  },
+  "Donuk Ekmek / Adet": {
+   "sold": 0.0,
+   "waste": 0.0
+  },
+  "60 Gr / Adet": {
+   "sold": 0.0,
+   "waste": 0.0
+  },
+  "Dana Füme / Kg": {
+   "sold": 2.896,
+   "waste": 0.0
+  },
+  "Soğan Halkası / Kg": {
+   "sold": 4.694999999999999,
+   "waste": 0.0
+  },
+  "Çıtır Peynir / Kg": {
+   "sold": 0.882,
+   "waste": 0.0
+  },
+  "Fillet Kg": {
+   "sold": 5.7,
+   "waste": 0.0
+  },
+  "Tender Kg": {
+   "sold": 13.100000000000001,
+   "waste": 0.0
+  },
+  "Kanat Kg": {
+   "sold": 5.300000000000001,
+   "waste": 0.0
+  },
+  "Hot Shots Kg": {
+   "sold": 5.262,
+   "waste": 0.0
+  },
+  "Jr Tavuk / Kg": {
+   "sold": 0.0,
+   "waste": 0.0
+  },
+  "Boş": {
+   "sold": 0.0,
+   "waste": 0.0
+  }
+ }
+}

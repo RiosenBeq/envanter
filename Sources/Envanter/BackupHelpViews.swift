@@ -37,6 +37,8 @@ struct BackupView: View {
                     }
                 }
 
+                CloudSyncCard(cloud: store.cloud)
+
                 Card {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("Hedefler ve uyarılar", systemImage: "target").font(.headline)
@@ -190,6 +192,7 @@ struct HelpView: View {
                         tip("percent", "ModPos tutarları genelde KDV dahildir; sektördeki %25–35 hammadde hedefleri ise KDV hariç satışa göredir. Hedefinizi buna göre belirleyin.")
                         tip("target", "Hedefleri (hammadde %, personel %, prime cost %) Ayarlar'dan girin; kartlardaki çubukta dikey çizgi hedefi gösterir, aşılınca kırmızıya döner.")
                         tip("arrow.uturn.backward", "Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alın. Veriler otomatik kaydedilir, her gün yedek alınır (Ayarlar ve Veri).")
+                        tip("arrow.triangle.2.circlepath.icloud", "Web paneli: Ayarlar ve Veri > Web paneli ile eşitleme bölümünden web paneli hesabınızla bağlanın. Sayım, satış ve vardiyalar birkaç saniye içinde patron ve müdürlerin web paneline gider; web panelinde yapılan düzeltmeler (sayım, maliyet, sipariş, hedef) en geç bir dakika içinde buraya gelir. Aynı güne iki yerden farklı kalemler girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son kaydedilen geçerli olur. Personel hesabıyla yalnızca günlük kayıtlar değiştirilebilir.")
                         tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Maliyet, Personel, Notlar.")
                     }
                 }

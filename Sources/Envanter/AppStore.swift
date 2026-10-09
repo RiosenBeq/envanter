@@ -95,6 +95,8 @@ final class AppStore: ObservableObject {
     @Published private(set) var lastSavedAt: Date?
 
     let persistence: Persistence
+    /// Web paneliyle (Supabase) arka planda eşitleme
+    let cloud: CloudSyncController
     /// Pencerenin geri alma yöneticisi (ContentView bağlar); Düzen > Geri Al / Yinele ile çalışır
     weak var undoManager: UndoManager?
     private var engineCache: Engine?
@@ -115,6 +117,10 @@ final class AppStore: ObservableObject {
 
     init(persistence: Persistence = Persistence(directory: Persistence.defaultDirectory())) {
         self.persistence = persistence
+        // Otomatik test ve ekran görüntüsü modlarında web eşitlemesi kapalıdır
+        let env = ProcessInfo.processInfo.environment
+        let automated = !(env["ENVANTER_SELFTEST"] ?? "").isEmpty || !(env["ENVANTER_SNAPSHOT_DIR"] ?? "").isEmpty
+        cloud = CloudSyncController(directory: persistence.directory, enabled: !automated)
         var startupAlert: AppAlert?
         switch persistence.load() {
         case .fresh:
@@ -146,6 +152,7 @@ final class AppStore: ObservableObject {
             saveQueue.async { p.dailyBackup(encoded) }
             lastBackupAt = Date()
         }
+        cloud.attach(self)
     }
 
     // MARK: - Kayıt
@@ -220,12 +227,30 @@ final class AppStore: ObservableObject {
 
     private func setData(_ new: AppData, actionName: String?) {
         let old = data
+        // Değişen belgeler (items, products, settings, employees, orders, day:YYYY-MM-DD)
+        let keys = DocCodec.changedKeys(old, new)
         data = new
+        cloud.noteLocalChange(keys)
         guard let um = undoManager else { return }
+        // Geri alma yalnızca bu işlemin değiştirdiği belgeleri eski haline getirir: arada web panelinden gelen
+        // başka değişiklikler (ör. patronun değiştirdiği maliyet) geri alınmaz.
         um.registerUndo(withTarget: self) { store in
-            MainActor.assumeIsolated { store.setData(old, actionName: actionName) }
+            MainActor.assumeIsolated {
+                store.setData(DocCodec.replacing(keys, in: store.data, from: old), actionName: actionName)
+            }
         }
         if let actionName { um.setActionName(actionName) }
+    }
+
+    /// Web panelinden (buluttan) gelen veriyi uygular: geri alma geçmişine eklenmez ve yeniden gönderilmek üzere
+    /// işaretlenmez. Kayıt ve hesap önbelleği normal değişiklikteki gibi yenilenir.
+    func applyRemote(_ new: AppData) {
+        data = new
+    }
+
+    /// Geri alma geçmişini temizler (buluttaki veri indirildikten sonra eski adımlar onun üzerine yazmasın)
+    func clearUndoHistory() {
+        undoManager?.removeAllActions()
     }
 
     // MARK: - Gün gezinme

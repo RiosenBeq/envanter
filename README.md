@@ -19,7 +19,7 @@ Restoranlar için macOS stok, fire, maliyet ve personel maliyeti takip uygulamas
 | **İstatistikler** | *Genel:* satış tutarı, teorik/fiili maliyet, **food cost %**, personel %, prime cost, kayıp, zayi, alım tutarı, stok değeri; maliyet dağılımı, hedef çizgili eğilim grafikleri ve en çok kayıp veren kalemler. *Kalem Analizi:* beklenen ve fiili tüketim, günlük fark, stok seviyesi ve **birim maliyet geçmişi**. *ABC Analizi:* Pareto grafiği ve A/B/C sınıfları. *Menü Mühendisliği:* popülerlik × kârlılık matrisi (Yıldız, Beygir, Bilmece, Zayıf) ve ürün bazında maliyet oranı. |
 | **Reçeteler** | 386 hazır reçete; hammadde ekleme/çıkarma, başka üründen kopyalama, **reçete maliyeti**, ortalama satış fiyatı ve maliyet oranı. |
 | **Stok Kalemleri** | Birim, reçete birimi ve katsayı; **birim maliyet (₺)** ve son fiyat değişimi, **kritik seviye**, **tolerans (± adet/kg)**; sıralama ve gizleme. |
-| **Ayarlar ve Veri** | Şube adı, sayım yapan personel listesi, **hedefler** (food cost %, personel %, prime cost %, fiyat artışı uyarı eşiği). Ayrıca otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu** ve eski Excel dosyasından içe aktarım. |
+| **Ayarlar ve Veri** | Şube adı, sayım yapan personel listesi, **hedefler** (food cost %, personel %, prime cost %, fiyat artışı uyarı eşiği), **web paneli ile eşitleme** (bkz. aşağıda). Ayrıca otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu** ve eski Excel dosyasından içe aktarım. |
 | **Nasıl Kullanılır?** | Adım adım günlük iş akışı, **notlar ve ipuçları**, Excel'den farklar, kısayollar ve aranabilir **terimler sözlüğü**. |
 
 Diğer:
@@ -71,6 +71,30 @@ Görüntüler CI'da, uygulama `EnvanterTool demo` ile üretilen örnek veriyle �
    ```
 
 Veriler `~/Library/Application Support/Envanter/` altında tutulur (`envanter-verisi.json` ve `Yedekler/`). Uygulamayı silmek veya güncellemek verilere dokunmaz. Başka bir klasör kullanmak için `ENVANTER_DATA_DIR` ortam değişkeni verilebilir. Eski sürümlerin veri dosyası olduğu gibi açılır; yeni alanlar (personel, siparişler, hedefler, fiyat geçmişi) boş başlar.
+
+## Web paneli ve bulut eşitleme
+
+Mac uygulaması, patron ve müdürlerin kullandığı **web paneliyle** ([envantersite](https://github.com/RiosenBeq/envantersite)) Supabase üzerinden arka planda eşitlenir.
+
+- **Kim ne kullanır:** Personel günlük işleri (sayım, satış raporu aktarımı, vardiya, gün notu) bu uygulamada yapar. Patron ve müdürler web panelinden her yerden izler (pano, raporlar, uyarılar, şube karşılaştırması, kimin neyi değiştirdiği) ve gerektiğinde müdahale eder (sayım düzeltme, sipariş onayı ve teslim alma, maliyet ve hedefler, vardiya ve personel, kullanıcılar ve yetkiler).
+- **Bağlanma:** *Ayarlar ve Veri > Web paneli ile eşitleme* kartında web paneli hesabının e-postası ve şifresiyle **Bağlan**. Sunucu adresi ve publishable key uygulamada hazırdır (publishable key herkese açık bir anahtardır; yetkiyi veritabanındaki RLS kuralları uygular). Farklı bir Supabase projesi için *Gelişmiş* bölümünden değiştirilebilir.
+  - Hesap birden çok şubeye üyeyse şube seçilir. Hiç şube yoksa (ilk kurulum) işletme adıyla yeni bir şube açılır ve hesap patron olur. Şubeye eklenmemiş bir hesapla bağlanılırsa patronun web panelinden davet etmesi gerektiği söylenir.
+  - **İlk bağlantı:** Bulut boşsa bu Mac'teki her şey yüklenir. Bu Mac yalnızca varsayılan reçetelerle duruyorsa buluttaki veri indirilir. İki tarafta da veri varsa sorulur: *Buluttakini İndir* (bu Mac'teki veri önce `Yedekler/bulut-indirme-oncesi-….json` olarak saklanır) ya da *Bu Mac'tekini Yükle* (aynı kayıtlarda bu Mac geçerli olur, yalnızca bulutta olan günler korunur; buluttaki önceki hal `Yedekler/bulut-yukleme-oncesi-….json` olarak saklanır).
+- **Ne zaman eşitlenir:** Her değişiklikten 8 sn sonra, 60 sn'de bir ve uygulama öne geldiğinde; *Şimdi Eşitle* ile hemen. Durum yan menüde kayıt durumunun altında görünür: "Web ile eşitlendi · 14:05", "Eşitleniyor…" ya da "Eşitleme hatası" (üzerine gelince ayrıntı). İnternet yokken çalışmaya devam edilir; bekleyen değişiklikler bağlantı gelince gönderilir, uygulama kapanıp açılsa da kaybolmaz.
+- **Çakışmalar:** Veri belgelere bölünür (stok kalemleri, reçeteler, ayarlar, personel, siparişler ve her gün ayrı bir belge). Aynı belge iki yerde değiştirilirse alan bazında birleştirilir: aynı güne farklı kalemlerin sayımı girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son gönderilen geçerli olur. Eşitleme sürerken yapılan değişiklikler de korunur. Mac'in bilmediği (web panelinin eklediği) alanlar kaybolmaz.
+- **Roller:** *Patron* her şeyi yönetir (kullanıcılar, yetkiler, şube adı dahil), *Müdür* tüm verileri değiştirir, *Personel* yalnızca günlük kayıtları (sayım, satış, vardiya, not) değiştirir. Personel hesabıyla stok kalemi, reçete, personel, sipariş ya da ayar değiştirilirse değişiklik gönderilmez, "Bu değişiklik için müdür yetkisi gerekir" uyarısı bir kez gösterilir ve web panelindeki hal geri yüklenir.
+- **Değişiklik geçmişi:** Her gönderim web panelindeki geçmişe kısa bir özetle yazılır, ör. "09.10.2026 sayımı: 90 Gr kapanış 120 → 110", "09.10.2026 satış raporu aktarıldı (121 satır, 82.450 ₺)", "Stok kalemleri: Patates birim maliyet 60 → 68 ₺".
+- **Geri al:** ⌘Z yalnızca kendi yaptığınız değişikliğin belgelerini geri alır; arada web panelinden gelen değişiklikler (ör. patronun değiştirdiği maliyet) korunur.
+- **Oturum ve gizlilik:** Şifre saklanmaz. Oturum anahtarları ve eşitleme durumu veri klasöründeki `esitleme.json` dosyasında yalnızca kullanıcının okuyabileceği izinle (0600) tutulur; otomatik yedeklere ve *Yedek Oluştur* dosyasına girmez. Oturumun süresi dolarsa uygulama yeniden giriş ister, bekleyen değişiklikler korunur. *Çıkış Yap* eşitlemeyi durdurur, bu Mac'teki veriyi silmez.
+- Otomatik test (`ENVANTER_SELFTEST`) ve ekran görüntüsü (`ENVANTER_SNAPSHOT_DIR`) modlarında eşitleme kapalıdır.
+
+İki istemcinin uyduğu sözleşme (tablolar, roller, RPC'ler, eşitleme algoritması, merge3) [docs/SYNC.md](docs/SYNC.md) dosyasındadır. Eşitleme kodu `Sources/EnvanterCore` altında platformdan bağımsızdır (`CloudSync.swift`, `CloudSyncEngine.swift`, `SupabaseAPI.swift`, `JSONValue.swift`, `ChangeSummary.swift`); uygulama tarafı `CloudSyncController.swift` ve `CloudSyncView.swift`'tir.
+
+```bash
+swift test --filter CloudSyncTests    # merge3 vektörleri, belge dönüşümü, bellek içi sunucuyla iki istemci, istekler ve oturum yenileme
+# Gerçek Supabase bileşenleriyle (envantersite/scripts/local-supabase ortamı çalışırken):
+ENVANTER_SUPABASE_TEST_URL=http://127.0.0.1:54321 swift test --filter CloudSyncIntegrationTests
+```
 
 ## Komut satırı aracı
 
@@ -136,12 +160,12 @@ CI (`.github/workflows/ci.yml`) şu adımları çalıştırır:
 
 ## Yol haritası / öneriler
 
-- **Çok şubeli kullanım:** Her şubenin verisini merkezde birleştiren bir şube karşılaştırma ekranı (ör. ortak bir sunucu ya da paylaşılan klasöre günlük JSON aktarımı).
+- **Çok şubeli kullanım:** Web panelinde (bkz. *Web paneli ve bulut eşitleme*); bir sonraki adım şubeler arası stok transferinin iki şubeye birden işlenmesi.
 - **ModPos entegrasyonu:** Raporu elle almak yerine ModPos'un dışa aktarım klasörünü izleyip her sabah otomatik içe aktarma.
 - **Fatura okuma:** Tedarikçi faturasının fotoğrafından/PDF'inden kalem ve fiyatları okuyup siparişi otomatik teslim alma (MarketMan, Restaurant365 gibi ürünlerde var).
 - **Vardiya planlama ve POS saatleri:** Personel ekranına haftalık vardiya planı ve satış saatlerine göre "saat başına satış" (SPLH) göstergesi.
 - **iPad / iPhone ile sayım:** Depoda telefonla (barkod/QR ile) sayım yapıp Mac'e aktarma.
-- **Yetkilendirme:** Gün kilidini yalnızca yöneticinin açabilmesi için basit PIN; kim neyi değiştirdi kaydı (denetim günlüğü).
+- **Gün kilidi yetkisi:** Kullanıcı rolleri ve değişiklik geçmişi web panelinde var; kapatılmış günün kilidini Mac'te de yalnızca müdürün açabilmesi.
 - **Bildirimler:** Kritik seviyenin altına düşen kalemler, fiyat artışları ve yüksek kayıp günleri için günlük e-posta/WhatsApp özeti. `EnvanterTool report` ve `orders` bugün de bir cron/launchd göreviyle kullanılabilir.
 - **Yarı mamul reçeteleri:** Soslar ve hazırlıklar için alt reçeteler (reçete içinde reçete).
 - **Kod imzalama:** Şirket bir Apple Developer hesabı alırsa uygulama Developer ID ile imzalanıp noter onayından (notarization) geçirilebilir. Böylece Gatekeeper uyarısı tamamen kalkar.

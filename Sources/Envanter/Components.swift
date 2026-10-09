@@ -557,19 +557,23 @@ struct EmptyStateView: View {
 struct SaveStatusView: View {
     @EnvironmentObject var store: AppStore
     var body: some View {
-        HStack(spacing: 6) {
-            switch store.saveState {
-            case .saved:
-                // Veriler yalnızca bu Mac'te tutulur (bulut simgesi yanıltıcı olurdu)
-                Image(systemName: "checkmark.circle").foregroundStyle(Brand.ok)
-                Text(store.lastSavedAt.map { "Bu Mac'e kaydedildi · \(Self.time.string(from: $0))" } ?? "Bu Mac'e kaydedildi")
-            case .saving:
-                ProgressView().controlSize(.mini)
-                Text("Kaydediliyor…")
-            case .failed(let message):
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.negative)
-                Text("Kaydedilemedi").help(message)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                switch store.saveState {
+                case .saved:
+                    // Yerel kayıt (bulut simgesi kullanılmaz); web eşitlemesi alttaki ayrı satırda
+                    Image(systemName: "checkmark.circle").foregroundStyle(Brand.ok)
+                    Text(store.lastSavedAt.map { "Bu Mac'e kaydedildi · \(Self.time.string(from: $0))" } ?? "Bu Mac'e kaydedildi")
+                case .saving:
+                    ProgressView().controlSize(.mini)
+                    Text("Kaydediliyor…")
+                case .failed(let message):
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.negative)
+                    Text("Kaydedilemedi").help(message)
+                }
             }
+            // Web paneline bağlıyken: "Web ile eşitlendi · 14:05" / "Eşitleniyor…" / "Eşitleme hatası"
+            CloudStatusLine(cloud: store.cloud)
         }
         .font(.caption).foregroundStyle(.secondary)
     }

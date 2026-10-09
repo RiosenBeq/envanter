@@ -52,8 +52,21 @@ jobs:
           # Uygulamanın kendi deposu da geçici klasörü kullansın; test kendi geçici verisinde çalışır
           export ENVANTER_DATA_DIR="$RUNNER_TEMP/selftest-app"
           export ENVANTER_SELFTEST=1
-          perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" | tee "$RUNNER_TEMP/selftest.log"
-          grep -q "SELFTEST: .* 0 başarısız" "$RUNNER_TEMP/selftest.log"
+          LOG="$RUNNER_TEMP/selftest.log"
+          "$APP/Envanter" > "$LOG" 2>&1 &
+          PID=$!
+          for i in $(seq 1 180); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "::error::Sistem testi 180 sn içinde bitmedi; uygulamanın iş parçacığı yığınları:"
+            sample "$PID" 3 -file "$RUNNER_TEMP/sample.txt" >/dev/null 2>&1 || true
+            head -260 "$RUNNER_TEMP/sample.txt" || true
+            kill -9 "$PID" || true
+          fi
+          STATUS=0; wait "$PID" || STATUS=$?
+          cat "$LOG"
+          echo "Çıkış kodu: $STATUS"
+          test "$STATUS" -eq 0
+          grep -q "kontrol geçti, 0 başarısız" "$LOG"
 
       - name: Demo verisiyle ekran görüntüleri
         run: |

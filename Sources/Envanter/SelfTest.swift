@@ -14,6 +14,9 @@ enum SelfTest {
     static func runIfRequested() {
         guard ProcessInfo.processInfo.environment["ENVANTER_SELFTEST"] == "1", !started else { return }
         started = true
+        // Çıktı boruya yönlendirildiğinde de satır satır görünsün (takılırsa nerede kaldığı anlaşılsın)
+        setvbuf(stdout, nil, _IONBF, 0)
+        print("SELFTEST başlıyor")
         Task { @MainActor in
             run()
             print("SELFTEST: \(passed) kontrol geçti, \(failures.count) başarısız")

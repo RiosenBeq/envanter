@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 // MARK: - Okuma
 
@@ -6,9 +9,29 @@ public struct XlsxSheet {
     public var name: String
     /// satır (1'den) -> sütun (1'den) -> metin değeri
     public var rows: [Int: [Int: String]]
+    /// Sayısal hücreler (değerleri makine biçiminde: "1234.5"): satır -> sütunlar
+    public var numericCells: [Int: Set<Int>] = [:]
+
+    public init(name: String, rows: [Int: [Int: String]], numericCells: [Int: Set<Int>] = [:]) {
+        self.name = name; self.rows = rows; self.numericCells = numericCells
+    }
 
     public func value(row: Int, col: Int) -> String? { rows[row]?[col] }
     public var maxRow: Int { rows.keys.max() ?? 0 }
+    public func isNumeric(row: Int, col: Int) -> Bool { numericCells[row]?.contains(col) ?? false }
+
+    /// Hücrenin sayı değeri: sayısal hücrede makine biçimi, metin hücrede Türkçe/İngilizce yazım.
+    public func number(row: Int, col: Int) -> Double? {
+        guard let raw = value(row: row, col: col) else { return nil }
+        return isNumeric(row: row, col: col) ? Fmt.machine(raw) : Fmt.parse(raw)
+    }
+
+    /// Satış adedi: metin hücrede "1.120" gibi binlik ayırıcılı yazımı da tanır.
+    /// Sayısal hücrede "1.125" gerçekten 1,125'tir (binlik ayırıcı sanılmamalı).
+    public func quantity(row: Int, col: Int) -> Double? {
+        guard let raw = value(row: row, col: col) else { return nil }
+        return isNumeric(row: row, col: col) ? Fmt.machine(raw) : Fmt.parseQuantity(raw)
+    }
 }
 
 public enum XlsxReader {
@@ -18,32 +41,45 @@ public enum XlsxReader {
     }
 
     public static func read(data: Data) throws -> [XlsxSheet] {
-        let zip = try ZipReader(data: data)
-        guard zip.contains("xl/workbook.xml") else { throw ZipError.missing("xl/workbook.xml") }
+        try read(zip: try ZipReader(data: data))
+    }
 
-        var shared: [String] = []
-        if zip.contains("xl/sharedStrings.xml") {
-            let p = SharedStringsParser()
-            p.parse(try zip.read("xl/sharedStrings.xml"))
-            shared = p.strings
-        }
+    static func read(zip: ZipReader) throws -> [XlsxSheet] {
+        guard zip.contains("xl/workbook.xml") else { throw ZipError.missing("xl/workbook.xml") }
 
         let wb = WorkbookParser()
         wb.parse(try zip.read("xl/workbook.xml"))
         let rels = RelsParser()
         if zip.contains("xl/_rels/workbook.xml.rels") { rels.parse(try zip.read("xl/_rels/workbook.xml.rels")) }
 
+        var shared: [String] = []
+        let sharedPath = rels.target(ofTypeSuffix: "/sharedStrings").map(resolve) ?? "xl/sharedStrings.xml"
+        if zip.contains(sharedPath) {
+            let p = SharedStringsParser()
+            p.parse(try zip.read(sharedPath))
+            shared = p.strings
+        }
+
         var sheets: [XlsxSheet] = []
         for (i, s) in wb.sheets.enumerated() {
-            var target = rels.targets[s.rid] ?? "worksheets/sheet\(i + 1).xml"
-            if target.hasPrefix("/") { target.removeFirst() } else { target = "xl/" + target }
+            let target = rels.targets[s.rid].map(resolve) ?? "xl/worksheets/sheet\(i + 1).xml"
             guard zip.contains(target) else { continue }
             let sp = SheetParser(shared: shared)
             sp.parse(try zip.read(target))
-            sheets.append(XlsxSheet(name: s.name, rows: sp.rows))
+            sheets.append(XlsxSheet(name: s.name, rows: sp.rows, numericCells: sp.numeric))
         }
         guard !sheets.isEmpty else { throw ZipError.missing("çalışma sayfası") }
         return sheets
+    }
+
+    /// İlişki hedefini zip içindeki yola çevirir ("worksheets/sheet1.xml" -> "xl/worksheets/sheet1.xml")
+    static func resolve(_ target: String) -> String {
+        if target.hasPrefix("/") { return String(target.dropFirst()) }
+        var parts = ["xl"]
+        for p in target.split(separator: "/") {
+            if p == ".." { if !parts.isEmpty { parts.removeLast() } } else if p != "." { parts.append(String(p)) }
+        }
+        return parts.joined(separator: "/")
     }
 
     /// "B9" -> (satır 9, sütun 2)
@@ -65,7 +101,7 @@ private final class SharedStringsParser: NSObject, XMLParserDelegate {
     private var inSI = false, inT = false, inPhonetic = false
 
     func parse(_ data: Data) {
-        let p = XMLParser(data: data); p.delegate = self; p.parse()
+        let p = XMLParser(data: data); p.delegate = self; _ = p.parse()
     }
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
         switch name {
@@ -88,33 +124,47 @@ private final class SharedStringsParser: NSObject, XMLParserDelegate {
 
 private final class WorkbookParser: NSObject, XMLParserDelegate {
     var sheets: [(name: String, rid: String)] = []
-    func parse(_ data: Data) { let p = XMLParser(data: data); p.delegate = self; p.parse() }
+    func parse(_ data: Data) { let p = XMLParser(data: data); p.delegate = self; _ = p.parse() }
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
-        if name == "sheet" {
-            sheets.append((attributes["name"] ?? "Sayfa", attributes["r:id"] ?? attributes["id"] ?? ""))
-        }
+        guard name == "sheet" || name.hasSuffix(":sheet") else { return }
+        // İlişki kimliği genelde "r:id"dir ama önek dosyadan dosyaya değişebilir
+        let rid = attributes["r:id"] ?? attributes.first { $0.key.hasSuffix(":id") }?.value ?? attributes["id"] ?? ""
+        sheets.append((attributes["name"] ?? "Sayfa", rid))
     }
 }
 
 private final class RelsParser: NSObject, XMLParserDelegate {
     var targets: [String: String] = [:]
-    func parse(_ data: Data) { let p = XMLParser(data: data); p.delegate = self; p.parse() }
+    var types: [String: String] = [:]
+    func parse(_ data: Data) { let p = XMLParser(data: data); p.delegate = self; _ = p.parse() }
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
-        if name == "Relationship", let id = attributes["Id"], let t = attributes["Target"] { targets[id] = t }
+        if name == "Relationship", let id = attributes["Id"], let t = attributes["Target"] {
+            targets[id] = t
+            types[id] = attributes["Type"] ?? ""
+        }
+    }
+    func target(ofTypeSuffix suffix: String) -> String? {
+        types.first { $0.value.hasSuffix(suffix) }.flatMap { targets[$0.key] }
     }
 }
 
 private final class SheetParser: NSObject, XMLParserDelegate {
     var rows: [Int: [Int: String]] = [:]
+    var numeric: [Int: Set<Int>] = [:]
     private let shared: [String]
     private var ref = "", type = "", text = ""
     private var inV = false, inT = false, inCell = false
+    /// "r" niteliği olmayan satır/hücreler için sıra takibi (bazı programlar yazmaz)
+    private var currentRow = 0, nextCol = 1
 
     init(shared: [String]) { self.shared = shared }
-    func parse(_ data: Data) { let p = XMLParser(data: data); p.delegate = self; p.parse() }
+    func parse(_ data: Data) { let p = XMLParser(data: data); p.delegate = self; _ = p.parse() }
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
         switch name {
+        case "row":
+            currentRow = attributes["r"].flatMap { Int($0) } ?? (currentRow + 1)
+            nextCol = 1
         case "c": inCell = true; ref = attributes["r"] ?? ""; type = attributes["t"] ?? ""; text = ""
         case "v": inV = true
         case "t": if inCell { inT = true }
@@ -130,12 +180,17 @@ private final class SheetParser: NSObject, XMLParserDelegate {
         case "t": inT = false
         case "c":
             inCell = false
-            guard let pos = XlsxReader.position(ref) else { return }
+            let pos = XlsxReader.position(ref) ?? (currentRow > 0 ? (currentRow, nextCol) : nil)
+            guard let pos else { return }
+            nextCol = pos.col + 1
             var value = text
             if type == "s", let idx = Int(text.trimmingCharacters(in: .whitespaces)), idx >= 0, idx < shared.count {
                 value = shared[idx]
             }
-            if !value.isEmpty { rows[pos.row, default: [:]][pos.col] = value }
+            if !value.isEmpty {
+                rows[pos.row, default: [:]][pos.col] = value
+                if type.isEmpty || type == "n" { numeric[pos.row, default: []].insert(pos.col) }
+            }
         default: break
         }
     }
@@ -248,9 +303,11 @@ public enum XlsxWriter {
         return out
     }
 
-    private static func num(_ v: Double) -> String {
+    static func num(_ v: Double) -> String? {
+        guard v.isFinite else { return nil }
         let r = (v * 1_000_000).rounded() / 1_000_000
-        return r == r.rounded() ? String(Int64(r)) : String(r)
+        if r == 0 { return "0" }
+        return r == r.rounded() && abs(r) < 1e15 ? String(Int64(r)) : String(r)
     }
 
     private static func sheetXML(_ s: XlsxSheetData) -> String {
@@ -275,9 +332,9 @@ public enum XlsxWriter {
                 switch cell.kind {
                 case .text(let t):
                     x += #"<c r="\#(ref)"\#(cell.bold ? #" s="4""# : "") t="inlineStr"><is><t xml:space="preserve">\#(escape(t))</t></is></c>"#
-                case .number(let v): x += #"<c r="\#(ref)"><v>\#(num(v))</v></c>"#
-                case .date(let v): x += #"<c r="\#(ref)" s="2"><v>\#(num(v))</v></c>"#
-                case .diff(let v): x += #"<c r="\#(ref)" s="3"><v>\#(num(v))</v></c>"#
+                case .number(let v): if let n = num(v) { x += #"<c r="\#(ref)"><v>\#(n)</v></c>"# }
+                case .date(let v): if let n = num(v) { x += #"<c r="\#(ref)" s="2"><v>\#(n)</v></c>"# }
+                case .diff(let v): if let n = num(v) { x += #"<c r="\#(ref)" s="3"><v>\#(n)</v></c>"# }
                 case .blank: break
                 }
             }

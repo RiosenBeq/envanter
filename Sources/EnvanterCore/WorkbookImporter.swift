@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// Eski Excel envanter dosyasındaki (01.08.xlsm gibi) verileri uygulamaya aktarır:
 ///  • Alımlar sayfası ve (sayfa temizlenmişse) onun pivot önbelleğindeki geçmiş günlük kayıtlar
@@ -72,51 +75,52 @@ public enum WorkbookImporter {
         var date: String
         var itemID: String
         var opening, incoming, trIn, trOut, closing, sold, waste: Double?
-        var order: Int
     }
 
     public static func parse(data: Data, sourceName: String, items: [Item]) throws -> WorkbookImport {
         guard let zip = try? ZipReader(data: data), zip.contains("xl/workbook.xml") else { throw WorkbookImportError.unsupported }
-        let sheets = try XlsxReader.read(data: data)
+        let sheets = try XlsxReader.read(zip: zip)
         var result = WorkbookImport()
         result.sourceName = sourceName
         var skipped = Set<String>()
-        var recs: [Rec] = []
-        var order = 0
 
-        func add(date: String, label: String, _ v: [Double?]) {
-            guard let id = itemID(for: label, items: items) else {
-                if !label.isEmpty { skipped.insert(label) }
-                return
+        /// Aynı kaynakta aynı gün/kalem için birden fazla kayıt olabilir (makro iki kez çalıştırılmış gibi):
+        /// kapanışı olan en son kayıt kullanılır.
+        func collect(_ rows: [(date: String, label: String, values: [Double?])]) -> [String: Rec] {
+            var grouped: [String: [Rec]] = [:]
+            var order: [String] = []
+            for row in rows {
+                guard let id = itemID(for: row.label, items: items) else {
+                    if !row.label.isEmpty { skipped.insert(row.label) }
+                    continue
+                }
+                let v = row.values
+                let key = row.date + "|" + id
+                if grouped[key] == nil { order.append(key) }
+                grouped[key, default: []].append(Rec(date: row.date, itemID: id, opening: v[0], incoming: v[1], trIn: v[2],
+                                                     trOut: v[3], closing: v[4], sold: v[5], waste: v[6]))
             }
-            recs.append(Rec(date: date, itemID: id, opening: v[0], incoming: v[1], trIn: v[2], trOut: v[3],
-                            closing: v[4], sold: v[5], waste: v[6], order: order))
-            order += 1
+            var out: [String: Rec] = [:]
+            for key in order {
+                let list = grouped[key]!
+                if list.count > 1 { result.duplicatesResolved += 1 }
+                out[key] = list.last { $0.closing != nil } ?? list.last!
+            }
+            return out
         }
 
         // 1) Geçmiş: pivot önbelleği (Alımlar sayfası temizlenmiş olabilir)
-        for row in PivotHistory.rows(zip: zip) {
-            add(date: row.date, label: row.item, row.values)
-        }
-        // 2) Geçmiş: Alımlar sayfasındaki satırlar (varsa önbelleğin üzerine yazar — sonra geldiği için)
+        let cached = collect(PivotHistory.rows(zip: zip).map { ($0.date, $0.item, $0.values) })
+        // 2) Geçmiş: Alımlar sayfasındaki satırlar (önbellekteki aynı gün/kalem kaydının yerine geçer)
+        var sheetRows: [(date: String, label: String, values: [Double?])] = []
         if let alim = sheets.first(where: { key($0.name) == "alımlar" }) {
             for r in 1...max(1, alim.maxRow) {
                 guard let row = alim.rows[r], let dateCell = row[1], let label = row[2] else { continue }
                 guard let date = dateKey(from: dateCell) else { continue }
-                func n(_ c: Int) -> Double? { row[c].flatMap { Fmt.parse($0) } }
-                add(date: date, label: label, [n(3), n(4), n(5), n(6), n(7), n(8), n(9)])
+                sheetRows.append((date, label, (3...9).map { alim.number(row: r, col: $0) }))
             }
         }
-
-        // Aynı gün/kalem için çoklu kayıt: kapanışı olan en son kayıt kullanılır
-        var grouped: [String: [Rec]] = [:]
-        for r in recs { grouped[r.date + "|" + r.itemID, default: []].append(r) }
-        var chosen: [Rec] = []
-        for (_, list) in grouped {
-            if list.count > 1 { result.duplicatesResolved += 1 }
-            let withClosing = list.filter { $0.closing != nil }
-            chosen.append((withClosing.last ?? list.last)!)
-        }
+        let chosen = Array(cached.merging(collect(sheetRows)) { _, sheet in sheet }.values)
 
         var days: [String: DayRecord] = [:]
         for r in chosen {
@@ -140,11 +144,11 @@ public enum WorkbookImporter {
 
         // 3) Güncel gün: Envanter sayfası
         if let env = sheets.first(where: { key($0.name) == "envanter" }) {
-            let date = env.value(row: 1, col: 28).flatMap { Fmt.parse($0) }.flatMap { DateKey.fromExcelSerial($0) }
+            let date = env.value(row: 1, col: 28).flatMap { dateKey(from: $0) }
             var entries: [String: DayEntry] = [:]
             for r in 4...max(4, min(env.maxRow, 60)) {
                 guard let row = env.rows[r], let label = row[2], let id = itemID(for: label, items: items) else { continue }
-                func n(_ c: Int) -> Double? { row[c].flatMap { Fmt.parse($0) } }
+                func n(_ c: Int) -> Double? { env.number(row: r, col: c) }
                 var e = DayEntry(opening: n(3), incoming: n(4), transferIn: n(5), transferOut: n(6), closing: n(7))
                 if e.incoming == 0 { e.incoming = nil }
                 if e.transferIn == 0 { e.transferIn = nil }
@@ -155,7 +159,7 @@ public enum WorkbookImporter {
             for r in 1...max(1, env.maxRow) {
                 guard let row = env.rows[r], let code = row[27]?.trimmingCharacters(in: .whitespaces), SalesParser.isCode(code) else { continue }
                 lines.append(SaleLine(code: code, name: (row[28] ?? "").trimmingCharacters(in: .whitespaces),
-                                      qty: row[29].flatMap { Fmt.parseQuantity($0) } ?? 0))
+                                      qty: env.quantity(row: r, col: 29) ?? 0))
             }
             lines = SalesParser.mergeLines(lines)
             if let date, !(entries.isEmpty && lines.isEmpty) {
@@ -182,8 +186,8 @@ public enum WorkbookImporter {
 
     /// Excel hücresi: seri numarası ("46082") ya da metin tarih ("01.03.2026", "2026-03-01")
     static func dateKey(from cell: String) -> String? {
-        if let d = Fmt.parse(cell), let k = DateKey.fromExcelSerial(d) { return k }
         let t = cell.trimmingCharacters(in: .whitespaces)
+        if let d = Fmt.machine(t), let k = DateKey.fromExcelSerial(d) { return k }
         if t.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) != nil {
             let k = String(t.prefix(10)); return DateKey.isValid(k) ? k : nil
         }
@@ -243,7 +247,7 @@ enum PivotHistory {
         var sheet = ""
         var fields: [Field] = []
         private var inShared = false
-        func parse(_ d: Data) { let p = XMLParser(data: d); p.delegate = self; p.parse() }
+        func parse(_ d: Data) { let p = XMLParser(data: d); p.delegate = self; _ = p.parse() }
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes a: [String: String]) {
             switch name {
             case "worksheetSource": sheet = a["sheet"] ?? ""
@@ -265,7 +269,7 @@ enum PivotHistory {
         var rows: [Row] = []
         private var current: [Cell] = []
         init(fields: [Field]) { self.fields = fields }
-        func parse(_ d: Data) { let p = XMLParser(data: d); p.delegate = self; p.parse() }
+        func parse(_ d: Data) { let p = XMLParser(data: d); p.delegate = self; _ = p.parse() }
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes a: [String: String]) {
             switch name {
             case "r": current = []

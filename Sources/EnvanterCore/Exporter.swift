@@ -63,13 +63,44 @@ public enum Exporter {
         let rows: [[XlsxCell]] = engine.summary(from: from, to: to).map { r in
             [.text(label(r.item)), .number(Double(r.daysCounted)), .optNumber(r.firstOpening),
              .number(r.incoming), .number(r.transferIn), .number(r.transferOut),
-             .optNumber(r.lastClosing), .number(r.sold), .number(r.waste), .number(r.actual), .diff(r.diff)]
+             .optNumber(r.lastClosing), .number(r.sold), .number(r.waste), .number(r.actual), .diff(r.diff),
+             .diff(r.diffValue), .number(Double(r.shortageDays))]
         }
         return XlsxSheetData(
             name: "Özet",
             header: ["Ürün (\(DateKey.short(from)) – \(DateKey.short(to)))", "Sayılan Gün", "İlk Açılış", "Toplam Gelen",
                      "Gelen Transfer (+)", "Giden Transfer (-)", "Son Kapanış", "Toplam Satılan", "Toplam Zaiyat",
-                     "Toplam Fiili Tüketim", "Toplam Fark"],
-            rows: rows, widths: [32, 12, 11, 13, 14, 14, 11, 13, 13, 16, 13])
+                     "Toplam Fiili Tüketim", "Toplam Fark", "Fark Tutarı (₺)", "Fazla Çıkış Olan Gün"],
+            rows: rows, widths: [32, 12, 11, 13, 14, 14, 11, 13, 13, 16, 13, 14, 12])
+    }
+
+    // MARK: - Sipariş önerisi
+
+    public static func orderSheet(_ suggestions: [OrderSuggestion], date: String) -> XlsxSheetData {
+        let rows: [[XlsxCell]] = suggestions.map { s in
+            [.text(label(s.item)), .optNumber(s.stock), .text(s.stockDate.map(DateKey.short) ?? ""),
+             .number(s.dailyUsage), .optNumber(s.daysOfCover), .optNumber(s.item.minStock),
+             .number(s.target), .text(s.suggested > 0 ? "Sipariş ver" : "Yeterli"), .number(s.suggested), .optNumber(s.cost)]
+        }
+        return XlsxSheetData(
+            name: "Sipariş",
+            header: ["Ürün (\(DateKey.short(date)))", "Son Stok", "Sayım Tarihi", "Günlük Tüketim", "Kaç Gün Yeter",
+                     "Kritik Seviye", "Hedef Stok", "Durum", "Önerilen Sipariş", "Tutar (₺)"],
+            rows: rows, widths: [28, 11, 12, 13, 12, 12, 11, 11, 14, 12])
+    }
+
+    public static func orders(_ suggestions: [OrderSuggestion], date: String) -> Data {
+        XlsxWriter.build(sheets: [orderSheet(suggestions, date: date)])
+    }
+
+    /// Tedarikçiye (WhatsApp / e-posta) gönderilebilecek düz metin sipariş listesi.
+    public static func orderText(_ suggestions: [OrderSuggestion], date: String, branch: String) -> String {
+        let lines = suggestions.filter { $0.suggested > 0 }.map { s in
+            "• \(s.item.name): \(Fmt.number(s.suggested, maxFraction: s.item.isKg ? 1 : 0)) \(s.item.unit.lowercased())"
+        }
+        var head = "Sipariş listesi – \(DateKey.short(date))"
+        let b = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !b.isEmpty { head = "\(b) · " + head }
+        return lines.isEmpty ? head + "\nSipariş gerekmiyor." : ([head] + lines).joined(separator: "\n")
     }
 }

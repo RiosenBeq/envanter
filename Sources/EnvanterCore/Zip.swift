@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Compression)
 import Compression
+#endif
 
 public enum ZipError: Error, LocalizedError {
     case notAZip, corrupt(String), unsupported(String), missing(String)
@@ -20,6 +22,9 @@ public struct ZipReader {
     private var entries: [String: Entry] = [:]
 
     public var names: [String] { Array(entries.keys) }
+
+    /// Tek bir bölümün açılmış hali için üst sınır (bozuk / kötü niyetli dosyaya karşı)
+    static let maxEntrySize = 512 * 1024 * 1024
 
     public init(data: Data) throws {
         self.data = data
@@ -69,19 +74,31 @@ public struct ZipReader {
             return raw
         case 8:
             if e.size == 0 { return Data() }
-            var out = Data(count: e.size)
-            let written: Int = out.withUnsafeMutableBytes { dst in
-                raw.withUnsafeBytes { src in
-                    guard let d = dst.bindMemory(to: UInt8.self).baseAddress,
-                          let s = src.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                    return compression_decode_buffer(d, e.size, s, e.compSize, nil, COMPRESSION_ZLIB)
-                }
-            }
-            guard written == e.size else { throw ZipError.corrupt("\(name) açılamadı") }
-            return out
+            guard e.size <= Self.maxEntrySize else { throw ZipError.unsupported("\(name) çok büyük") }
+            return try Self.inflate(raw, size: e.size, name: name)
         default:
             throw ZipError.unsupported("sıkıştırma yöntemi \(e.method)")
         }
+    }
+
+    private static func inflate(_ raw: Data, size: Int, name: String) throws -> Data {
+        #if canImport(Compression)
+        var out = Data(count: size)
+        let written: Int = out.withUnsafeMutableBytes { dst in
+            raw.withUnsafeBytes { src in
+                guard let d = dst.bindMemory(to: UInt8.self).baseAddress,
+                      let s = src.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+                return compression_decode_buffer(d, size, s, raw.count, nil, COMPRESSION_ZLIB)
+            }
+        }
+        guard written == size else { throw ZipError.corrupt("\(name) açılamadı") }
+        return out
+        #else
+        guard let out = try? Inflate.decompress(raw, expectedSize: size), out.count == size else {
+            throw ZipError.corrupt("\(name) açılamadı")
+        }
+        return out
+        #endif
     }
 
     static func u16(_ d: Data, _ o: Int) -> UInt16 {

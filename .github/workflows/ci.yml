@@ -53,7 +53,8 @@ jobs:
           export ENVANTER_DATE="$TODAY"
           export ENVANTER_SECTIONS="overview,daily,sales,summary,analytics:general,analytics:item,analytics:abc,analytics:menu,orders,recipes:11101,items,backup"
           export ENVANTER_QUIT_AFTER_SNAPSHOT=1
-          perl -e 'alarm 300; exec @ARGV' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
+          # exec { $ARGV[0] } liste biçimi: yol içindeki boşluk ("NextGen Envanter.app") kelimelere bölünmesin
+          perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
           ls -la "$RUNNER_TEMP/shots"
           test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 10
       - name: Ekran görüntülerini yükle

@@ -1,0 +1,114 @@
+[
+  {
+    "name": "only remote changed -> remote",
+    "base": {"a": 1, "b": 2},
+    "local": {"a": 1, "b": 2},
+    "remote": {"a": 1, "b": 3},
+    "expected": {"a": 1, "b": 3}
+  },
+  {
+    "name": "only local changed -> local",
+    "base": {"a": 1, "b": 2},
+    "local": {"a": 5, "b": 2},
+    "remote": {"a": 1, "b": 2},
+    "expected": {"a": 5, "b": 2}
+  },
+  {
+    "name": "different keys changed on both sides -> both kept",
+    "base": {"entries": {"g90": {"closing": 10}, "peynir": {"closing": 2}}},
+    "local": {"entries": {"g90": {"closing": 12}, "peynir": {"closing": 2}}},
+    "remote": {"entries": {"g90": {"closing": 10}, "peynir": {"closing": 3.5}}},
+    "expected": {"entries": {"g90": {"closing": 12}, "peynir": {"closing": 3.5}}}
+  },
+  {
+    "name": "same scalar changed on both sides -> local wins",
+    "base": {"note": "a"},
+    "local": {"note": "local"},
+    "remote": {"note": "remote"},
+    "expected": {"note": "local"}
+  },
+  {
+    "name": "key added remotely, another added locally",
+    "base": {"entries": {}},
+    "local": {"entries": {"g90": {"incoming": 100}}},
+    "remote": {"entries": {"g130": {"incoming": 50}}},
+    "expected": {"entries": {"g90": {"incoming": 100}, "g130": {"incoming": 50}}}
+  },
+  {
+    "name": "field removed locally, untouched remotely -> removed",
+    "base": {"note": "x", "countedBy": "Selin"},
+    "local": {"countedBy": "Selin"},
+    "remote": {"note": "x", "countedBy": "Selin"},
+    "expected": {"countedBy": "Selin"}
+  },
+  {
+    "name": "field removed remotely, changed locally -> local change kept",
+    "base": {"note": "x"},
+    "local": {"note": "y"},
+    "remote": {},
+    "expected": {"note": "y"}
+  },
+  {
+    "name": "no base (first sync): different keys merge, conflicts local",
+    "base": null,
+    "local": {"a": 1, "c": 3},
+    "remote": {"a": 2, "b": 2},
+    "expected": {"a": 1, "b": 2, "c": 3}
+  },
+  {
+    "name": "identity array: different elements edited",
+    "base": [{"id": "g90", "unitCost": 40}, {"id": "peynir", "unitCost": 400}],
+    "local": [{"id": "g90", "unitCost": 42}, {"id": "peynir", "unitCost": 400}],
+    "remote": [{"id": "g90", "unitCost": 40}, {"id": "peynir", "unitCost": 420}],
+    "expected": [{"id": "g90", "unitCost": 42}, {"id": "peynir", "unitCost": 420}]
+  },
+  {
+    "name": "identity array: remote addition appended after local order",
+    "base": [{"id": "a"}, {"id": "b"}],
+    "local": [{"id": "b"}, {"id": "a"}],
+    "remote": [{"id": "a"}, {"id": "b"}, {"id": "c", "name": "yeni"}],
+    "expected": [{"id": "b"}, {"id": "a"}, {"id": "c", "name": "yeni"}]
+  },
+  {
+    "name": "identity array: deleted locally, unchanged remotely -> deleted",
+    "base": [{"id": "a"}, {"id": "b"}],
+    "local": [{"id": "a"}],
+    "remote": [{"id": "a"}, {"id": "b"}],
+    "expected": [{"id": "a"}]
+  },
+  {
+    "name": "identity array: deleted remotely, unchanged locally -> deleted",
+    "base": [{"id": "a"}, {"id": "b", "x": 1}],
+    "local": [{"id": "a"}, {"id": "b", "x": 1}, {"id": "c"}],
+    "remote": [{"id": "a"}],
+    "expected": [{"id": "a"}, {"id": "c"}]
+  },
+  {
+    "name": "identity array keyed by code (products)",
+    "base": [{"code": "11101", "amounts": {"g90": 2}}],
+    "local": [{"code": "11101", "amounts": {"g90": 2, "peynir": 2}}],
+    "remote": [{"code": "11101", "amounts": {"g90": 2}, "note": "kontrol"}],
+    "expected": [{"code": "11101", "amounts": {"g90": 2, "peynir": 2}, "note": "kontrol"}]
+  },
+  {
+    "name": "plain array conflict -> local wins",
+    "base": {"staff": ["Ali"]},
+    "local": {"staff": ["Ali", "Veli"]},
+    "remote": {"staff": ["Ali", "Ayşe"]},
+    "expected": {"staff": ["Ali", "Veli"]}
+  },
+  {
+    "name": "numbers compare by value",
+    "base": {"a": 1.0},
+    "local": {"a": 1},
+    "remote": {"a": 2},
+    "expected": {"a": 2}
+  },
+  {
+    "name": "nested identity arrays inside objects (order lines)",
+    "base": [{"id": "o1", "status": "open", "lines": [{"itemID": "g90", "qty": 100}]}],
+    "local": [{"id": "o1", "status": "received", "lines": [{"itemID": "g90", "qty": 100}]}],
+    "remote": [{"id": "o1", "status": "open", "note": "acele", "lines": [{"itemID": "g90", "qty": 100}]}],
+    "expected": [{"id": "o1", "status": "received", "note": "acele", "lines": [{"itemID": "g90", "qty": 100}]}]
+  }
+]

@@ -23,12 +23,12 @@ Bir **çalışma alanı** (workspace) bir şube/işletmedir. Verisi `AppData`'n�
 | `day:YYYY-MM-DD` | o günün kaydı | `DayRecord` |
 
 - JSON biçimi Swift `JSONEncoder` çıktısıyla aynıdır (`Persistence.encoder()`): `nil` alanlar yazılmaz, tarihler (`salesImportedAt`) ISO 8601 (`2026-08-01T10:15:00Z`), sayılar ondalık.
-- Boşalan gün (`DayRecord.isEmpty`) silinir: `deleted = true`, `body = {}`.
+- Boşalan gün (`DayRecord.isEmpty` ve kilitli değil) silinir: `deleted = true`, `body = {}`. Katalog belgeleri (`items/products/settings/employees/orders`) silinmez.
 - Okurken bilinmeyen alanlar korunmalıdır (ileriki sürüm alanları kaybolmasın). Web istemcisi belgeleri değiştirirken yalnızca bildiği alanlara dokunur.
 
 ## 2. Supabase şeması
 
-Tablolar `public` şemasında `envanter_` önekiyle durur. Migration dosyası `envantersite/supabase/migrations/0001_envanter.sql`'dir ve Supabase SQL Editor'da bir kez çalıştırılır (idempotenttir).
+Tablolar `public` şemasında `envanter_` önekiyle durur. Migration dosyası `envantersite/supabase/migrations/20261009120000_envanter.sql`'dir. Supabase GitHub entegrasyonu bu dosyayı `main`'e birleştirmede `postgres` rolüyle, tek işlem (transaction) içinde otomatik uygular. Dosya idempotenttir; tekrar uygulanması zarar vermez.
 
 ```
 envanter_workspaces (id uuid PK, name text, created_at, created_by uuid)
@@ -60,7 +60,7 @@ Bir kullanıcı birden çok çalışma alanına (şubeye) üye olabilir. Patron 
 
 ### RPC'ler
 
-Hepsi `security definer` ve `set search_path = public` ile tanımlıdır. Çağıranı `auth.uid()` ile doğrular; yalnızca `authenticated` rolüne açıktır.
+Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdır. Çağıranı `auth.uid()` ile doğrular; yalnızca `authenticated` rolüne açıktır.
 
 - `envanter_create_workspace(p_name text) returns uuid` — Şube açar ve çağıranı owner yapar. Yalnızca hiç şube yokken (ilk kurulum) ya da çağıran en az bir şubede owner ise izin verilir.
 - `envanter_my_workspaces() returns table(id uuid, name text, role text)` — Önce `envanter_accept_invites()` çalışır.
@@ -77,6 +77,18 @@ Hepsi `security definer` ve `set search_path = public` ile tanımlıdır. Çağ�
 - `envanter_set_role(p_workspace uuid, p_user uuid, p_role text)` — Yalnızca owner. Son owner düşürülemez.
 - `envanter_remove_member(p_workspace uuid, p_user uuid)` — Yalnızca owner. Son owner silinemez.
 - `envanter_members_list(p_workspace uuid) returns table(user_id uuid, email text, role text, added_at timestamptz, pending boolean)` — Üyeler ve bekleyen davetler. Davetleri yalnızca owner görür.
+
+### Hata kodları ve sınır durumlar
+
+- Var olmayan belgeye sıfırdan farklı `p_base_rev` ile yazma: `ok = false`, `rev = 0`, `body = null`, `deleted = false` döner.
+- Başarılı yazma kaydedilen gövdeyi döner (silinmişse `{}`).
+- Yetki hatası: SQLSTATE `42501`, HTTP 403 (oturum yoksa 401).
+- Üye değil: `22023`, HTTP 400.
+- Son owner kuralı: `P0001`, HTTP 400.
+- Var olan üyeyi farklı rolle davet: `23505`, HTTP 409. Aynı rolle davet `'member'` döner.
+- `day:*` anahtarları gerçek takvim günü olmalıdır.
+- `p_client` 100, `p_summary` 500 karakterle kırpılır.
+- Kilitli ama başka verisi olmayan gün silinmez (Mac'teki `isEmpty && !isLocked` kuralı). `salesImportedAt` kesirli saniye içermez (`2026-08-01T10:15:00Z`), çünkü Mac'in ISO 8601 çözücüsü kesirli saniyeyi kabul etmez.
 
 ### Okuma ve canlı güncelleme
 

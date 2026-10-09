@@ -2,6 +2,12 @@ import SwiftUI
 import AppKit
 import EnvanterCore
 
+/// Yakalanmamış Objective-C istisnasının nedenini ve yığınını yazar (C işlev göstericisi olarak verilir)
+private func selfTestExceptionHandler(_ e: NSException) {
+    print("SELFTEST İSTİSNA: \(e.name.rawValue): \(e.reason ?? "")")
+    print(e.callStackSymbols.prefix(30).joined(separator: "\n"))
+}
+
 /// Uçtan uca sistem testi: ENVANTER_SELFTEST=1 ile açılınca uygulamanın gerçek AppStore'u üzerinden
 /// tipik bir iş gününü baştan sona oynatır, her adımı doğrular ve sonucu çıkış koduyla bildirir (0 = başarılı).
 /// Geçici bir veri klasörü kullanır; gerçek veriye dokunmaz. CI'da macOS üzerinde çalıştırılır.
@@ -17,8 +23,10 @@ enum SelfTest {
         // Çıktı boruya yönlendirildiğinde de satır satır görünsün (takılırsa nerede kaldığı anlaşılsın)
         setvbuf(stdout, nil, _IONBF, 0)
         print("SELFTEST başlıyor")
+        // AppKit yakalanmamış Objective-C istisnalarını sessizce yutar; testte nedenini görüp hemen düşelim
+        NSSetUncaughtExceptionHandler(selfTestExceptionHandler)
         Task { @MainActor in
-            run()
+            await run()
             print("SELFTEST: \(passed) kontrol geçti, \(failures.count) başarısız")
             for f in failures { print("SELFTEST BAŞARISIZ: \(f)") }
             fflush(stdout)
@@ -35,20 +43,18 @@ enum SelfTest {
         return abs(a - b) < eps
     }
 
-    static func run() {
+    /// Olay döngüsünün bir tur dönmesini bekler (geri alma grupları gerçek kullanımdaki gibi tur sonunda kapanır)
+    private static func settle() async {
+        try? await Task.sleep(nanoseconds: 80_000_000)
+    }
+
+    static func run() async {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("envanter-selftest-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let persistence = Persistence(directory: dir)
         let store = AppStore(persistence: persistence)
-        // Geri alma yöneticisi yalnızca 4. bölümde bağlanır; olay dışı (groupsByEvent = false) kullanımda
-        // her kayıt açık bir grupta olmalıdır.
-        let undo = UndoManager()
-        undo.groupsByEvent = false
-        func step(_ name: String, _ f: () -> Void) {
-            guard store.undoManager != nil else { f(); return }
-            undo.beginUndoGrouping(); f(); undo.endUndoGrouping()
-            undo.setActionName(name)
-        }
+        /// Adımın adı yalnızca okunabilirlik için
+        func step(_ name: String, _ f: () -> Void) { f() }
 
         print("1) Açılış ve varsayılanlar")
         check(store.data.items.count >= 20, "varsayılan stok kalemleri yüklendi")
@@ -81,14 +87,23 @@ enum SelfTest {
         check(near(store.data.days[d1]?.salesRevenue, 6860), "satış tutarı 6.860 ₺")
 
         print("4) Geri al / yinele")
+        // Pencerenin geri alma yöneticisi gibi: gruplar olay döngüsü turunun sonunda kendiliğinden kapanır
+        let undo = UndoManager()
         store.undoManager = undo
-        step("kapanış değişikliği") { store.entryBinding(item: "g90", date: d1, \.closing).wrappedValue = 110 }
+        await settle()
+        store.entryBinding(item: "g90", date: d1, \.closing).wrappedValue = 110
+        await settle()
         check(store.data.days[d1]?.entries["g90"]?.closing == 110, "kapanış 110 yapıldı")
+        check(undo.canUndo && undo.undoActionName == "Sayım Girişi", "Düzen menüsünde \"Sayım Girişi Geri Al\"")
         undo.undo()
+        await settle()
         check(store.data.days[d1]?.entries["g90"]?.closing == 120, "geri al: kapanış 120'ye döndü")
+        check(undo.canRedo, "yinele kullanılabilir")
         undo.redo()
+        await settle()
         check(store.data.days[d1]?.entries["g90"]?.closing == 110, "yinele: kapanış yeniden 110")
         undo.undo()
+        await settle()
         check(store.data.days[d1]?.entries["g90"]?.closing == 120, "tekrar geri al: 120")
         store.undoManager = nil
 

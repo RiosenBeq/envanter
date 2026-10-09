@@ -30,8 +30,9 @@ enum Brand {
     }
 }
 
+/// Günlük tablodaki hücre: satır kalem kimliğiyle tutulur (filtreyle satırlar kaysa da odak doğru kaleme gider)
 struct CellID: Hashable {
-    var row: Int
+    var item: String
     var col: Int
 }
 
@@ -163,7 +164,8 @@ struct DateNavigator: View {
 /// Odak kaybında ve hücre ekrandan kalkarken (ör. gün değiştirilince) yazılan değer kaydedilir.
 struct NumberCell: View {
     let id: CellID
-    let rowCount: Int
+    /// Görünen satırların kalem sırası (↑/↓/Enter ile geçiş için)
+    let order: [String]
     @Binding var value: Double?
     var placeholder: String = ""
     var maxFraction: Int = 3
@@ -216,8 +218,9 @@ struct NumberCell: View {
     }
 
     private func move(_ delta: Int) {
-        let next = id.row + delta
-        focus = (next >= 0 && next < rowCount) ? CellID(row: next, col: id.col) : (delta > 0 ? nil : focus)
+        guard let i = order.firstIndex(of: id.item) else { focus = nil; return }
+        let next = i + delta
+        focus = (next >= 0 && next < order.count) ? CellID(item: order[next], col: id.col) : (delta > 0 ? nil : focus)
     }
 
     private func commit() {

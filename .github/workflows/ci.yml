@@ -1,9 +1,9 @@
 name: CI
 
+# Dal gönderimleri PR'larda da durum olarak görünür; ayrıca pull_request tetikleyicisi çift çalışma yaratırdı.
 on:
   push:
     branches: ["main", "claude/**"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:

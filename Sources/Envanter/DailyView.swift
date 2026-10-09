@@ -48,11 +48,12 @@ struct DailyView: View {
                                title: filter == .uncounted ? "Tüm kalemler sayıldı" : "Bu filtrede kalem yok",
                                message: filter == .problems ? "Tolerans dışı fark veya kritik seviye altında stok yok." : "Filtreyi \"Tümü\" yaparak bütün kalemleri görebilirsiniz.")
             } else {
+                let order = rows.map { $0.itemID }
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element.itemID) { idx, calc in
                             if let item = store.engine.itemsByID[calc.itemID] {
-                                DailyRow(index: idx, rowCount: rows.count, calc: calc, item: item, date: date,
+                                DailyRow(order: order, calc: calc, item: item, date: date,
                                          focus: $focus, detail: $detailItem)
                                     .background(idx % 2 == 0 ? Color.clear : Color.primary.opacity(0.03))
                             }
@@ -200,6 +201,7 @@ struct DailyView: View {
 
 private struct DayNotePopover: View {
     @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
     let date: String
     @State private var note = ""
     @State private var countedBy = ""
@@ -225,7 +227,7 @@ private struct DayNotePopover: View {
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Kaydet") { save() }.keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                Button("Kaydet") { save(); dismiss() }.keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
             }
         }
         .padding(16)
@@ -246,8 +248,7 @@ private struct DayNotePopover: View {
 
 private struct DailyRow: View {
     @EnvironmentObject var store: AppStore
-    let index: Int
-    let rowCount: Int
+    let order: [String]
     let calc: ItemCalc
     let item: Item
     let date: String
@@ -292,7 +293,7 @@ private struct DailyRow: View {
     }
 
     private func cell(_ col: Int, _ kp: WritableKeyPath<DayEntry, Double?>, placeholder: String = "") -> some View {
-        NumberCell(id: CellID(row: index, col: col), rowCount: rowCount,
+        NumberCell(id: CellID(item: item.id, col: col), order: order,
                    value: store.entryBinding(item: item.id, date: date, kp),
                    placeholder: placeholder, maxFraction: item.maxFraction, focus: $focus)
             .frame(width: W.input + 8)

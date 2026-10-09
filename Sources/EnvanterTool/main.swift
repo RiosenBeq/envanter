@@ -6,6 +6,7 @@ import EnvanterCore
 //   EnvanterTool import-excel <dosya.xlsm> [--overwrite] [--dry-run]
 //   EnvanterTool export-excel <çıktı.xlsx> [--from GG.AA.YYYY|yyyy-MM-dd] [--to …]
 //   EnvanterTool orders [--date …] [--days 14] [--cover 3]    Sipariş önerisini yazdırır
+//   EnvanterTool demo --data-dir KLASÖR [--date …] [--days 35] Eğitim/tanıtım için örnek veri kurar
 // Tüm komutlar --data-dir KLASÖR ile başka bir veri klasörüne yönlendirilebilir.
 
 func fail(_ msg: String) -> Never {
@@ -18,6 +19,7 @@ let usage = """
       EnvanterTool import-excel <dosya.xlsm> [--overwrite] [--dry-run]
       EnvanterTool export-excel <çıktı.xlsx> [--from TARİH] [--to TARİH]
       EnvanterTool orders [--date TARİH] [--days 14] [--cover 3]
+      EnvanterTool demo --data-dir KLASÖR [--date TARİH] [--days 35]
     Ortak seçenek: --data-dir KLASÖR
     """
 
@@ -48,7 +50,23 @@ func dateArg(_ raw: String?) -> String? {
     fail("Tarih anlaşılamadı: \(raw)")
 }
 
-let dataDir = option("--data-dir").map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Persistence.defaultDirectory()
+let explicitDataDir = option("--data-dir")
+let dataDir = explicitDataDir.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Persistence.defaultDirectory()
+
+// Demo verisi gerçek veri klasörüne asla yazılmaz
+if command == "demo" {
+    guard explicitDataDir != nil else { fail("demo komutu için --data-dir KLASÖR zorunludur (gerçek verinin üzerine yazmamak için).") }
+    let p = Persistence(directory: dataDir)
+    guard case .fresh = p.load() else { fail("\(dataDir.path) içinde zaten veri var; boş bir klasör seçin.") }
+    let end = dateArg(option("--date")) ?? DateKey.today()
+    let days = option("--days").flatMap { Int($0) } ?? 35
+    let demo = DemoData.make(endingAt: end, days: max(7, min(days, 400)))
+    do { try p.save(demo) } catch { fail("Hata: \(error.localizedDescription)") }
+    print("Demo verisi kuruldu: \(dataDir.path) (\(days) gün, son gün \(DateKey.short(end)))")
+    print("Uygulamayı bu veriyle açmak için:")
+    print("  ENVANTER_DATA_DIR=\"\(dataDir.path)\" \"/Applications/NextGen Envanter.app/Contents/MacOS/Envanter\"")
+    exit(0)
+}
 let persistence = Persistence(directory: dataDir)
 var data: AppData
 switch persistence.load() {

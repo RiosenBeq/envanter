@@ -281,7 +281,7 @@ final class FeatureTests: XCTestCase {
 
     func testSeverityWithoutTolerance() {
         let kg = Item(id: "a", name: "A", unit: "Kg", recipeUnit: "kg", factor: 1)
-        XCTAssertEqual(kg.severity(of: 0.0004), .none)
+        XCTAssertEqual(kg.severity(of: 0.0004), .zero)
         XCTAssertEqual(kg.severity(of: -0.002), .shortage)
         XCTAssertEqual(kg.severity(of: 0.002), .surplus)
         let adet = Item(id: "b", name: "B", unit: "Adet", recipeUnit: "adet", factor: 1, tolerance: 2)
@@ -351,7 +351,7 @@ final class FeatureTests: XCTestCase {
         data.days["2026-08-01"] = DayRecord(date: "2026-08-01", entries: ["g90": DayEntry(opening: 100, closing: 80)])
         let e = Engine(data: data)
         let sheets = try XlsxReader.read(data: Exporter.history(engine: e, from: "2026-08-01", to: "2026-08-31"))
-        XCTAssertEqual(sheets.map { $0.name }, ["Alımlar", "Özet"])
+        XCTAssertEqual(sheets.map { $0.name }, ["Alımlar", "Özet", "Günlük Maliyet"])
         XCTAssertEqual(sheets[1].value(row: 1, col: 12), "Fark Tutarı (₺)")
         let orders = try XlsxReader.read(data: Exporter.orders(e.orderSuggestions(asOf: "2026-08-01", lookbackDays: 7, coverDays: 3), date: "2026-08-01"))
         XCTAssertEqual(orders[0].name, "Sipariş")
@@ -392,6 +392,196 @@ final class FeatureTests: XCTestCase {
         XCTAssertEqual(d2.legacySold?["g90"], 18)
         XCTAssertEqual(d2.legacyWaste?["g90"], 1)
         XCTAssertEqual(imp.days["2026-08-01"]?.entries["peynir"]?.closing, 6.5)
+    }
+}
+
+// MARK: - İstatistikler
+
+final class AnalyticsTests: XCTestCase {
+    /// 90 gr: 10 ₺/adet, ekmek: 2 ₺/adet, peynir: 200 ₺/kg
+    func costedData() -> AppData {
+        var data = AppData.seeded()
+        for (id, cost) in [("g90", 10.0), ("ekmekSusamli", 2.0), ("peynir", 200.0)] {
+            data.items[data.items.firstIndex { $0.id == id }!].unitCost = cost
+        }
+        return data
+    }
+
+    func testRevenueParsing() throws {
+        let text = "Kodu\tÜrün Tipi\tAdedi\tTutar\n11100\tMEDIUM BURGER\t10\t1.500,50\n11100\tMEDIUM BURGER\t2\t300\n11103\tCHEESE\t5\n"
+        let r = SalesParser.parse(text: text, sourceName: "x")
+        XCTAssertEqual(r.lines[0].qty, 12)
+        XCTAssertEqual(r.lines[0].amount!, 1800.5, accuracy: 1e-9)
+        XCTAssertNil(r.lines[1].amount)
+        XCTAssertEqual(r.totalAmount!, 1800.5, accuracy: 1e-9)
+
+        // .xlsx: "Tutar" sütunu (F) okunur
+        let url = Bundle.module.url(forResource: "Fixtures/deflated_report", withExtension: "xlsx")!
+        let x = try SalesParser.parse(fileURL: url)
+        XCTAssertEqual(x.lines.first { $0.code == "11100" }?.amount, 516603.5)
+        XCTAssertNil(x.lines.first { $0.code == "11152" }?.amount)
+    }
+
+    func testRecipeCostAndPrice() {
+        var data = costedData()
+        data.days["2026-08-01"] = DayRecord(date: "2026-08-01", sales: [SaleLine(code: "11103", name: "MEDIUM CHEESE BURGER", qty: 4, amount: 600)])
+        let e = Engine(data: data)
+        // 11103: 1 × 90 gr (10) + 1 dilim peynir (0,014 kg × 200 = 2,8) + 1 ekmek (2) = 14,8
+        let rc = e.recipeCost(e.productsByCode["11103"]!)
+        XCTAssertEqual(rc.cost, 14.8, accuracy: 1e-9)
+        XCTAssertTrue(rc.isComplete)
+        // 11104 kasap: füme maliyeti yok -> eksik
+        let kasap = e.recipeCost(e.productsByCode["11104"]!)
+        XCTAssertFalse(kasap.isComplete)
+        XCTAssertEqual(kasap.missing, ["Dana Füme"])
+        XCTAssertEqual(e.lastUnitPrice(code: "11103")?.price, 150)
+        XCTAssertNil(e.lastUnitPrice(code: "11100"))
+    }
+
+    func testPeriodStatsAndFoodCost() {
+        var data = costedData()
+        // Gün 1: 10 medium burger (90 gr + ekmek), ciro 1500. Sayım: 90 gr 2 adet fazla çıkmış.
+        data.days["2026-08-01"] = DayRecord(date: "2026-08-01",
+                                            entries: ["g90": DayEntry(opening: 100, incoming: 20, closing: 88)],
+                                            sales: [SaleLine(code: "11100", name: "MEDIUM BURGER", qty: 10, amount: 1500),
+                                                    SaleLine(code: "17001", name: "ZAYİ 100 GR KÖFTE", qty: 1)])
+        // Gün 2: satış var, sayım yok
+        data.days["2026-08-02"] = DayRecord(date: "2026-08-02", sales: [SaleLine(code: "11100", name: "MEDIUM BURGER", qty: 5, amount: 750)])
+        let e = Engine(data: data)
+        let d1 = e.dailyStat(date: "2026-08-01")
+        // teorik: 90 gr (10 satış + 1 zayi) × 10 = 110, ekmek 10 × 2 = 20 -> 130
+        XCTAssertEqual(d1.theoreticalCost, 130, accuracy: 1e-9)
+        XCTAssertEqual(d1.wasteCost, 10, accuracy: 1e-9)
+        // fiili 90 gr: 100 + 20 − 88 = 32; beklenen 11 -> fark −21 adet × 10 = −210
+        XCTAssertEqual(d1.netValue, -210, accuracy: 1e-9)
+        XCTAssertEqual(d1.lossValue, 210, accuracy: 1e-9)
+        XCTAssertEqual(d1.actualCost, 340, accuracy: 1e-9)
+        XCTAssertTrue(d1.hasRevenue)
+
+        let p = e.periodStats(from: "2026-08-01", to: "2026-08-31")
+        XCTAssertEqual(p.revenue, 2250, accuracy: 1e-9)
+        XCTAssertEqual(p.revenueDays, 2)
+        XCTAssertEqual(p.theoreticalCost, 130 + 60, accuracy: 1e-9)
+        XCTAssertEqual(p.actualCost, 340 + 60, accuracy: 1e-9)
+        XCTAssertEqual(p.theoreticalCostPct!, 190.0 / 2250, accuracy: 1e-9)
+        XCTAssertEqual(p.actualCostPct!, 400.0 / 2250, accuracy: 1e-9)
+        XCTAssertEqual(p.incomingValue, 200, accuracy: 1e-9)
+        XCTAssertEqual(p.countedDays, 1)
+        XCTAssertEqual(p.salesDays, 2)
+        XCTAssertEqual(p.costedItems, 3)
+    }
+
+    func testItemSeriesAndStockValue() {
+        var data = costedData()
+        data.days["2026-08-01"] = DayRecord(date: "2026-08-01", entries: ["g90": DayEntry(opening: 100, closing: 90)],
+                                            sales: [SaleLine(code: "11100", name: "M", qty: 8)])
+        data.days["2026-08-02"] = DayRecord(date: "2026-08-02", sales: [SaleLine(code: "11100", name: "M", qty: 3)])
+        data.days["2026-08-03"] = DayRecord(date: "2026-08-03", entries: ["peynir": DayEntry(closing: 2)])
+        let e = Engine(data: data)
+        let s = e.itemSeries(itemID: "g90", from: "2026-08-01", to: "2026-08-31")
+        XCTAssertEqual(s.map { $0.date }, ["2026-08-01", "2026-08-02", "2026-08-03"])
+        XCTAssertEqual(s[0].expected, 8)
+        XCTAssertEqual(s[0].actual, 10)
+        XCTAssertEqual(s[0].diff, -2)
+        XCTAssertNil(s[1].actual)
+        // 90 gr: 90 × 10 + peynir 2 × 200 = 1300
+        let v = e.stockValue(asOf: "2026-08-03")
+        XCTAssertEqual(v.value, 1300, accuracy: 1e-9)
+        XCTAssertEqual(v.costedItems, 2)
+        XCTAssertEqual(e.stockValue(asOf: "2026-08-02").value, 900, accuracy: 1e-9)
+    }
+
+    func testABCAnalysis() {
+        var data = costedData()
+        // Tüketim değerleri: 90 gr 80 × 10 = 800, peynir 0,5 kg × 200 = 100, ekmek 10 × 2 = 20 (toplam 920)
+        data.days["2026-08-01"] = DayRecord(date: "2026-08-01", entries: [
+            "g90": DayEntry(opening: 100, closing: 20),
+            "peynir": DayEntry(opening: 1, closing: 0.5),
+            "ekmekSusamli": DayEntry(opening: 20, closing: 10),
+        ])
+        let rows = Engine(data: data).abcAnalysis(from: "2026-08-01", to: "2026-08-01")
+        XCTAssertEqual(rows.map { $0.item.id }, ["g90", "peynir", "ekmekSusamli"])
+        XCTAssertEqual(rows[0].share, 800.0 / 920, accuracy: 1e-9)
+        XCTAssertEqual(rows.map { $0.klass }, [.a, .b, .c])
+        XCTAssertEqual(rows.last!.cumulativeShare, 1, accuracy: 1e-9)
+        XCTAssertTrue(Engine(data: AppData.seeded()).abcAnalysis(from: "2026-08-01", to: "2026-08-01").isEmpty)
+    }
+
+    func testMenuEngineering() {
+        var data = costedData()
+        // Hepsi tam maliyetli ürünler: 11100 medium (90 gr + ekmek = 12), 11103 cheese (14,8), 11102 triblex (3×10 + 3×2,8 + 2 = 40,4)
+        data.days["2026-08-01"] = DayRecord(date: "2026-08-01", sales: [
+            SaleLine(code: "11100", name: "MEDIUM", qty: 100, amount: 100 * 100),     // fiyat 100, kâr 88  -> popüler, kârlı
+            SaleLine(code: "11103", name: "CHEESE", qty: 90, amount: 90 * 40),        // fiyat 40, kâr 25,2 -> popüler, kârsız
+            SaleLine(code: "11102", name: "TRIBLEX", qty: 5, amount: 5 * 200),        // fiyat 200, kâr 159,6 -> az, kârlı
+            SaleLine(code: "13001", name: "KOLA", qty: 300, amount: 300 * 30),        // reçetesiz -> dahil değil
+        ])
+        let stats = Engine(data: data).menuEngineering(from: "2026-08-01", to: "2026-08-31")
+        let by = Dictionary(uniqueKeysWithValues: stats.map { ($0.product.code, $0) })
+        XCTAssertNil(by["13001"])
+        XCTAssertEqual(by["11100"]!.unitPrice, 100, accuracy: 1e-9)
+        XCTAssertEqual(by["11100"]!.unitCost!, 12, accuracy: 1e-9)
+        XCTAssertEqual(by["11100"]!.foodCostPct!, 0.12, accuracy: 1e-9)
+        XCTAssertEqual(by["11100"]!.klass, .star)
+        XCTAssertEqual(by["11103"]!.klass, .plowhorse)
+        XCTAssertEqual(by["11102"]!.klass, .puzzle)
+        XCTAssertEqual(stats.first?.product.code, "11100", "ciroya göre sıralı")
+    }
+
+    func testCountSheetAndDailyStatsExport() throws {
+        var data = costedData()
+        data.days["2026-08-01"] = DayRecord(date: "2026-08-01", entries: ["g90": DayEntry(opening: 100, incoming: 5, closing: 80)],
+                                            note: "deneme", countedBy: "Ali")
+        let e = Engine(data: data)
+        let form = try XlsxReader.read(data: Exporter.countSheet(engine: e, date: "2026-08-02", branch: "Kadıköy"))
+        XCTAssertEqual(form[0].name, "Sayım Formu")
+        XCTAssertEqual(form[0].value(row: 1, col: 1), "Kadıköy · Sayım 02.08.2026")
+        XCTAssertEqual(form[0].value(row: 2, col: 1), "90 Gr")
+        XCTAssertEqual(form[0].number(row: 2, col: 3), 80, "açılış = önceki kapanış")
+        XCTAssertNil(form[0].value(row: 2, col: 7), "kapanış boş")
+
+        let hist = try XlsxReader.read(data: Exporter.history(engine: e, from: "2026-08-01", to: "2026-08-31"))
+        XCTAssertEqual(hist.map { $0.name }, ["Alımlar", "Özet", "Günlük Maliyet", "Notlar"])
+        XCTAssertEqual(hist[3].value(row: 2, col: 2), "Ali")
+        XCTAssertEqual(hist[3].value(row: 2, col: 4), "deneme")
+    }
+}
+
+final class DemoDataTests: XCTestCase {
+    func testDemoDataIsConsistentAndRich() throws {
+        let data = DemoData.make(endingAt: "2026-08-31", days: 35)
+        XCTAssertEqual(data.days.count, 35)
+        XCTAssertEqual(data.days.keys.min(), "2026-07-28")
+        // Kaydedilip geri okunabilmeli
+        let back = try Persistence.decode(try Persistence.encoder().encode(data))
+        XCTAssertEqual(back.days.count, 35)
+
+        let e = Engine(data: data)
+        let last = e.overview(date: "2026-08-31")
+        XCTAssertGreaterThan(last.countedItems, 0)
+        XCTAssertLessThan(last.countedItems, last.itemCount, "son gün sayımı yarım")
+        XCTAssertEqual(last.unknownLines, 2)
+        XCTAssertFalse(last.isLocked)
+        XCTAssertTrue(e.overview(date: "2026-08-20").isLocked)
+
+        let p = e.periodStats(from: "2026-08-01", to: "2026-08-31")
+        XCTAssertGreaterThan(p.revenue, 0)
+        XCTAssertGreaterThan(p.actualCost, p.theoreticalCost, "demo verisinde fire var")
+        let pct = try XCTUnwrap(p.actualCostPct)
+        XCTAssertTrue((0.15...0.6).contains(pct), "makul maliyet oranı: \(pct)")
+        XCTAssertGreaterThan(p.lossValue, 0)
+        XCTAssertGreaterThan(p.wasteCost, 0)
+        XCTAssertFalse(e.abcAnalysis(from: "2026-08-01", to: "2026-08-31").isEmpty)
+        let menu = e.menuEngineering(from: "2026-08-01", to: "2026-08-31")
+        XCTAssertGreaterThan(menu.filter { $0.klass != nil }.count, 5)
+        XCTAssertEqual(Set(menu.compactMap { $0.klass }).count, 4, "dört sınıf da görünmeli")
+        // Özet özdeşliği korunur
+        for r in e.summary(from: "2026-08-01", to: "2026-08-31") where r.daysCounted > 0 {
+            XCTAssertEqual(r.diff, r.sold + r.waste - r.actual, accuracy: 1e-6, r.item.name)
+        }
+        // Stok değeri ve sipariş önerisi
+        XCTAssertGreaterThan(e.stockValue(asOf: "2026-08-31").value, 0)
+        XCTAssertFalse(e.orderSuggestions(asOf: "2026-08-31", lookbackDays: 14, coverDays: 3).filter { $0.suggested > 0 }.isEmpty)
     }
 }
 

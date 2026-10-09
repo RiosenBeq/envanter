@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-core:
+    name: Çekirdek testleri (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.0-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Derle
+        run: swift build
+      - name: Testler
+        run: swift test
+
+  macos:
+    name: Uygulama, testler ve ekran görüntüleri (macOS)
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Araç sürümleri
+        run: swift --version && sw_vers
+      - name: Derle (uygulama dahil)
+        run: swift build
+      - name: Testler
+        run: swift test
+      - name: Uygulama paketi (.app + .zip)
+        run: ./Scripts/build_app.sh
+      - name: Dağıtım paketini yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextGen-Envanter
+          path: build/NextGen-Envanter-*.zip
+
+      - name: Demo verisiyle ekran görüntüleri
+        run: |
+          APP="build/NextGen Envanter.app/Contents/MacOS"
+          TODAY=$(date +%Y-%m-%d)
+          "$APP/EnvanterTool" demo --data-dir "$RUNNER_TEMP/demo" --date "$TODAY"
+          export ENVANTER_DATA_DIR="$RUNNER_TEMP/demo"
+          export ENVANTER_SNAPSHOT_DIR="$RUNNER_TEMP/shots"
+          export ENVANTER_DATE="$TODAY"
+          export ENVANTER_SECTIONS="overview,daily,sales,summary,analytics:general,analytics:item,analytics:abc,analytics:menu,orders,recipes:11101,items,backup"
+          export ENVANTER_QUIT_AFTER_SNAPSHOT=1
+          perl -e 'alarm 300; exec @ARGV' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
+          ls -la "$RUNNER_TEMP/shots"
+          test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 10
+      - name: Ekran görüntülerini yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekran-goruntuleri
+          path: ${{ runner.temp }}/shots/*.png
+      - name: Ekran görüntülerini dala işle (yalnızca claude/* dalları)
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'claude/')
+        run: |
+          mkdir -p docs/screenshots
+          rm -f docs/screenshots/*.png
+          cp "$RUNNER_TEMP"/shots/*.png docs/screenshots/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then echo "Değişiklik yok"; exit 0; fi
+          git commit -m "Ekran görüntüleri: demo verisiyle otomatik ($GITHUB_SHA)"
+          git pull --rebase origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || echo "Dal ilerlemiş; görüntüler artifact olarak yüklendi."

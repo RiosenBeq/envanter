@@ -2,9 +2,50 @@ import SwiftUI
 import Charts
 import EnvanterCore
 
-private enum RangePreset: String, CaseIterable, Identifiable {
-    case last7 = "Son 7 gün", thisMonth = "Bu ay", lastMonth = "Geçen ay", all = "Tümü", custom = "Özel"
+enum RangePreset: String, CaseIterable, Identifiable {
+    case last7 = "Son 7 gün", last30 = "Son 30 gün", thisMonth = "Bu ay", lastMonth = "Geçen ay", all = "Tümü", custom = "Özel"
     var id: String { rawValue }
+
+    /// Ön tanımlı aralık (Özel için nil)
+    func range(today: String, dataDates: [String]) -> (from: String, to: String)? {
+        switch self {
+        case .last7: return (DateKey.addDays(-6, to: today), today)
+        case .last30: return (DateKey.addDays(-29, to: today), today)
+        case .thisMonth: return (DateKey.startOfMonth(today), DateKey.endOfMonth(today))
+        case .lastMonth:
+            let f = DateKey.startOfPreviousMonth(today)
+            return (f, DateKey.endOfMonth(f))
+        case .all: return (dataDates.first ?? today, dataDates.last ?? today)
+        case .custom: return nil
+        }
+    }
+}
+
+/// Dönem seçici (Özet ve İstatistikler ekranlarında ortak)
+struct RangePicker: View {
+    @EnvironmentObject var store: AppStore
+    @Binding var preset: RangePreset
+    @Binding var from: String
+    @Binding var to: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Picker("", selection: $preset) {
+                ForEach(RangePreset.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .labelsHidden().frame(width: 130)
+            DatePicker("", selection: bind({ from }, { from = $0 }), displayedComponents: .date).labelsHidden()
+            Text("–")
+            DatePicker("", selection: bind({ to }, { to = $0 }), displayedComponents: .date).labelsHidden()
+        }
+        .onChange(of: preset) { _, p in
+            if let r = p.range(today: DateKey.today(), dataDates: store.engine.datesWithData) { from = r.from; to = r.to }
+        }
+    }
+
+    private func bind(_ get: @escaping () -> String, _ set: @escaping (String) -> Void) -> Binding<Date> {
+        Binding(get: { DateKey.date(from: get()) ?? Date() }, set: { set(DateKey.string(from: $0)); preset = .custom })
+    }
 }
 
 struct SummaryView: View {
@@ -13,21 +54,20 @@ struct SummaryView: View {
     @State private var from = DateKey.startOfMonth(DateKey.today())
     @State private var to = DateKey.endOfMonth(DateKey.today())
     @State private var selected: String?
-
-    private func bind(_ get: @escaping () -> String, _ set: @escaping (String) -> Void) -> Binding<Date> {
-        Binding(get: { DateKey.date(from: get()) ?? Date() }, set: { set(DateKey.string(from: $0)); preset = .custom })
-    }
+    @State private var onlyProblems = false
 
     var body: some View {
-        let rows = store.engine.summary(from: from, to: to)
+        let all = store.engine.summary(from: from, to: to)
+        let rows = onlyProblems ? all.filter { $0.daysCounted > 0 && $0.severity.isProblem } : all
         let daysInRange = store.engine.datesWithData.filter { $0 >= from && $0 <= to }.count
         VStack(spacing: 0) {
             controls(daysInRange: daysInRange)
             Divider()
-            if rows.allSatisfy({ $0.daysCounted == 0 }) {
+            if all.allSatisfy({ $0.daysCounted == 0 }) {
                 EmptyStateView(icon: "chart.bar.xaxis", title: "Bu dönemde sayılmış gün yok",
                                message: "Özet, kapanış sayımı girilmiş günlerden hesaplanır. Günlük Envanter ekranında sayımları girin ya da tarih aralığını değiştirin.")
             } else {
+                kpis(all)
                 header
                 Divider()
                 ScrollView {
@@ -39,30 +79,23 @@ struct SummaryView: View {
                         }
                     }
                 }
-                if let sel = rows.first(where: { $0.id == selected }) {
-                    Divider()
+                Divider()
+                if let sel = all.first(where: { $0.id == selected }) {
                     chart(sel)
                 } else {
-                    Divider()
                     Text("Günlük farkı görmek için bir satıra tıklayın.")
                         .font(.callout).foregroundStyle(.secondary).padding(10)
                 }
             }
         }
         .navigationTitle("Özet ve Raporlar")
-        .onChange(of: preset) { _, p in apply(p) }
     }
 
     private func controls(daysInRange: Int) -> some View {
         HStack(spacing: 14) {
-            Picker("", selection: $preset) {
-                ForEach(RangePreset.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 360)
-            DatePicker("", selection: bind({ from }, { from = $0 }), displayedComponents: .date).labelsHidden()
-            Text("–")
-            DatePicker("", selection: bind({ to }, { to = $0 }), displayedComponents: .date).labelsHidden()
+            RangePicker(preset: $preset, from: $from, to: $to)
             Text("\(daysInRange) günlük kayıt").foregroundStyle(.secondary)
+            Toggle("Yalnızca sorunlu kalemler", isOn: $onlyProblems)
             Spacer()
             Button { store.exportHistoryExcel(from: from, to: to) } label: {
                 Label("Excel'e Aktar", systemImage: "square.and.arrow.up")
@@ -71,27 +104,37 @@ struct SummaryView: View {
         .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
-    private func apply(_ p: RangePreset) {
-        let today = DateKey.today()
-        switch p {
-        case .last7: from = DateKey.addDays(-6, to: today); to = today
-        case .thisMonth: from = DateKey.startOfMonth(today); to = DateKey.endOfMonth(today)
-        case .lastMonth:
-            from = DateKey.startOfPreviousMonth(today); to = DateKey.endOfMonth(from)
-        case .all:
-            let d = store.engine.datesWithData
-            from = d.first ?? today; to = d.last ?? today
-        case .custom: break
+    private func kpis(_ rows: [Engine.SummaryRow]) -> some View {
+        let counted = rows.filter { $0.daysCounted > 0 }
+        let problems = counted.filter { $0.severity.isProblem }.count
+        let loss = counted.compactMap { r -> Double? in
+            guard let v = r.diffValue, r.severity == .shortage else { return nil }
+            return -v
+        }.reduce(0, +)
+        let net = counted.compactMap { $0.diffValue }.reduce(0, +)
+        let worst = counted.filter { $0.severity == .shortage }.min { ($0.diffValue ?? 0) < ($1.diffValue ?? 0) }
+        let hasCosts = counted.contains { $0.diffValue != nil }
+        return HStack(spacing: 12) {
+            StatCard(title: "Sayılan kalem", value: "\(counted.count) / \(rows.count)", icon: "checklist", color: Brand.accent)
+            StatCard(title: "Sorunlu kalem", value: "\(problems)", detail: "Dönem toplamında tolerans dışı",
+                     icon: "exclamationmark.triangle", color: problems == 0 ? Brand.ok : Brand.negative)
+            StatCard(title: "Dönem kaybı", value: hasCosts ? Fmt.money(loss) : "—",
+                     detail: hasCosts ? "Net fark: \(Fmt.money(net))" : "Birim maliyet tanımlı değil",
+                     icon: "turkishlirasign.circle", color: loss > 0 ? Brand.negative : Brand.ok)
+            StatCard(title: "En büyük açık", value: worst?.item.name ?? "—",
+                     detail: worst.map { r in "\(Fmt.number(r.diff, maxFraction: r.item.maxFraction)) \(r.item.unit.lowercased())" + (r.diffValue.map { " · \(Fmt.money($0))" } ?? "") } ?? "Fazla çıkış yok",
+                     icon: "arrow.down.right.circle", color: Brand.negative)
         }
+        .padding(.horizontal, 20).padding(.vertical, 10)
     }
 
-    private let widths: [CGFloat] = [64, 90, 90, 100, 100, 90, 92, 92, 100, 100]
-    private let titles = ["Gün", "İlk Açılış", "Toplam Gelen", "Gelen Transfer (+)", "Giden Transfer (−)",
-                          "Son Kapanış", "Toplam Satılan", "Toplam Zaiyat", "Fiili Tüketim", "Toplam Fark"]
+    private let widths: [CGFloat] = [80, 80, 86, 84, 86, 80, 90, 92, 96]
+    private let titles = ["İlk Açılış", "Toplam Gelen", "Net Transfer", "Son Kapanış", "Toplam Satılan",
+                          "Toplam Zaiyat", "Fiili Tüketim", "Toplam Fark", "Fark Tutarı"]
 
     private var header: some View {
         HStack(spacing: 0) {
-            Text("Ürün").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
+            Text("Ürün").frame(minWidth: 130, maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
             ForEach(Array(titles.enumerated()), id: \.offset) { i, t in
                 Text(t).frame(width: widths[i])
             }
@@ -106,47 +149,58 @@ struct SummaryView: View {
         let counted = r.daysCounted > 0
         return HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(r.item.name).fontWeight(.medium)
-                Text(r.item.unit.lowercased()).font(.caption2).foregroundStyle(.secondary)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
-            cell("\(r.daysCounted)", 0)
-            cell(counted ? r.firstOpening.map(f) ?? "—" : "—", 1)
-            cell(counted ? f(r.incoming) : "—", 2)
-            cell(counted ? f(r.transferIn) : "—", 3)
-            cell(counted ? f(r.transferOut) : "—", 4)
-            cell(counted ? r.lastClosing.map(f) ?? "—" : "—", 5)
-            cell(counted ? f(r.sold) : "—", 6)
-            cell(counted ? f(r.waste) : "—", 7)
-            cell(counted ? f(r.actual) : "—", 8, bold: true)
+                Text(r.item.name).fontWeight(.medium).lineLimit(1)
+                Text("\(r.item.unit.lowercased()) · \(r.daysCounted) gün" + (r.shortageDays > 0 ? " · \(r.shortageDays) gün fazla çıkış" : ""))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }.frame(minWidth: 130, maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
+            cell(counted ? r.firstOpening.map(f) ?? "—" : "—", 0)
+            cell(counted ? f(r.incoming) : "—", 1)
+            cell(counted ? f(r.transferIn - r.transferOut) : "—", 2)
+                .help("Gelen transfer \(f(r.transferIn)) − giden transfer \(f(r.transferOut))")
+            cell(counted ? r.lastClosing.map(f) ?? "—" : "—", 3)
+            cell(counted ? f(r.sold) : "—", 4)
+            cell(counted ? f(r.waste) : "—", 5)
+            cell(counted ? f(r.actual) : "—", 6, bold: true)
             Group {
                 if counted {
-                    let zero = r.diff.isZero(maxFraction: r.item.maxFraction)
-                    let color = zero ? Brand.ok : (r.diff < 0 ? Brand.negative : Brand.positive)
-                    Text(zero ? "0" : f(r.diff)).monospacedDigit().fontWeight(.semibold)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
+                    let color = Brand.color(for: r.severity)
+                    Text(r.severity == .zero ? "0" : f(r.diff)).monospacedDigit().fontWeight(.semibold)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
                         .foregroundStyle(color).background(Capsule().fill(color.opacity(0.13)))
                 } else { Text("—").foregroundStyle(.tertiary) }
-            }.frame(width: widths[9])
+            }.frame(width: widths[7])
+            cell(counted ? (r.diffValue.map { Fmt.money($0) } ?? "—") : "—", 8)
         }
-        .frame(height: 38).padding(.trailing, 8)
+        .frame(height: 40).padding(.trailing, 8)
     }
 
     private func cell(_ text: String, _ i: Int, bold: Bool = false) -> some View {
         Text(text).monospacedDigit().fontWeight(bold ? .semibold : .regular)
+            .lineLimit(1).minimumScaleFactor(0.8)
             .foregroundStyle(text == "—" ? Color.secondary.opacity(0.5) : Color.primary)
             .frame(width: widths[i])
     }
 
     private func chart(_ r: Engine.SummaryRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("\(r.item.name) — günlük fark (\(r.item.unit.lowercased()))").font(.headline)
+            HStack {
+                Text("\(r.item.name) — günlük fark (\(r.item.unit.lowercased()))").font(.headline)
+                Spacer()
+                Button("Ayrıntılı analiz") { store.openItemAnalysis(r.item.id) }.buttonStyle(.link)
+            }
             Chart {
                 ForEach(r.daily, id: \.date) { d in
                     BarMark(x: .value("Gün", DateKey.date(from: d.date) ?? Date(), unit: .day),
                             y: .value("Fark", d.diff))
-                        .foregroundStyle(d.diff < 0 ? Brand.negative : Brand.positive)
+                        .foregroundStyle(Brand.color(for: r.item.severity(of: d.diff)))
                 }
                 RuleMark(y: .value("Sıfır", 0)).foregroundStyle(.secondary)
+                if let t = r.item.tolerance, t > 0 {
+                    RuleMark(y: .value("Tolerans", -t)).foregroundStyle(Brand.warn.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    RuleMark(y: .value("Tolerans", t)).foregroundStyle(Brand.warn.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
             }
             .frame(height: 150)
         }

@@ -15,16 +15,19 @@ struct EnvanterApp: App {
     @StateObject private var store = AppStore()
 
     var body: some Scene {
-        WindowGroup("Envanter") {
+        WindowGroup(Brand.appName) {
             ContentView()
                 .environmentObject(store)
                 .environment(\.locale, Locale(identifier: "tr_TR"))
-                .frame(minWidth: 1120, minHeight: 700)
+                .frame(minWidth: 1180, minHeight: 720)
                 .tint(Brand.accent)
                 .onAppear { DebugSnapshot.installIfRequested(store: store) }
         }
-        .defaultSize(width: 1400, height: 900)
+        .defaultSize(width: 1440, height: 920)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("\(Brand.appName) Hakkında") { showAbout() }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Satış Raporu İçe Aktar…") { store.section = .daily; store.pickAndImportFile() }
                     .keyboardShortcut("o")
@@ -33,12 +36,39 @@ struct EnvanterApp: App {
                 Divider()
                 Button("Günü Excel'e Aktar…") { store.exportDayExcel() }
                     .keyboardShortcut("e")
+                Button("Sayım Formu (Excel)…") { store.exportCountSheet() }
+                Button("Sipariş Listesini Kopyala") { store.copyOrderText(date: store.selectedDate) }
             }
             CommandMenu("Gün") {
                 Button("Önceki Gün") { store.shiftDay(-1) }.keyboardShortcut("[")
                 Button("Sonraki Gün") { store.shiftDay(1) }.keyboardShortcut("]")
                 Button("Bugün") { store.goToday() }.keyboardShortcut("t")
+                Divider()
+                Button(store.isLocked(store.selectedDate) ? "Gün Kilidini Aç" : "Günü Kapat") {
+                    store.setLocked(store.selectedDate, !store.isLocked(store.selectedDate))
+                }
+                .keyboardShortcut("l")
+            }
+            CommandMenu("Git") {
+                ForEach(AppSection.allCases) { s in
+                    if let key = s.shortcut {
+                        Button(s.title) { store.section = s }.keyboardShortcut(key, modifiers: .command)
+                    } else {
+                        Button(s.title) { store.section = s }
+                    }
+                }
             }
         }
+    }
+
+    private func showAbout() {
+        let credits = NSAttributedString(
+            string: "Restoran stok, fire ve maliyet takibi.\nModPos satış raporu + reçete motoru, sayım, sipariş önerisi ve istatistikler.\n\nVeri klasörü: \(store.persistence.directory.path)",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: Brand.appName,
+            .credits: credits,
+        ])
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

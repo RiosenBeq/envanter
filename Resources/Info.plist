@@ -5,16 +5,17 @@
     <key>CFBundleDevelopmentRegion</key><string>tr</string>
     <key>CFBundleExecutable</key><string>Envanter</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundleIdentifier</key><string>com.envanter.uygulama</string>
+    <key>CFBundleIdentifier</key><string>com.nextgen.envanter</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Envanter</string>
-    <key>CFBundleDisplayName</key><string>Envanter</string>
+    <key>CFBundleName</key><string>NextGen Envanter</string>
+    <key>CFBundleDisplayName</key><string>NextGen Envanter</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
-    <key>CFBundleLocalizations</key><array><string>tr</string><string>en</string></array>
+    <key>CFBundleShortVersionString</key><string>2.0</string>
+    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleLocalizations</key><array><string>tr</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.business</string>
+    <key>NSHumanReadableCopyright</key><string>Şirket içi kullanım içindir.</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>

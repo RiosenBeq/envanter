@@ -6,35 +6,52 @@ struct BackupView: View {
     @State private var restoreMessage: String?
 
     var body: some View {
-        let days = store.data.days.values.filter { !$0.isEmpty }.count
+        let days = store.engine.datesWithData.count
+        let backups = store.persistence.backups()
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Yedek ve Veri").font(.title2.weight(.semibold))
+                Text("Ayarlar ve Veri").font(.title2.weight(.semibold))
+
+                Card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("İşletme", systemImage: "building.2").font(.headline)
+                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+                            GridRow {
+                                Text("Şube / işletme adı").foregroundStyle(.secondary)
+                                CommitTextField(title: "ör. Kadıköy Şubesi", value: store.settingsBinding(\.branchName))
+                                    .frame(width: 320)
+                            }
+                            GridRow {
+                                Text("Sayım yapan personel").foregroundStyle(.secondary)
+                                CommitTextField(title: "Virgülle ayırın: Ahmet, Ayşe", value: Binding(
+                                    get: { store.settings.staff.joined(separator: ", ") },
+                                    set: { v in
+                                        let names = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                                        store.updateSettings("Personel Listesi") { $0.staff = names }
+                                    }))
+                                    .frame(width: 320)
+                            }
+                        }
+                        Text("Şube adı yan menüde, dışa aktarılan dosya adlarında ve sipariş listesinde görünür. Her şubede ayrı bir Mac kullanılıyorsa farklı ad verin.")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Verileriniz otomatik kaydedilir", systemImage: "checkmark.shield.fill")
                             .font(.headline).foregroundStyle(Brand.ok)
-                        Text("Her değişiklik anında diske yazılır ve her gün otomatik yedek alınır (son 30 gün saklanır). Veri dosyası uygulamanın içinde değil, aşağıdaki klasördedir; uygulamayı silseniz veya taşısanız bile verileriniz kaybolmaz.")
+                        Text("Her değişiklik birkaç saniye içinde diske yazılır, gün içinde düzenli aralıklarla otomatik yedek alınır (son \(Persistence.keptBackups) gün saklanır). Toplu aktarım ve geri yükleme öncesinde ayrıca anlık kopya alınır. Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alabilirsiniz.")
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         Text(store.persistence.directory.path).font(.callout.monospaced()).textSelection(.enabled)
                         HStack {
                             Button { NSWorkspace.shared.activateFileViewerSelecting([store.persistence.directory]) } label: {
                                 Label("Klasörü Finder'da göster", systemImage: "folder")
                             }.buttonStyle(SoftButtonStyle())
-                            Text("\(days) günlük kayıt · \(store.data.products.count) ürün reçetesi · \(store.data.items.count) stok kalemi")
+                            Text("\(days) günlük kayıt · \(store.data.products.count) ürün reçetesi · \(store.data.items.count) stok kalemi · \(backups.count) yedek")
                                 .foregroundStyle(.secondary)
                         }
-                    }
-                }
-
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Excel envanter dosyasından içe aktar").font(.headline)
-                        Text("Eski Excel dosyanızdaki (ör. 01.08.xlsm) geçmiş günlük kayıtları (Alımlar sayfası ve pivot önbelleği), Envanter sayfasındaki güncel sayımı ve yapıştırılmış ModPos satışlarını aktarır. Veri girilmiş günlerin üzerine yazmaz (isterseniz seçebilirsiniz).")
-                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button { store.pickAndImportWorkbook() } label: { Label("Excel Dosyası Seç ve Aktar…", systemImage: "tablecells.badge.ellipsis") }
-                            .buttonStyle(PrimaryButtonStyle())
+                        SaveStatusView()
                     }
                 }
 
@@ -49,19 +66,31 @@ struct BackupView: View {
                             Button { store.restoreBackup() } label: { Label("Yedekten Geri Yükle…", systemImage: "arrow.counterclockwise") }
                                 .buttonStyle(SoftButtonStyle())
                         }
+                        if let last = backups.first {
+                            Text("Son otomatik yedek: \(last.lastPathComponent)").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
 
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Excel'e aktar").font(.headline)
-                        Text("Tüm günlerin envanteri, eski \"Alımlar\" sayfasıyla aynı sütun düzeninde (Tarih, Ürün, Açılış, Gelen, … Fark) dışa aktarılır; mevcut Excel pivot tablolarınıza yapıştırabilirsiniz.")
+                        Text("Excel").font(.headline)
+                        Text("Tüm günlerin envanteri eski \"Alımlar\" sayfasıyla aynı sütun düzeninde (Tarih, Ürün, Açılış, Gelen, … Fark) dışa aktarılır; ayrıca Özet, Günlük Maliyet ve Notlar sayfaları eklenir. Sayım formu, depoda elle doldurmak için yazdırılabilir bir listedir.")
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button {
-                            let d = store.engine.datesWithData
-                            store.exportHistoryExcel(from: d.first ?? DateKey.today(), to: d.last ?? DateKey.today())
-                        } label: { Label("Tüm Geçmişi Excel'e Aktar…", systemImage: "tablecells") }
-                            .buttonStyle(SoftButtonStyle()).disabled(days == 0)
+                        HStack {
+                            Button {
+                                let d = store.engine.datesWithData
+                                store.exportHistoryExcel(from: d.first ?? DateKey.today(), to: d.last ?? DateKey.today())
+                            } label: { Label("Tüm Geçmişi Excel'e Aktar…", systemImage: "tablecells") }
+                                .buttonStyle(SoftButtonStyle()).disabled(days == 0)
+                            Button { store.exportCountSheet() } label: { Label("Sayım Formu (\(DateKey.short(store.selectedDate)))…", systemImage: "printer") }
+                                .buttonStyle(SoftButtonStyle())
+                        }
+                        Divider()
+                        Text("Eski Excel envanter dosyanızdaki (ör. 01.08.xlsm) geçmiş günlük kayıtları (Alımlar sayfası ve pivot önbelleği), Envanter sayfasındaki güncel sayımı ve yapıştırılmış ModPos satışlarını aktarır. Veri girilmiş günlerin üzerine yazmaz (isterseniz seçebilirsiniz).")
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Button { store.pickAndImportWorkbook() } label: { Label("Excel Envanter Dosyası Seç ve Aktar…", systemImage: "tablecells.badge.ellipsis") }
+                            .buttonStyle(PrimaryButtonStyle())
                     }
                 }
 
@@ -82,9 +111,9 @@ struct BackupView: View {
                     }
                 }
             }
-            .padding(24).frame(maxWidth: 820, alignment: .leading)
+            .padding(24).frame(maxWidth: 860, alignment: .leading)
         }
-        .navigationTitle("Yedek ve Veri")
+        .navigationTitle("Ayarlar ve Veri")
     }
 }
 
@@ -92,16 +121,18 @@ struct HelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Nasıl Kullanılır?").font(.title2.weight(.semibold))
-                Text("Bu uygulama, Excel'deki envanter dosyanızın (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar.")
+                Text("\(Brand.appName) — Nasıl Kullanılır?").font(.title2.weight(.semibold))
+                Text("Bu uygulama, Excel'deki envanter dosyanızın (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar; üstüne maliyet, kayıp, sipariş ve menü analizleri ekler.")
                     .foregroundStyle(.secondary)
 
-                step(1, "Sayımı girin", "Günlük Envanter ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış, bir önceki günün kapanışından kendiliğinden gelir (Excel'deki \"Yeni Envanter Aç\" makrosunun işi). Enter veya ↓ ile alt satıra, Tab ile yana geçersiniz; virgül de nokta da kabul edilir.")
-                step(2, "ModPos satış raporunu aktarın", "ModPos'tan aldığınız satış raporunu (.xlsx) pencereye sürükleyip bırakın ya da \"Dosyadan Aktar\"a tıklayın. Excel'de olduğu gibi Kodu / Ürün Tipi / Adedi sütunlarını kopyalayıp \"Panodan Yapıştır\" da diyebilirsiniz (⌘⇧V).")
-                step(3, "Satılan ve Zaiyat otomatik dolar", "Her ürün reçetesine göre hammaddeden düşülür. Örnek: 1 Kasap Burger satılınca 130 gr'a 1; 1 Dublex Burger satılınca 90 gr'a 2 yazılır. ZAYİ ürünleri Zaiyat sütununa gider.")
-                step(4, "Farkı okuyun", "Fark = (Satılan + Zaiyat) − Fiili Tüketim. Fiili Tüketim = Açılış + Gelen + Gelen Transfer − (Giden Transfer + Kapanış). Kırmızı negatif sayı, satışlara göre olması gerekenden fazla stok çıktığı anlamına gelir. Satırdaki ⓘ düğmesi hesabın dökümünü ve hangi ürünlerin etkilediğini gösterir.")
-                step(5, "Eksik reçeteleri tamamlayın", "Satış raporunda reçetesi tanımlı olmayan bir ürün çıkarsa Günlük Envanter'in üstünde sarı uyarı görünür. Satış Dökümü ekranından \"Reçete tanımla\" ile hammaddesini girin; başka bir ürünün reçetesini kopyalayabilirsiniz. Reçeteler ekranından istediğiniz zaman düzenleyebilirsiniz.")
-                step(6, "Raporlar ve Excel", "Özet ve Raporlar ekranı seçtiğiniz dönemin toplamlarını ve günlük fark grafiğini gösterir; \"Excel'e Aktar\" ile eski Alımlar/Özet düzeninde Excel dosyası alabilirsiniz.")
+                step(1, "Kalemleri hazırlayın", "Stok Kalemleri ekranında her kalemin birim maliyetini (₺), kritik seviyesini ve kabul edilebilir farkını (tolerans) girin. Bunlar boş bırakılabilir; girildikçe ₺ hesapları, uyarılar ve sipariş önerisi devreye girer.")
+                step(2, "Sayımı girin", "Günlük Envanter ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış, bir önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ ile alt satıra, Tab ile yana geçersiniz; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Ayarlar ve Veri ekranından sayım formu alabilirsiniz.")
+                step(3, "ModPos satış raporunu aktarın", "Satış raporunu (.xlsx) pencereye sürükleyip bırakın ya da \"Dosyadan Aktar\"a tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" da diyebilirsiniz (⌘⇧V). Tutar sütunu varsa maliyet yüzdeleri ve menü analizi de hesaplanır.")
+                step(4, "Farkı okuyun", "Fark = (Satılan + Zaiyat) − Fiili Tüketim. Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. Satırdaki ⓘ düğmesi hesabın dökümünü gösterir. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri listeler.")
+                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" ile günü kilitleyin; yanlışlıkla değiştirilemez. Güne not ve sayımı yapan kişiyi ekleyebilirsiniz. Hiç hareketi olmayan kalemleri \"Hareketsizleri Doldur\" ile tek tıkla kapatabilirsiniz.")
+                step(6, "Eksik reçeteleri tamamlayın", "Satış raporunda reçetesi tanımlı olmayan bir ürün çıkarsa uyarı görünür. Satış Dökümü ekranından \"Reçete tanımla\" ile hammaddesini girin. Reçeteler ekranı her ürünün reçete maliyetini ve satış fiyatına göre maliyet oranını gösterir.")
+                step(7, "Raporlar ve istatistikler", "Genel Bakış günün durumunu ve son 14 günün kaybını; Özet dönem toplamlarını; İstatistikler ise maliyet yüzdesi (food cost %), en çok kayıp veren kalemler, zayi dağılımı, kalem bazında tüketim grafikleri, ABC analizi ve menü mühendisliğini gösterir.")
+                step(8, "Sipariş verin", "Sipariş Önerisi ekranı son günlerin ortalama tüketimine ve kritik seviyelere göre ne kadar sipariş vermeniz gerektiğini hesaplar; \"Listeyi Kopyala\" ile tedarikçiye WhatsApp'tan gönderebilirsiniz.")
 
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
@@ -116,12 +147,13 @@ struct HelpView: View {
                         Label("Kısayollar", systemImage: "keyboard").font(.headline)
                         Group {
                             Text("⌘O  Satış raporu içe aktar     ⌘⇧V  Panodan satış yapıştır     ⌘E  Günü Excel'e aktar")
-                            Text("⌘[  Önceki gün     ⌘]  Sonraki gün     ⌘T  Bugüne git")
+                            Text("⌘[  Önceki gün     ⌘]  Sonraki gün     ⌘T  Bugüne git     ⌘L  Günü kapat / aç")
+                            Text("⌘1…⌘9  Ekranlar arasında geçiş     ⌘Z / ⇧⌘Z  Geri al / Yinele")
                         }.font(.callout.monospaced()).foregroundStyle(.secondary)
                     }
                 }
             }
-            .padding(24).frame(maxWidth: 820, alignment: .leading)
+            .padding(24).frame(maxWidth: 860, alignment: .leading)
         }
         .navigationTitle("Nasıl Kullanılır?")
     }

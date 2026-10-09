@@ -68,6 +68,7 @@ struct RecipesView: View {
                         HStack(spacing: 6) {
                             Text(p.name).lineLimit(1)
                             if !(p.note ?? "").isEmpty { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Brand.warn).font(.caption) }
+                            if p.isWaste { Pill(text: "zayi", color: Brand.warn) }
                             Spacer()
                             if !p.isTracked { Pill(text: "etkisiz", color: .secondary) }
                         }
@@ -99,8 +100,10 @@ private struct RecipeEditor: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Ürün adı").font(.caption).foregroundStyle(.secondary)
-                            TextField("Ürün adı", text: Binding(get: { p.name }, set: { v in store.updateProduct(code) { $0.name = v } }))
-                                .textFieldStyle(.roundedBorder).font(.title3)
+                            CommitTextField(title: "Ürün adı", value: Binding(get: { p.name }, set: { v in
+                                guard !v.isEmpty else { return }
+                                store.updateProduct(code, actionName: "Ürün Adı") { $0.name = v }
+                            }), font: .title3)
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text("ModPos kodu").font(.caption).foregroundStyle(.secondary)
@@ -133,6 +136,8 @@ private struct RecipeEditor: View {
                         .padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Brand.warn.opacity(0.12)))
                     }
 
+                    costCard(p)
+
                     Divider()
                     HStack {
                         Text("Hammadde kullanımı (1 adet satış için)").font(.headline)
@@ -140,7 +145,7 @@ private struct RecipeEditor: View {
                         Menu {
                             ForEach(store.data.items.filter { p.amounts[$0.id] == nil }) { item in
                                 Button("\(item.name) (\(item.recipeUnit))") {
-                                    store.updateProduct(code) { $0.amounts[item.id] = 1 }
+                                    store.updateProduct(code, actionName: "Hammadde Ekle") { $0.amounts[item.id] = 1 }
                                 }
                             }
                         } label: { Label("Hammadde ekle", systemImage: "plus.circle") }
@@ -180,7 +185,27 @@ private struct RecipeEditor: View {
             .confirmationDialog("\"\(p.name)\" silinsin mi?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Sil", role: .destructive) { store.deleteProduct(code) }
                 Button("Vazgeç", role: .cancel) {}
-            } message: { Text("Bu ürün satış raporlarında görünürse \"reçete tanımsız\" olarak işaretlenir.") }
+            } message: { Text("Bu ürün satış raporlarında görünürse \"reçete tanımsız\" olarak işaretlenir. Düzen > Geri Al ile geri alınabilir.") }
+        }
+    }
+
+    /// Reçete maliyeti ve (son satış raporundan) fiyata göre maliyet yüzdesi
+    @ViewBuilder private func costCard(_ p: Product) -> some View {
+        if p.isTracked {
+            let rc = store.engine.recipeCost(p)
+            let price = store.engine.lastUnitPrice(code: p.code)
+            HStack(spacing: 12) {
+                StatCard(title: "Reçete maliyeti", value: rc.cost > 0 || rc.isComplete ? Fmt.money(rc.cost, fraction: 2) : "—",
+                         detail: rc.isComplete ? "1 adet için hammadde maliyeti" : "Maliyeti eksik: " + rc.missing.joined(separator: ", "),
+                         icon: "turkishlirasign.circle", color: rc.isComplete ? Brand.accent : Brand.warn)
+                StatCard(title: "Ortalama satış fiyatı", value: price.map { Fmt.money($0.price, fraction: 2) } ?? "—",
+                         detail: price.map { "\(DateKey.short($0.date)) satış raporundan" } ?? "Raporda tutar sütunu yok",
+                         icon: "tag", color: Brand.positive)
+                let pct: Double? = (rc.isComplete && (price?.price ?? 0) > 0) ? rc.cost / price!.price : nil
+                StatCard(title: "Maliyet oranı", value: pct.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—",
+                         detail: pct.map { $0 > 0.35 ? "Yüksek: fiyatı veya porsiyonu gözden geçirin" : "Kâr payı: \(Fmt.money(price!.price - rc.cost, fraction: 2))" } ?? "Maliyet ve fiyat gerekli",
+                         icon: "percent", color: (pct ?? 0) > 0.35 ? Brand.negative : Brand.ok)
+            }
         }
     }
 
@@ -188,12 +213,14 @@ private struct RecipeEditor: View {
         Category.standard.contains(current) ? Category.standard : Category.standard + [current]
     }
 
+    /// Kopyaya, satış raporlarıyla çakışmayan geçici bir rakamsal kod verilir (ör. 9 + kod + sıra); kullanıcı sonra düzeltebilir.
     private func duplicate(_ p: Product) {
         var n = 1
-        var newCode = "\(p.code)-\(n)"
-        while store.product(newCode) != nil { n += 1; newCode = "\(p.code)-\(n)" }
+        var newCode = "9\(p.code)\(n)"
+        while store.product(newCode) != nil { n += 1; newCode = "9\(p.code)\(n)" }
         var copy = p
-        copy.code = newCode; copy.name = p.name + " (kopya)"; copy.note = nil
+        copy.code = newCode; copy.name = p.name + " (kopya)"
+        copy.note = "Kopya ürün: ModPos'taki gerçek kodu \(newCode) yerine Yeni Ürün ile tanımlayın veya bu kaydı silin."
         store.addProduct(copy)
         store.recipeSelection = newCode
     }
@@ -220,7 +247,7 @@ private struct IngredientRow: View {
             } else {
                 Color.clear.frame(width: 96, height: 1)
             }
-            Button { store.updateProduct(code) { $0.amounts[item.id] = nil } } label: { Image(systemName: "minus.circle.fill") }
+            Button { store.updateProduct(code, actionName: "Hammadde Çıkar") { $0.amounts[item.id] = nil } } label: { Image(systemName: "minus.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(Brand.negative.opacity(0.85)).help("Bu hammaddeyi reçeteden çıkar")
         }
         .padding(.vertical, 6).padding(.horizontal, 6)
@@ -275,6 +302,7 @@ private struct NewProductSheet: View {
 
     private func add() {
         let c = code.trimmingCharacters(in: .whitespaces)
+        guard SalesParser.isCode(c) else { error = "ModPos kodu en az 3 haneli ve yalnızca rakamlardan oluşmalı (satış raporlarıyla bu kodla eşleşir)."; return }
         guard store.product(c) == nil else { error = "Bu kodla bir ürün zaten var."; return }
         let amounts = copyFrom.isEmpty ? [:] : (store.product(copyFrom)?.amounts ?? [:])
         let note = copyFrom.isEmpty ? nil : "\(store.product(copyFrom)?.name ?? "") reçetesinden kopyalandı; lütfen kontrol edin."

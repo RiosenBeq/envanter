@@ -33,7 +33,7 @@ public struct Item: Codable, Identifiable, Hashable {
     /// Bir farkın değerlendirmesi (tolerans ve gösterim hassasiyeti dikkate alınır).
     public func severity(of diff: Double) -> DiffSeverity {
         let eps = 0.5 / pow(10.0, Double(maxFraction))
-        if abs(diff) < eps { return .none }
+        if abs(diff) < eps { return .zero }
         if abs(diff) <= max(tolerance ?? 0, 0) + eps { return .withinTolerance }
         return diff < 0 ? .shortage : .surplus
     }
@@ -48,7 +48,7 @@ public struct Item: Codable, Identifiable, Hashable {
 /// Fark değerlendirmesi
 public enum DiffSeverity: Equatable {
     /// Fark yok
-    case none
+    case zero
     /// Tolerans içinde (normal sayılır)
     case withinTolerance
     /// Satışlara göre beklenenden FAZLA stok çıkmış (kayıp / fire)
@@ -90,10 +90,12 @@ public struct SaleLine: Codable, Hashable, Identifiable {
     public var code: String
     public var name: String
     public var qty: Double
+    /// Satış tutarı (₺, raporda "Tutar" sütunu varsa). Maliyet yüzdesi ve menü analizi için kullanılır.
+    public var amount: Double?
     public var id: String { code }
 
-    public init(code: String, name: String, qty: Double) {
-        self.code = code; self.name = name; self.qty = qty
+    public init(code: String, name: String, qty: Double, amount: Double? = nil) {
+        self.code = code; self.name = name; self.qty = qty; self.amount = amount
     }
 }
 
@@ -157,6 +159,12 @@ public struct DayRecord: Codable, Hashable {
 
     /// Satış verisi (döküm veya Excel'den gelen) var mı
     public var hasSalesData: Bool { !sales.isEmpty || usesLegacySales }
+
+    /// Günün satış tutarı (raporda tutar sütunu yoksa nil)
+    public var salesRevenue: Double? {
+        let amounts = sales.compactMap { $0.amount }
+        return amounts.isEmpty ? nil : amounts.reduce(0, +)
+    }
 
     public var isEmpty: Bool {
         sales.isEmpty && entries.values.allSatisfy { $0.isEmpty }

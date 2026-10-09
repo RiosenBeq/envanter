@@ -18,6 +18,7 @@ struct ImportSheet: View {
     var body: some View {
         let analysis = store.engine.analyze(sales: report.lines)
         let existing = store.data.days[date]?.sales.count ?? 0
+        let locked = store.isLocked(date)
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "tray.and.arrow.down.fill").font(.title).foregroundStyle(Brand.accent)
@@ -32,6 +33,9 @@ struct ImportSheet: View {
                     GridRow { Text("Rapor tarihi").foregroundStyle(.secondary); Text(report.periodText ?? "Belirtilmemiş") }
                     GridRow { Text("Ürün satırı").foregroundStyle(.secondary); Text("\(report.lines.count)") }
                     GridRow { Text("Toplam adet").foregroundStyle(.secondary); Text(Fmt.number(report.totalQty, maxFraction: 0)) }
+                    if let amount = report.totalAmount {
+                        GridRow { Text("Satış tutarı").foregroundStyle(.secondary); Text(Fmt.money(amount)) }
+                    }
                     GridRow {
                         Text("Stoğa yansıyacak").foregroundStyle(.secondary)
                         Text("\(analysis.trackedLines.count) ürün reçeteye göre hammaddeden düşülecek")
@@ -61,7 +65,10 @@ struct ImportSheet: View {
                     Button("Rapor tarihini kullan") { date = d }.buttonStyle(SoftButtonStyle())
                 }
             }
-            if existing > 0 {
+            if locked {
+                notice(icon: "lock.fill", color: Brand.negative,
+                       text: "\(DateKey.short(date)) günü kapatılmış (kilitli). Aktarmak için başka bir gün seçin ya da Günlük Envanter'den kilidi açın.")
+            } else if existing > 0 {
                 notice(icon: "arrow.triangle.2.circlepath", color: Brand.warn,
                        text: "\(DateKey.short(date)) gününün mevcut satış verisi (\(existing) satır) bu rapor ile değiştirilecek.")
             }
@@ -85,6 +92,7 @@ struct ImportSheet: View {
                 Button("İçe Aktar") { store.confirmImport(report: report, date: date) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(PrimaryButtonStyle())
+                    .disabled(locked)
             }
         }
         .padding(22)

@@ -21,6 +21,8 @@ enum DebugSnapshot {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if let size = env["ENVANTER_SNAPSHOT_SIZE"]?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
                let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
+                // Başlıklı pencereler ekran yüksekliğine sığdırılır; CI ekranı küçük olduğundan çerçevesiz pencereye geçilir
+                window.styleMask = [.borderless, .resizable]
                 window.setFrame(NSRect(x: 0, y: 0, width: size[0], height: size[1]), display: true)
             }
             try? await Task.sleep(nanoseconds: 1_000_000_000)

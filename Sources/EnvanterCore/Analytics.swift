@@ -23,6 +23,10 @@ public struct DailyStat: Identifiable {
     public var countedItems: Int
     public var problemItems: Int
     public var salesQty: Double
+    /// Günün personel maliyeti (₺)
+    public var laborCost: Double = 0
+    /// Prime cost = fiili hammadde maliyeti + personel maliyeti
+    public var primeCost: Double { actualCost + laborCost }
 }
 
 /// Dönem toplamları
@@ -45,10 +49,18 @@ public struct PeriodStats {
     /// Maliyeti tanımlı aktif kalem sayısı / toplam aktif kalem
     public var costedItems: Int
     public var totalItems: Int
+    /// Verisi olan günlerin personel maliyeti
+    public var laborCost: Double = 0
+    public var hasLabor: Bool = false
+    /// Oranlar yalnızca satış tutarı bilinen günler üzerinden hesaplanır (pay ve payda aynı günler)
+    var revenueDayTheoretical = 0.0, revenueDayActual = 0.0, revenueDayWaste = 0.0, revenueDayLabor = 0.0
 
-    public var theoreticalCostPct: Double? { revenue > 0 ? theoreticalCost / revenue : nil }
-    public var actualCostPct: Double? { revenue > 0 ? actualCost / revenue : nil }
-    public var wastePct: Double? { revenue > 0 ? wasteCost / revenue : nil }
+    public var primeCost: Double { actualCost + laborCost }
+    public var theoreticalCostPct: Double? { revenue > 0 ? revenueDayTheoretical / revenue : nil }
+    public var actualCostPct: Double? { revenue > 0 ? revenueDayActual / revenue : nil }
+    public var wastePct: Double? { revenue > 0 ? revenueDayWaste / revenue : nil }
+    public var laborPct: Double? { revenue > 0 && hasLabor ? revenueDayLabor / revenue : nil }
+    public var primeCostPct: Double? { revenue > 0 && hasLabor ? (revenueDayActual + revenueDayLabor) / revenue : nil }
     public var hasCosts: Bool { costedItems > 0 }
 }
 
@@ -172,6 +184,7 @@ extension Engine {
             }
         }
         s.actualCost = s.theoreticalCost - s.netValue
+        s.laborCost = labor(date: date).total
         s.theoreticalCost = Self.clean(s.theoreticalCost); s.actualCost = Self.clean(s.actualCost)
         s.wasteCost = Self.clean(s.wasteCost); s.lossValue = Self.clean(s.lossValue); s.netValue = Self.clean(s.netValue)
         return s
@@ -188,7 +201,7 @@ extension Engine {
             }
         }
         let active = activeItems
-        return PeriodStats(
+        var p = PeriodStats(
             from: from, to: to, days: days,
             revenue: Self.clean(days.reduce(0) { $0 + $1.revenue }),
             revenueDays: days.filter { $0.hasRevenue }.count,
@@ -202,6 +215,13 @@ extension Engine {
             salesDays: dates.filter { data.days[$0]?.hasSalesData ?? false }.count,
             costedItems: active.filter { $0.unitCost != nil }.count,
             totalItems: active.count)
+        p.laborCost = Self.clean(days.reduce(0) { $0 + $1.laborCost })
+        p.hasLabor = !data.employees.isEmpty || days.contains { $0.laborCost > 0 }
+        for d in days where d.hasRevenue && d.revenue > 0 {
+            p.revenueDayTheoretical += d.theoreticalCost; p.revenueDayActual += d.actualCost
+            p.revenueDayWaste += d.wasteCost; p.revenueDayLabor += d.laborCost
+        }
+        return p
     }
 
     // MARK: Kalem serisi

@@ -21,6 +21,8 @@ jobs:
         run: swift build
       - name: Testler
         run: swift test
+      - name: Komut satırı uçtan uca testi
+        run: ./Scripts/e2e_cli.sh .build/debug/EnvanterTool
 
   macos:
     name: Uygulama, testler ve ekran görüntüleri (macOS)
@@ -42,6 +44,16 @@ jobs:
         with:
           name: NextGen-Envanter
           path: build/NextGen-Envanter-*.zip
+      - name: Komut satırı uçtan uca testi
+        run: ./Scripts/e2e_cli.sh "build/NextGen Envanter.app/Contents/MacOS/EnvanterTool"
+      - name: Uygulama içi sistem testi (gerçek arayüz durumu üzerinden)
+        run: |
+          APP="build/NextGen Envanter.app/Contents/MacOS"
+          # Uygulamanın kendi deposu da geçici klasörü kullansın; test kendi geçici verisinde çalışır
+          export ENVANTER_DATA_DIR="$RUNNER_TEMP/selftest-app"
+          export ENVANTER_SELFTEST=1
+          perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" | tee "$RUNNER_TEMP/selftest.log"
+          grep -q "SELFTEST: .* 0 başarısız" "$RUNNER_TEMP/selftest.log"
 
       - name: Demo verisiyle ekran görüntüleri
         run: |
@@ -52,12 +64,12 @@ jobs:
           export ENVANTER_SNAPSHOT_DIR="$RUNNER_TEMP/shots"
           export ENVANTER_DATE="$TODAY"
           export ENVANTER_SNAPSHOT_SIZE="1440x1000"
-          export ENVANTER_SECTIONS="overview,daily,sales,summary,analytics:general,analytics:item,analytics:abc,analytics:menu,orders,recipes:11101,items,backup"
+          export ENVANTER_SECTIONS="overview,daily,sales,orders,labor,summary,analytics:general,analytics:item,analytics:abc,analytics:menu,recipes:11101,items,backup,help"
           export ENVANTER_QUIT_AFTER_SNAPSHOT=1
           # exec { $ARGV[0] } liste biçimi: yol içindeki boşluk ("NextGen Envanter.app") kelimelere bölünmesin
           perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
           ls -la "$RUNNER_TEMP/shots"
-          test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 10
+          test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 14
       - name: Ekran görüntülerini yükle
         uses: actions/upload-artifact@v4
         with:

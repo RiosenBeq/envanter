@@ -21,11 +21,17 @@ else
   TOOL=".build/release/EnvanterTool"
 fi
 
-if [ ! -f Resources/AppIcon.icns ]; then
-  echo "▸ İkon üretiliyor…"
-  rm -rf build/AppIcon.iconset && mkdir -p build
-  swift Scripts/make_icon.swift build/AppIcon.iconset
-  iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
+echo "▸ İkon üretiliyor (yazı tabanlı NG monogramı)…"
+rm -rf build/AppIcon.iconset && mkdir -p build
+ICON="build/AppIcon.icns"
+if swift Scripts/make_icon.swift build/AppIcon.iconset >/dev/null && iconutil -c icns build/AppIcon.iconset -o "$ICON"; then
+  :
+elif [ -f Resources/AppIcon.icns ]; then
+  echo "  (ikon üretilemedi, hazır ikon kullanılıyor)"
+  ICON="Resources/AppIcon.icns"
+else
+  echo "  (ikon üretilemedi, ikonsuz devam ediliyor)"
+  ICON=""
 fi
 
 APP="build/$APP_NAME.app"
@@ -35,7 +41,7 @@ cp "$BIN" "$APP/Contents/MacOS/Envanter"
 # Komut satırı aracı da paketin içinde dağıtılır (Contents/MacOS/EnvanterTool)
 cp "$TOOL" "$APP/Contents/MacOS/EnvanterTool"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+if [ -n "$ICON" ]; then cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"; fi
 codesign --force --deep --sign - "$APP"
 echo "✓ Hazır: $APP"
 

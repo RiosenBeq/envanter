@@ -33,8 +33,24 @@ public enum DemoData {
     public static func make(endingAt end: String, days: Int = 35, seed: UInt64 = 2026) -> AppData {
         var rng = RNG(state: seed)
         var data = AppData.seeded()
-        data.settings = AppSettings(branchName: "Demo Şube · Kadıköy", orderLookbackDays: 14, orderCoverDays: 3,
-                                    staff: ["Ahmet Y.", "Ayşe K.", "Mehmet D."])
+        // Örnek işletme; rakamlar ve kişiler tamamen uydurmadır
+        data.settings = AppSettings(branchName: "Burger Yiyelim · Tuzla Marina", orderLookbackDays: 14, orderCoverDays: 3,
+                                    staff: [], targetFoodCostPct: 0.30, targetLaborPct: 0.25, targetPrimeCostPct: 0.60)
+        let start0 = DateKey.addDays(-(days - 1), to: end)
+        data.employees = [
+            Employee(id: "e1", name: "Murat A.", role: "Şube Müdürü", payType: .monthly, rate: 85_000, costFactor: 1.2),
+            Employee(id: "e2", name: "Selin K.", role: "Vardiya Sorumlusu", payType: .monthly, rate: 58_000, costFactor: 1.2),
+            Employee(id: "e3", name: "Okan B.", role: "Vardiya Sorumlusu", payType: .monthly, rate: 58_000, costFactor: 1.2),
+            Employee(id: "e4", name: "Emre T.", role: "Usta", payType: .monthly, rate: 52_000, costFactor: 1.2),
+            Employee(id: "e5", name: "Hakan Ç.", role: "Usta", payType: .monthly, rate: 52_000, costFactor: 1.2),
+            Employee(id: "e6", name: "Burak Y.", role: "Mutfak", payType: .monthly, rate: 40_000, costFactor: 1.2),
+            Employee(id: "e7", name: "Zeynep D.", role: "Kasa", payType: .monthly, rate: 40_000, costFactor: 1.2),
+            Employee(id: "e8", name: "Can Ö.", role: "Servis (yarı zamanlı)", payType: .hourly, rate: 150, defaultHours: 6),
+            Employee(id: "e9", name: "Elif S.", role: "Servis (yarı zamanlı)", payType: .hourly, rate: 150, defaultHours: 6),
+            Employee(id: "e10", name: "Ali R.", role: "Kurye", payType: .daily, rate: 2_000,
+                     startDate: DateKey.addDays(3, to: start0)),
+        ]
+        data.settings.staff = ["Murat A.", "Selin K.", "Okan B."]
         for i in data.items.indices {
             let id = data.items[i].id
             data.items[i].unitCost = costs[id]
@@ -50,13 +66,13 @@ public enum DemoData {
         var prices: [String: Double] = [:]
         for p in tracked {
             // Az sayıda çok satan, çok sayıda az satan ürün (orta ölçekli bir burger restoranı)
-            let w = pow(rng.unit(), 3) * 10
-            if w > 0.3 { weights[p.code] = w }
+            let w = pow(rng.unit(), 3) * 5
+            if w > 0.15 { weights[p.code] = w }
             let cost = engine0.recipeCost(p).cost
             prices[p.code] = max(60, ((cost * rng.range(2.7, 3.6)) / 5).rounded(.up) * 5)
         }
         let drinks = Array(untracked.prefix(12))
-        for p in drinks { weights[p.code] = rng.range(1.5, 8); prices[p.code] = (rng.range(35, 75) / 5).rounded() * 5 }
+        for p in drinks { weights[p.code] = rng.range(0.8, 4); prices[p.code] = (rng.range(35, 75) / 5).rounded() * 5 }
         let wasteMix = Array(waste.prefix(6))
 
         let start = DateKey.addDays(-(days - 1), to: end)
@@ -143,9 +159,46 @@ public enum DemoData {
             }
             day.countedBy = data.settings.staff[i % data.settings.staff.count]
             if i < days - 2 { day.locked = true }
+            // Vardiyalar: tam zamanlılar haftada 1 gün izinli, yarı zamanlılar hafta sonu daha uzun
+            let weekday = ((DateKey.ymd(d).map { DateKey.days($0) } ?? 0) + 4) % 7
+            let busy = weekday == 5 || weekday == 6 || weekday == 0
+            var shifts: [String: ShiftEntry] = [:]
+            for (k, e) in data.employees.enumerated() where e.isEmployed(on: d) {
+                switch e.payType {
+                case .monthly:
+                    if (i + k) % 7 != 0 { shifts[e.id] = ShiftEntry(hours: 9) }
+                case .hourly:
+                    if busy || (i + k) % 3 != 0 { shifts[e.id] = ShiftEntry(hours: busy ? 9 : 6) }
+                case .daily:
+                    if busy { shifts[e.id] = ShiftEntry(worked: true) }
+                }
+            }
+            if i % 9 == 4 { shifts["e2", default: ShiftEntry()].extra = 1_500 }   // fazla mesai
+            day.shifts = shifts
+            if busy && i % 2 == 0 { day.otherLabor = 1_200 }                        // yoğun günde ek eleman
             if i == days - 6 { day.note = "Dondurucu arızası: yaklaşık 2 kg patates çöpe gitti." }
             if i == days - 12 { day.note = "Akşam vardiyasında yoğunluk; peynir porsiyonları kontrol edilecek." }
             data.days[d] = day
+        }
+
+        // Fiyat geçmişi: son günlerde zam gelen kalemler (fiyat artışı uyarıları için)
+        for (id, old, back) in [("patates", 60.0, 9), ("peynir", 395.0, 6), ("kanat", 228.0, 15), ("ekmekSusamli", 8.25, 24)] {
+            guard let i = data.items.firstIndex(where: { $0.id == id }), let now = data.items[i].unitCost else { continue }
+            data.items[i].costHistory = [PricePoint(date: DateKey.addDays(-(back + 60), to: end), cost: old),
+                                         PricePoint(date: DateKey.addDays(-back, to: end), cost: now)]
+        }
+
+        // Siparişler: geçen hafta teslim alınmış bir sipariş ve bugünkü önerilerden açık bir sipariş
+        let past = DateKey.addDays(-7, to: end)
+        data.purchaseOrders.append(PurchaseOrder(date: DateKey.addDays(-8, to: end), supplier: "Et Tedarikçisi",
+                                                 lines: [OrderLine(itemID: "g90", qty: 600, received: 600, unitPrice: 38),
+                                                         OrderLine(itemID: "g130", qty: 200, received: 190, unitPrice: 62)],
+                                                 status: .received, receivedOn: past))
+        let suggestions = Engine(data: data).orderSuggestions(asOf: end, lookbackDays: 14, coverDays: 3)
+        if var open = Purchasing.makeOrder(from: suggestions.filter { ["g90", "smash70", "ekmekSusamli", "patates"].contains($0.item.id) },
+                                           date: end, supplier: "Haftalık Tedarik") {
+            open.note = "Sipariş Önerisi ekranından oluşturuldu"
+            data.purchaseOrders.append(open)
         }
         return data
     }

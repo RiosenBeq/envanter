@@ -6,6 +6,9 @@ struct OrdersView: View {
     @EnvironmentObject var store: AppStore
     @State private var onlyNeeded = true
     @State private var copied = false
+    @State private var showCreate = false
+    @State private var supplier = ""
+    @State private var receiving: PurchaseOrder?
 
     var body: some View {
         let date = store.selectedDate
@@ -17,6 +20,26 @@ struct OrdersView: View {
             HStack(spacing: 16) {
                 DateNavigator(compact: true)
                 Spacer()
+                Button { showCreate = true } label: { Label("Sipariş Oluştur", systemImage: "cart.badge.plus") }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!all.contains { $0.suggested > 0 })
+                    .help("Önerilen miktarlarla bir satın alma siparişi kaydeder; mal gelince \"Teslim al\" ile Gelen'e işlenir")
+                    .popover(isPresented: $showCreate, arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Sipariş oluştur").font(.headline)
+                            TextField("Tedarikçi (isteğe bağlı)", text: $supplier).textFieldStyle(.roundedBorder).frame(width: 260)
+                            Text("\(all.filter { $0.suggested > 0 }.count) kalem önerilen miktarlarla eklenecek.").font(.callout).foregroundStyle(.secondary)
+                            HStack {
+                                Spacer()
+                                Button("Oluştur") {
+                                    store.createOrder(date: date, supplier: supplier.trimmingCharacters(in: .whitespaces))
+                                    supplier = ""; showCreate = false
+                                }
+                                .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                            }
+                        }
+                        .padding(16)
+                    }
                 Button {
                     store.copyOrderText(date: date)
                     copied = true
@@ -24,7 +47,7 @@ struct OrdersView: View {
                 } label: {
                     Label(copied ? "Kopyalandı" : "Listeyi Kopyala", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(PrimaryButtonStyle())
+                .buttonStyle(SoftButtonStyle())
                 .help("Tedarikçiye WhatsApp / e-posta ile göndermek için düz metin olarak kopyalar")
                 Button { store.exportOrdersExcel(date: date) } label: { Label("Excel", systemImage: "square.and.arrow.up") }
                     .buttonStyle(SoftButtonStyle())
@@ -46,6 +69,7 @@ struct OrdersView: View {
                 }
                 .help("Sipariş, bu kadar günü (kritik seviye üstünde) karşılayacak şekilde önerilir")
                 Toggle("Yalnızca sipariş gerekenler", isOn: $onlyNeeded)
+                InfoTip(term: .orderSuggestion)
                 Spacer()
                 if hasCosts && totalCost > 0 {
                     Text("Tahmini tutar: \(Fmt.money(totalCost))").font(.callout.weight(.semibold))
@@ -111,6 +135,11 @@ struct OrdersView: View {
                     }.width(100)
                 }
             }
+            if !store.data.purchaseOrders.isEmpty {
+                Divider()
+                OrdersPanel(receiving: $receiving)
+                    .frame(height: 230)
+            }
             Divider()
             HStack(spacing: 14) {
                 Label("Önerilen = günlük tüketim × gün sayısı + kritik seviye − son stok", systemImage: "function")
@@ -121,7 +150,134 @@ struct OrdersView: View {
             .padding(.horizontal, 20).padding(.vertical, 8)
         }
         .navigationTitle("Sipariş Önerisi")
+        .sheet(item: $receiving) { o in ReceiveSheet(order: o).environmentObject(store) }
     }
 
     private func num(_ v: Double, _ item: Item) -> String { Fmt.number(v, maxFraction: item.maxFraction) }
+}
+
+
+// MARK: - Siparişler
+
+/// Açık ve geçmiş satın alma siparişleri
+private struct OrdersPanel: View {
+    @EnvironmentObject var store: AppStore
+    @Binding var receiving: PurchaseOrder?
+
+    var body: some View {
+        let orders = store.data.purchaseOrders.sorted { a, b in
+            a.status == .open && b.status != .open ? true : (a.status != .open && b.status == .open ? false : a.date > b.date)
+        }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Siparişler").font(.headline)
+                InfoTip(term: .purchaseOrder)
+                Spacer()
+                Text("\(store.openOrders.count) açık").font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20).padding(.vertical, 8)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(orders) { o in OrderRow(order: o, receiving: $receiving) }
+                }
+            }
+        }
+    }
+}
+
+private struct OrderRow: View {
+    @EnvironmentObject var store: AppStore
+    let order: PurchaseOrder
+    @Binding var receiving: PurchaseOrder?
+
+    var body: some View {
+        let items = store.engine.itemsByID
+        let summary = order.lines.compactMap { l -> String? in
+            guard let item = items[l.itemID] else { return nil }
+            let q = l.received ?? l.qty
+            return "\(item.name) \(Fmt.number(q, maxFraction: item.isKg ? 1 : 0))"
+        }.joined(separator: " · ")
+        let cost = Purchasing.estimatedCost(order, items: items)
+        var title: String = DateKey.short(order.date)
+        if !order.supplier.isEmpty { title += " · " + order.supplier }
+        if let r = order.receivedOn { title += " → teslim " + DateKey.short(r) }
+        return HStack(spacing: 12) {
+            Pill(text: order.status.title, color: order.status == .open ? Brand.positive : (order.status == .received ? Brand.ok : .secondary))
+                .frame(width: 104, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).fontWeight(.medium)
+                Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if cost > 0 { Text(Fmt.money(cost)).monospacedDigit().foregroundStyle(.secondary) }
+            if order.status == .open {
+                Button("Teslim al") { receiving = order }.buttonStyle(SoftButtonStyle(tint: Brand.positive))
+            }
+            Menu {
+                Button("Metni kopyala") { store.copyOrder(order.id) }
+                if order.status == .open { Button("İptal et") { store.cancelOrder(order.id) } }
+                Divider()
+                Button("Sil", role: .destructive) { store.deleteOrder(order.id) }
+            } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).fixedSize()
+        }
+        .padding(.horizontal, 20).padding(.vertical, 6)
+    }
+}
+
+/// Teslim alma: gelen miktar ve (isteğe bağlı) fatura birim fiyatı
+private struct ReceiveSheet: View {
+    @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    let order: PurchaseOrder
+    @State private var quantities: [String: Double?] = [:]
+    @State private var prices: [String: Double?] = [:]
+
+    var body: some View {
+        let items = store.engine.itemsByID
+        let date = store.selectedDate
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Teslim al").font(.title2.weight(.semibold))
+            Text("Gelen miktarlar \(DateKey.long(date)) gününün Gelen sütununa eklenecek. Fatura fiyatı girerseniz kalemin birim maliyeti güncellenir ve fiyat geçmişine yazılır.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                GridRow {
+                    Text("Kalem").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Sipariş").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Gelen").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Fatura birim fiyatı (₺)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                ForEach(order.lines) { l in
+                    let item = items[l.itemID]
+                    GridRow {
+                        Text(item?.name ?? l.itemID)
+                        Text("\(Fmt.number(l.qty, maxFraction: 2)) \(item?.unit.lowercased() ?? "")").monospacedDigit().foregroundStyle(.secondary)
+                        OptionalDecimalField(value: Binding(get: { quantities[l.itemID] ?? l.qty }, set: { quantities[l.itemID] = $0 }),
+                                             placeholder: "0", maxFraction: 3, width: 100)
+                        OptionalDecimalField(value: Binding(get: { prices[l.itemID] ?? nil }, set: { prices[l.itemID] = $0 }),
+                                             placeholder: item?.unitCost.map { Fmt.number($0, maxFraction: 2) } ?? "—", maxFraction: 2, width: 120)
+                    }
+                }
+            }
+            if store.isLocked(date) {
+                Label("Seçili gün kapatılmış; önce kilidi açın veya başka bir gün seçin.", systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(Brand.negative)
+            }
+            HStack {
+                Spacer()
+                Button("Vazgeç") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Teslim Al") {
+                    var q: [String: Double] = [:], p: [String: Double] = [:]
+                    for l in order.lines {
+                        q[l.itemID] = (quantities[l.itemID] ?? l.qty) ?? 0
+                        if let price = prices[l.itemID] ?? nil { p[l.itemID] = price }
+                    }
+                    if store.receiveOrder(order.id, on: date, quantities: q, prices: p) { dismiss() }
+                }
+                .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                .disabled(store.isLocked(date))
+            }
+        }
+        .padding(22).frame(width: 620)
+    }
 }

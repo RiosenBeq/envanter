@@ -7,6 +7,7 @@ import EnvanterCore
 //   EnvanterTool export-excel <çıktı.xlsx> [--from GG.AA.YYYY|yyyy-MM-dd] [--to …]
 //   EnvanterTool orders [--date …] [--days 14] [--cover 3]    Sipariş önerisini yazdırır
 //   EnvanterTool demo --data-dir KLASÖR [--date …] [--days 35] Eğitim/tanıtım için örnek veri kurar
+//   EnvanterTool report [--from …] [--to …]                    Dönem özeti: satış, maliyet %, personel %, prime cost
 // Tüm komutlar --data-dir KLASÖR ile başka bir veri klasörüne yönlendirilebilir.
 
 func fail(_ msg: String) -> Never {
@@ -20,6 +21,7 @@ let usage = """
       EnvanterTool export-excel <çıktı.xlsx> [--from TARİH] [--to TARİH]
       EnvanterTool orders [--date TARİH] [--days 14] [--cover 3]
       EnvanterTool demo --data-dir KLASÖR [--date TARİH] [--days 35]
+      EnvanterTool report [--from TARİH] [--to TARİH]
     Ortak seçenek: --data-dir KLASÖR
     """
 
@@ -59,8 +61,8 @@ if command == "demo" {
     let p = Persistence(directory: dataDir)
     guard case .fresh = p.load() else { fail("\(dataDir.path) içinde zaten veri var; boş bir klasör seçin.") }
     let end = dateArg(option("--date")) ?? DateKey.today()
-    let days = option("--days").flatMap { Int($0) } ?? 35
-    let demo = DemoData.make(endingAt: end, days: max(7, min(days, 400)))
+    let days = max(7, min(option("--days").flatMap { Int($0) } ?? 35, 400))
+    let demo = DemoData.make(endingAt: end, days: days)
     do { try p.save(demo) } catch { fail("Hata: \(error.localizedDescription)") }
     print("Demo verisi kuruldu: \(dataDir.path) (\(days) gün, son gün \(DateKey.short(end)))")
     print("Uygulamayı bu veriyle açmak için:")
@@ -131,6 +133,26 @@ case "orders":
     let cover = option("--cover").flatMap { Fmt.parse($0) } ?? data.settings.orderCoverDays
     let list = Engine(data: data).orderSuggestions(asOf: date, lookbackDays: days, coverDays: cover)
     print(Exporter.orderText(list, date: date, branch: data.settings.branchName))
+
+case "report":
+    let engine = Engine(data: data)
+    let to = dateArg(option("--to")) ?? engine.datesWithData.last ?? DateKey.today()
+    let from = dateArg(option("--from")) ?? DateKey.startOfMonth(to)
+    let p = engine.periodStats(from: from, to: to)
+    func pct(_ v: Double?) -> String { v.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—" }
+    let s = data.settings
+    print("\(s.branchName.isEmpty ? "Dönem özeti" : s.branchName) · \(DateKey.short(from)) – \(DateKey.short(to))")
+    print("Gün: \(p.days.count) (sayım \(p.countedDays), satış \(p.salesDays), tutarlı \(p.revenueDays))")
+    print("Satış tutarı        : \(Fmt.money(p.revenue))")
+    print("Teorik hammadde     : \(Fmt.money(p.theoreticalCost))  \(pct(p.theoreticalCostPct))")
+    print("Fiili hammadde      : \(Fmt.money(p.actualCost))  \(pct(p.actualCostPct))  hedef \(pct(s.targetFoodCostPct))")
+    print("Personel            : \(Fmt.money(p.laborCost))  \(pct(p.laborPct))  hedef \(pct(s.targetLaborPct))")
+    print("Prime cost          : \(Fmt.money(p.primeCost))  \(pct(p.primeCostPct))  hedef \(pct(s.targetPrimeCostPct))")
+    print("Kayıp (fazla çıkış) : \(Fmt.money(p.lossValue))   Zayi: \(Fmt.money(p.wasteCost))")
+    let alerts = engine.priceAlerts(asOf: to, threshold: s.priceAlertPct)
+    for a in alerts { print("Fiyat artışı        : \(a.item.name) \(Fmt.money(a.from, fraction: 2)) → \(Fmt.money(a.to, fraction: 2)) (\(pct(a.ratio)))") }
+    let open = data.purchaseOrders.filter { $0.status == .open }
+    if !open.isEmpty { print("Açık sipariş        : \(open.count)") }
 
 default:
     fail("Bilinmeyen komut: \(command)\n\(usage)")

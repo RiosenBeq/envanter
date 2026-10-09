@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import EnvanterCore
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case overview, daily, sales, summary, analytics, orders, recipes, items, backup, help
+    case overview, daily, sales, orders, labor, summary, analytics, recipes, items, backup, help
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -14,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .summary: return "Özet ve Raporlar"
         case .analytics: return "İstatistikler"
         case .orders: return "Sipariş Önerisi"
+        case .labor: return "Personel"
         case .recipes: return "Reçeteler"
         case .items: return "Stok Kalemleri"
         case .backup: return "Ayarlar ve Veri"
@@ -28,6 +29,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .summary: return "tablecells"
         case .analytics: return "chart.xyaxis.line"
         case .orders: return "shippingbox.and.arrow.backward"
+        case .labor: return "person.2"
         case .recipes: return "fork.knife"
         case .items: return "shippingbox"
         case .backup: return "gearshape"
@@ -40,12 +42,13 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .overview: return "1"
         case .daily: return "2"
         case .sales: return "3"
-        case .summary: return "4"
-        case .analytics: return "5"
-        case .orders: return "6"
-        case .recipes: return "7"
-        case .items: return "8"
-        case .backup: return "9"
+        case .orders: return "4"
+        case .labor: return "5"
+        case .summary: return "6"
+        case .analytics: return "7"
+        case .recipes: return "8"
+        case .items: return "9"
+        case .backup: return ","
         case .help: return nil
         }
     }
@@ -496,6 +499,135 @@ final class AppStore: ObservableObject {
         analyticsItem = itemID
         analyticsTab = .item
         section = .analytics
+    }
+
+    // MARK: - Personel
+
+    var employees: [Employee] { data.employees }
+
+    func addEmployee(_ e: Employee) {
+        mutateData("Personel Ekle") { $0.employees.append(e) }
+    }
+
+    func updateEmployee(_ id: String, actionName: String = "Personel Düzenleme", _ mutate: (inout Employee) -> Void) {
+        mutateData(actionName) { d in
+            guard let i = d.employees.firstIndex(where: { $0.id == id }) else { return }
+            mutate(&d.employees[i])
+        }
+    }
+
+    /// İşten ayrılış: geçmiş maliyetler korunur, seçili günden sonra maliyet yazılmaz
+    func markEmployeeLeft(_ id: String, on date: String) {
+        updateEmployee(id, actionName: "Personel Ayrıldı") { $0.endDate = date; $0.active = false }
+    }
+
+    /// Personeli ve tüm vardiya kayıtlarını siler (yanlış girilen kayıt için)
+    func deleteEmployee(_ id: String) {
+        mutateData("Personel Sil") { d in
+            d.employees.removeAll { $0.id == id }
+            for (k, var day) in d.days where day.shifts?[id] != nil {
+                day.shifts?[id] = nil
+                if day.isEmpty { d.days[k] = nil } else { d.days[k] = day }
+            }
+        }
+    }
+
+    func updateShift(_ employeeID: String, date: String, _ mutate: (inout ShiftEntry) -> Void) {
+        guard !isLocked(date) else { NSSound.beep(); return }
+        updateDay(date, actionName: "Vardiya") { day in
+            var shifts = day.shifts ?? [:]
+            var e = shifts[employeeID] ?? ShiftEntry()
+            mutate(&e)
+            shifts[employeeID] = e.isEmpty ? nil : e
+            day.shifts = shifts.isEmpty ? nil : shifts
+        }
+    }
+
+    func shiftBinding(_ employeeID: String, date: String, _ kp: WritableKeyPath<ShiftEntry, Double?>) -> Binding<Double?> {
+        Binding(get: { self.data.days[date]?.shifts?[employeeID]?[keyPath: kp] },
+                set: { v in self.updateShift(employeeID, date: date) { $0[keyPath: kp] = v } })
+    }
+
+    func workedBinding(_ employeeID: String, date: String) -> Binding<Bool> {
+        Binding(get: { self.data.days[date]?.shifts?[employeeID]?.worked == true },
+                set: { v in self.updateShift(employeeID, date: date) { $0.worked = v ? true : nil } })
+    }
+
+    func otherLaborBinding(_ date: String) -> Binding<Double?> {
+        Binding(get: { self.data.days[date]?.otherLabor },
+                set: { v in
+                    guard !self.isLocked(date) else { NSSound.beep(); return }
+                    self.updateDay(date, actionName: "Diğer Personel Gideri") { $0.otherLabor = (v ?? 0) > 0 ? v : nil }
+                })
+    }
+
+    /// Boş vardiyaları varsayılanla doldurur: saatlikler varsayılan saat, yevmiyeliler "çalıştı"
+    func fillDefaultShifts(date: String) -> Int {
+        guard !isLocked(date) else { return 0 }
+        var n = 0
+        updateDay(date, actionName: "Vardiyaları Doldur") { day in
+            var shifts = day.shifts ?? [:]
+            for e in self.data.employees where e.active && e.isEmployed(on: date) && (shifts[e.id]?.isEmpty ?? true) {
+                switch e.payType {
+                case .hourly: if let h = e.defaultHours, h > 0 { shifts[e.id] = ShiftEntry(hours: h); n += 1 }
+                case .daily: shifts[e.id] = ShiftEntry(worked: true); n += 1
+                case .monthly: if let h = e.defaultHours, h > 0 { shifts[e.id] = ShiftEntry(hours: h); n += 1 }
+                }
+            }
+            day.shifts = shifts.isEmpty ? nil : shifts
+        }
+        return n
+    }
+
+    // MARK: - Fiyat geçmişi
+
+    /// Birim maliyeti değiştirir ve değişikliği fiyat geçmişine yazar
+    func setItemCost(_ id: String, _ cost: Double?) {
+        let today = DateKey.today()
+        updateItem(id, actionName: "Birim Maliyet") { $0.setCost(cost, on: today) }
+    }
+
+    // MARK: - Satın alma siparişleri
+
+    var openOrders: [PurchaseOrder] { data.purchaseOrders.filter { $0.status == .open } }
+
+    /// Önerilerden sipariş oluşturur
+    @discardableResult
+    func createOrder(date: String, supplier: String) -> Bool {
+        guard let order = Purchasing.makeOrder(from: orderSuggestions(date: date), date: date, supplier: supplier) else {
+            alert = AppAlert(title: "Sipariş oluşturulamadı", message: "Bu gün için önerilen sipariş yok.")
+            return false
+        }
+        mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
+        return true
+    }
+
+    func receiveOrder(_ id: String, on date: String, quantities: [String: Double], prices: [String: Double]) -> Bool {
+        var copy = data
+        do {
+            let r = try Purchasing.receive(orderID: id, on: date, quantities: quantities, prices: prices, data: &copy)
+            mutateData("Teslim Al") { $0 = copy }
+            alert = AppAlert(title: "Teslim alındı",
+                             message: "\(r.lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi" + (r.priceUpdates > 0 ? "; \(r.priceUpdates) kalemin birim maliyeti fatura fiyatıyla güncellendi." : "."))
+            return true
+        } catch {
+            alert = AppAlert(title: "Teslim alınamadı", message: error.localizedDescription)
+            return false
+        }
+    }
+
+    func cancelOrder(_ id: String) {
+        mutateData("Siparişi İptal Et") { Purchasing.cancel(orderID: id, data: &$0) }
+    }
+
+    func deleteOrder(_ id: String) {
+        mutateData("Siparişi Sil") { $0.purchaseOrders.removeAll { $0.id == id } }
+    }
+
+    func copyOrder(_ id: String) {
+        guard let o = data.purchaseOrders.first(where: { $0.id == id }) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Purchasing.text(o, items: engine.itemsByID, branch: settings.branchName), forType: .string)
     }
 
     // MARK: - Sipariş önerisi

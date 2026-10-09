@@ -59,12 +59,16 @@ struct AnalyticsView: View {
 private struct ChartCard<Content: View>: View {
     var title: String
     var subtitle: String = ""
+    var info: Term? = nil
     @ViewBuilder var content: Content
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
+                    HStack(spacing: 6) {
+                        Text(title).font(.headline)
+                        if let info { InfoTip(term: info) }
+                    }
                     if !subtitle.isEmpty { Text(subtitle).font(.caption).foregroundStyle(.secondary) }
                 }
                 content
@@ -81,6 +85,51 @@ private func percent(_ v: Double?) -> String {
 
 private func day(_ key: String) -> Date { DateKey.date(from: key) ?? Date() }
 
+/// Önceki döneme göre değişim oranı (önceki 0 ise nil)
+private func change(_ now: Double, _ before: Double) -> Double? {
+    guard before > 0 else { return nil }
+    return (now - before) / before
+}
+
+/// Hedefe göre renk (maliyet oranlarında düşük iyi)
+private func tone(_ v: Double?, _ t: Double?) -> Color {
+    guard let v, let t else { return Brand.accent }
+    return v <= t ? Brand.ok : Brand.negative
+}
+
+/// Günlük maliyet dağılımı: hammadde + personel (yığılmış çubuk) ve satış tutarı (çizgi) — Tremor "CategoryBar" fikri
+private struct CostMixChart: View {
+    let days: [DailyStat]
+
+    var body: some View {
+        let parts: [(date: String, kind: String, value: Double)] = days.flatMap { d -> [(date: String, kind: String, value: Double)] in
+            [(d.date, "Hammadde (fiili)", d.actualCost), (d.date, "Personel", d.laborCost)]
+        }
+        let hasRevenue = days.contains { $0.revenue > 0 }
+        ChartCard(title: "Günlük maliyet dağılımı (prime cost)",
+                  subtitle: hasRevenue ? "Yığılmış çubuk: hammadde + personel · Çizgi: satış tutarı" : "Yığılmış çubuk: hammadde + personel",
+                  info: .primeCost) {
+            Chart {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, p in
+                    BarMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Tutar", p.value))
+                        .foregroundStyle(by: .value("Tür", p.kind))
+                }
+                if hasRevenue {
+                    ForEach(days.filter { $0.revenue > 0 }) { d in
+                        LineMark(x: .value("Gün", day(d.date), unit: .day), y: .value("Tutar", d.revenue))
+                            .foregroundStyle(by: .value("Tür", "Satış tutarı"))
+                            .interpolationMethod(.monotone)
+                    }
+                }
+            }
+            .chartForegroundStyleScale(domain: ["Hammadde (fiili)", "Personel", "Satış tutarı"],
+                                       range: [Brand.accent, Brand.positive, Brand.ok])
+            .chartLegend(position: .top, alignment: .leading)
+            .frame(height: 230)
+        }
+    }
+}
+
 // MARK: - Genel
 
 private struct GeneralStatsView: View {
@@ -93,6 +142,12 @@ private struct GeneralStatsView: View {
         let stats = engine.periodStats(from: from, to: to)
         let summary = engine.summary(from: from, to: to)
         let stock = engine.stockValue(asOf: min(to, DateKey.today()))
+        // Önceki eşit uzunluktaki dönem (değişim rozetleri için)
+        let span = DateKey.distance(from: from, to: to) ?? 0
+        let prevTo = DateKey.addDays(-1, to: from)
+        let prev = engine.periodStats(from: DateKey.addDays(-span, to: prevTo), to: prevTo)
+        let hasPrev = !prev.days.isEmpty
+        let s = store.settings
         VStack(alignment: .leading, spacing: 16) {
             if !stats.hasCosts {
                 notice("Maliyet tanımlı değil", "İstatistiklerin ₺ karşılığı için Stok Kalemleri ekranında her kalemin birim maliyetini girin. Satış raporunda \"Tutar\" sütunu varsa maliyet yüzdeleri de hesaplanır.")
@@ -100,30 +155,44 @@ private struct GeneralStatsView: View {
             StatRow {
                 StatCard(title: "Satış tutarı", value: stats.revenueDays > 0 ? Fmt.money(stats.revenue) : "—",
                          detail: stats.revenueDays > 0 ? "\(stats.revenueDays) günlük raporda tutar var" : "Raporlarda tutar sütunu yok",
-                         icon: "banknote", color: Brand.ok)
+                         icon: "banknote", color: Brand.ok,
+                         delta: hasPrev ? change(stats.revenue, prev.revenue) : nil,
+                         spark: stats.days.count > 1 ? stats.days.map { $0.revenue } : nil)
                 StatCard(title: "Teorik maliyet", value: stats.hasCosts ? Fmt.money(stats.theoreticalCost) : "—",
-                         detail: "Reçeteye göre · " + percent(stats.theoreticalCostPct), icon: "function", color: Brand.positive)
+                         detail: "Reçeteye göre · satışın " + percent(stats.theoreticalCostPct), icon: "function", color: Brand.positive,
+                         info: .theoreticalCost)
                 StatCard(title: "Fiili maliyet", value: stats.hasCosts ? Fmt.money(stats.actualCost) : "—",
-                         detail: "Sayıma göre · " + percent(stats.actualCostPct), icon: "scalemass", color: Brand.accent)
+                         detail: "Sayıma göre · satışın " + percent(stats.actualCostPct) + (s.targetFoodCostPct.map { " · hedef " + percent($0) } ?? ""),
+                         icon: "scalemass", color: tone(stats.actualCostPct, s.targetFoodCostPct), info: .actualCost,
+                         targetValue: stats.actualCostPct, target: s.targetFoodCostPct)
                 StatCard(title: "Kayıp (fazla çıkış)", value: stats.hasCosts ? Fmt.money(stats.lossValue) : "—",
                          detail: "Net fark: \(Fmt.money(stats.netValue))", icon: "arrow.down.right.circle",
-                         color: stats.lossValue > 0 ? Brand.negative : Brand.ok)
+                         color: stats.lossValue > 0 ? Brand.negative : Brand.ok, info: .loss,
+                         delta: hasPrev ? change(stats.lossValue, prev.lossValue) : nil, higherIsBetter: false,
+                         spark: stats.days.count > 1 ? stats.days.map { $0.lossValue } : nil)
             }
             StatRow {
+                StatCard(title: "Personel maliyeti", value: stats.hasLabor ? Fmt.money(stats.laborCost) : "—",
+                         detail: stats.hasLabor ? "Satışın " + percent(stats.laborPct) + (s.targetLaborPct.map { " · hedef " + percent($0) } ?? "") : "Personel ekranından çalışanları ekleyin",
+                         icon: "person.2", color: tone(stats.laborPct, s.targetLaborPct), info: .laborPct,
+                         targetValue: stats.laborPct, target: s.targetLaborPct)
+                StatCard(title: "Prime cost", value: stats.hasLabor ? Fmt.money(stats.primeCost) : "—",
+                         detail: "Hammadde + personel · satışın " + percent(stats.primeCostPct),
+                         icon: "chart.pie", color: tone(stats.primeCostPct, s.targetPrimeCostPct), info: .primeCost,
+                         targetValue: stats.primeCostPct, target: s.targetPrimeCostPct)
                 StatCard(title: "Zayi", value: stats.hasCosts ? Fmt.money(stats.wasteCost) : "—",
-                         detail: "Satışa oranı " + percent(stats.wastePct), icon: "trash", color: Brand.warn)
-                StatCard(title: "Alım (gelen)", value: stats.hasCosts ? Fmt.money(stats.incomingValue) : "—",
-                         detail: "Gelen miktarların maliyeti", icon: "shippingbox", color: Brand.positive)
+                         detail: "Satışa oranı " + percent(stats.wastePct), icon: "trash", color: Brand.warn, info: .wasteCost,
+                         delta: hasPrev ? change(stats.wasteCost, prev.wasteCost) : nil, higherIsBetter: false)
                 StatCard(title: "Stok değeri", value: stock.costedItems > 0 ? Fmt.money(stock.value) : "—",
-                         detail: "\(DateKey.short(min(to, DateKey.today()))) itibarıyla son sayımlar", icon: "archivebox", color: Brand.accent)
-                StatCard(title: "Sayılan gün", value: "\(stats.countedDays)",
-                         detail: "Satış raporu olan gün: \(stats.salesDays)", icon: "calendar", color: Brand.accent)
+                         detail: "Alım: \(Fmt.money(stats.incomingValue)) · \(stats.countedDays) sayılmış gün", icon: "archivebox",
+                         color: Brand.accent, info: .stockValue)
             }
             if stats.days.isEmpty {
                 EmptyStateView(icon: "chart.xyaxis.line", title: "Bu dönemde veri yok", message: "Tarih aralığını değiştirin.")
                     .frame(height: 240)
             } else {
                 CostTrendChart(days: stats.days)
+                if stats.hasLabor && stats.hasCosts { CostMixChart(days: stats.days) }
                 HStack(alignment: .top, spacing: 16) {
                     TopLossChart(rows: summary)
                     WasteChart(from: from, to: to)
@@ -162,7 +231,7 @@ private struct CostTrendChart: View {
             return [(d.date, "Teorik maliyet", d.theoreticalCost), (d.date, "Fiili maliyet", d.actualCost)]
         }
         ChartCard(title: usePct ? "Günlük maliyet yüzdesi (food cost %)" : "Günlük teorik ve fiili maliyet (₺)",
-                  subtitle: "Fiili çizgi teoriğin üstündeyse reçeteye göre fazla tüketim (fire, porsiyon, kayıp) vardır") {
+                  subtitle: "Fiili çizgi teoriğin üstündeyse reçeteye göre fazla tüketim (fire, porsiyon, kayıp) vardır", info: .foodCostPct) {
             Chart {
                 ForEach(Array(points.enumerated()), id: \.offset) { _, p in
                     LineMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Değer", p.value))
@@ -194,7 +263,7 @@ private struct TopLossChart: View {
             .filter { $0.value > 0 }
             .sorted { $0.value > $1.value }
             .prefix(8))
-        ChartCard(title: "En çok kayıp veren kalemler", subtitle: hasCosts ? "Fazla stok çıkışının tutarı (₺)" : "Fazla çıkış miktarı (birim)") {
+        ChartCard(title: "En çok kayıp veren kalemler", subtitle: hasCosts ? "Fazla stok çıkışının tutarı (₺)" : "Fazla çıkış miktarı (birim)", info: .loss) {
             if losses.isEmpty {
                 Text("Bu dönemde tolerans dışı fazla çıkış yok.").font(.callout).foregroundStyle(.secondary).frame(height: 180)
             } else {
@@ -234,7 +303,7 @@ private struct WasteChart: View {
             return (item.name, entry.value)
         }
         let list = Array(all.sorted { $0.value > $1.value }.prefix(8))
-        return ChartCard(title: "Zayi dağılımı", subtitle: hasCosts ? "ZAYİ ürünlerinden düşen tutar (₺)" : "ZAYİ ürünlerinden düşen miktar") {
+        return ChartCard(title: "Zayi dağılımı", subtitle: hasCosts ? "ZAYİ ürünlerinden düşen tutar (₺)" : "ZAYİ ürünlerinden düşen miktar", info: .wasteCost) {
             if list.isEmpty {
                 Text("Bu dönemde zayi kaydı yok.").font(.callout).foregroundStyle(.secondary).frame(height: 180)
             } else {
@@ -255,7 +324,7 @@ private struct CountQualityChart: View {
     let days: [DailyStat]
 
     var body: some View {
-        ChartCard(title: "Sayım düzeni ve sorunlu kalemler", subtitle: "Çubuk: sayılan kalem sayısı · Kırmızı çizgi: tolerans dışı fark çıkan kalem sayısı") {
+        ChartCard(title: "Sayım düzeni ve sorunlu kalemler", subtitle: "Çubuk: sayılan kalem sayısı · Kırmızı çizgi: tolerans dışı fark çıkan kalem sayısı", info: .tolerance) {
             Chart {
                 ForEach(days) { d in
                     BarMark(x: .value("Gün", day(d.date), unit: .day), y: .value("Kalem", d.countedItems))
@@ -318,15 +387,15 @@ private struct ItemAnalysisView: View {
         let u = item.unit.lowercased()
         return StatRow {
             StatCard(title: "Ort. beklenen tüketim", value: "\(Fmt.number(avgExpected, maxFraction: item.maxFraction)) \(u)",
-                     detail: "Reçeteye göre, günlük", icon: "function", color: Brand.positive)
+                     detail: "Reçeteye göre, günlük", icon: "function", color: Brand.positive, info: .sold)
             StatCard(title: "Ort. fiili tüketim", value: avgActual.map { "\(Fmt.number($0, maxFraction: item.maxFraction)) \(u)" } ?? "—",
-                     detail: "\(counted.count) sayılmış gün", icon: "scalemass", color: Brand.accent)
+                     detail: "\(counted.count) sayılmış gün", icon: "scalemass", color: Brand.accent, info: .actualUsage)
             StatCard(title: "Toplam fark", value: "\(Fmt.number(totalDiff, maxFraction: item.maxFraction)) \(u)",
                      detail: item.unitCost.map { "Tutar: \(Fmt.money(totalDiff * $0))" } ?? "Birim maliyet tanımlı değil",
-                     icon: "plusminus", color: Brand.color(for: item.severity(of: totalDiff)))
+                     icon: "plusminus", color: Brand.color(for: item.severity(of: totalDiff)), info: .diff)
             StatCard(title: "Tutarlılık", value: percent(accuracy),
                      detail: "Farkın tolerans içinde kaldığı günler", icon: "target",
-                     color: (accuracy ?? 0) >= 0.8 ? Brand.ok : Brand.warn, progress: accuracy)
+                     color: (accuracy ?? 0) >= 0.8 ? Brand.ok : Brand.warn, progress: accuracy, info: .consistency)
         }
     }
 }
@@ -364,7 +433,7 @@ private struct DiffChart: View {
     let series: [ItemDayPoint]
 
     var body: some View {
-        ChartCard(title: "Günlük fark", subtitle: "Negatif: beklenenden fazla çıkış") {
+        ChartCard(title: "Günlük fark", subtitle: "Negatif: beklenenden fazla çıkış", info: .diff) {
             Chart {
                 ForEach(series.filter { $0.diff != nil }) { p in
                     BarMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Fark", p.diff ?? 0))
@@ -388,7 +457,7 @@ private struct StockLevelChart: View {
     let series: [ItemDayPoint]
 
     var body: some View {
-        ChartCard(title: "Stok seviyesi (kapanış)", subtitle: item.minStock.map { "Kesikli çizgi: kritik seviye \(Fmt.number($0, maxFraction: item.maxFraction))" } ?? "Kritik seviye tanımlı değil") {
+        ChartCard(title: "Stok seviyesi (kapanış)", subtitle: item.minStock.map { "Kesikli çizgi: kritik seviye \(Fmt.number($0, maxFraction: item.maxFraction))" } ?? "Kritik seviye tanımlı değil", info: .minStock) {
             Chart {
                 ForEach(series.filter { $0.closing != nil }) { p in
                     AreaMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Stok", p.closing ?? 0))
@@ -430,10 +499,10 @@ private struct ABCView: View {
                         let list = rows.filter { $0.klass == k }
                         StatCard(title: "\(k.rawValue) sınıfı", value: "\(list.count) kalem",
                                  detail: "Tüketim değerinin " + percent(list.reduce(0) { $0 + $1.share }) + "'i · " + Fmt.money(list.reduce(0) { $0 + $1.value }),
-                                 icon: "\(k.rawValue.lowercased()).circle.fill", color: color(k))
+                                 icon: "\(k.rawValue.lowercased()).circle.fill", color: color(k), info: .abc)
                     }
                 }
-                ChartCard(title: "Pareto grafiği", subtitle: "Çubuk: kalemin payı · Çizgi: birikimli pay (%)") {
+                ChartCard(title: "Pareto grafiği", subtitle: "Çubuk: kalemin payı · Çizgi: birikimli pay (%)", info: .abc) {
                     Chart {
                         ForEach(rows) { r in
                             BarMark(x: .value("Kalem", r.item.name), y: .value("Pay", r.share * 100))
@@ -503,7 +572,7 @@ private struct MenuEngineeringView: View {
                     ForEach(MenuClass.allCases, id: \.self) { k in
                         let list = classified.filter { $0.klass == k }
                         StatCard(title: k.rawValue, value: "\(list.count) ürün",
-                                 detail: k.advice, icon: icon(k), color: color(k))
+                                 detail: k.advice, icon: icon(k), color: color(k), info: .menuEngineering)
                     }
                 }
                 MenuMatrixChart(stats: classified, color: color)
@@ -512,11 +581,11 @@ private struct MenuEngineeringView: View {
                         HStack {
                             Text("Ürün").frame(maxWidth: .infinity, alignment: .leading)
                             Text("Adet").frame(width: 70, alignment: .trailing)
-                            Text("Ort. fiyat").frame(width: 90, alignment: .trailing)
-                            Text("Reçete maliyeti").frame(width: 110, alignment: .trailing)
-                            Text("Maliyet %").frame(width: 80, alignment: .trailing)
-                            Text("Toplam kâr").frame(width: 110, alignment: .trailing)
-                            Text("Sınıf").frame(width: 80, alignment: .center)
+                            Text("Ort. fiyat").frame(width: 90, alignment: .trailing).help("Satış raporundaki tutar ÷ adet")
+                            Text("Reçete maliyeti").frame(width: 110, alignment: .trailing).explains(.unitCost)
+                            Text("Maliyet %").frame(width: 80, alignment: .trailing).explains(.foodCostPct)
+                            Text("Toplam kâr").frame(width: 110, alignment: .trailing).explains(.unitMargin)
+                            Text("Sınıf").frame(width: 80, alignment: .center).explains(.menuEngineering)
                         }
                         .font(.caption.weight(.semibold)).padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Color.primary.opacity(0.05))
@@ -585,7 +654,7 @@ private struct MenuMatrixChart: View {
             return codes
         }()
         ChartCard(title: "Popülerlik × kârlılık matrisi",
-                  subtitle: "Yatay: satış payı (%) · Dikey: birim kâr (₺) · Kesikli çizgiler sınıf eşikleri") {
+                  subtitle: "Yatay: satış payı (%) · Dikey: birim kâr (₺) · Kesikli çizgiler sınıf eşikleri", info: .menuEngineering) {
             Chart {
                 ForEach(stats) { s in
                     PointMark(x: .value("Popülerlik", s.popularity * 100), y: .value("Birim kâr", s.unitMargin ?? 0))

@@ -21,12 +21,18 @@ struct EnvanterApp: App {
                 .environment(\.locale, Locale(identifier: "tr_TR"))
                 .frame(minWidth: 1180, minHeight: 720)
                 .tint(Brand.accent)
-                .onAppear { DebugSnapshot.installIfRequested(store: store) }
+                .onAppear {
+                    SelfTest.runIfRequested()
+                    DebugSnapshot.installIfRequested(store: store)
+                }
         }
         .defaultSize(width: 1440, height: 920)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("\(Brand.appName) Hakkında") { showAbout() }
+            }
+            CommandGroup(replacing: .appSettings) {
+                Button("Ayarlar…") { store.section = .backup }.keyboardShortcut(",")
             }
             CommandGroup(replacing: .newItem) {
                 Button("Satış Raporu İçe Aktar…") { store.section = .daily; store.pickAndImportFile() }
@@ -50,7 +56,7 @@ struct EnvanterApp: App {
                 .keyboardShortcut("l")
             }
             CommandMenu("Git") {
-                ForEach(AppSection.allCases) { s in
+                ForEach(AppSection.allCases.filter { $0 != .backup }) { s in
                     if let key = s.shortcut {
                         Button(s.title) { store.section = s }.keyboardShortcut(key, modifiers: .command)
                     } else {

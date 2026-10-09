@@ -1,6 +1,8 @@
 # NextGen Envanter
 
-Restoranlar için macOS stok, fire ve maliyet takip uygulaması. Excel'deki envanter dosyasının (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar; ModPos satış raporunu reçetelerle hammaddeye çevirir, günlük sayımla karşılaştırır ve farkı **₺ olarak** gösterir. Şirket içi kullanım içindir (App Store'da yayınlanmaz).
+Restoranlar için macOS stok, fire, maliyet ve personel maliyeti takip uygulaması. Excel'deki envanter dosyasının (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar. ModPos satış raporunu reçetelerle hammaddeye çevirir, günlük sayımla karşılaştırır ve farkı **₺ olarak** gösterir. Bunlara ek olarak **food cost %**, **personel %** ve **prime cost** hedeflerini izler. Şirket içi kullanım içindir (App Store'da yayınlanmaz).
+
+> Ekran görüntülerindeki rakamlar `EnvanterTool demo` ile üretilmiş **örnek verilerdir** ("Burger Yiyelim · Tuzla Marina" demo şubesi). Gerçek satış veya maliyet verisi değildir.
 
 ![Genel Bakış](docs/screenshots/01-overview.png)
 
@@ -8,21 +10,24 @@ Restoranlar için macOS stok, fire ve maliyet takip uygulaması. Excel'deki enva
 
 | Ekran | Ne işe yarar |
 | --- | --- |
-| **Genel Bakış** | Seçili günün sayım ilerlemesi, satış raporu durumu, sorunlu kalem sayısı ve günün kaybı (₺); son 14 günün kayıp grafiği; tolerans dışı farklar, kritik seviyenin altındaki stoklar ve reçetesi tanımsız satışlar; hızlı işlemler. |
-| **Günlük Envanter** | Açılış (önceki günden otomatik), Gelen, Transfer, Kapanış girişi; Satılan/Zaiyat reçeteden otomatik; Fiili Tüketim ve Fark. Tolerans ve kritik seviyeye göre renkler, ₺ fark, *Sayılmayan / Sorunlu* filtresi, gün notu ve sayımı yapan kişi, **günü kapatma kilidi**, hareketsiz kalemleri tek tıkla doldurma, satır bazında hesap dökümü. |
-| **Satış Dökümü** | ModPos satırlarının reçeteli / stok etkisi yok / reçete tanımsız ayrımı, her satırın stoktan düşürdüğü miktarlar, tek tıkla reçete tanımlama. |
-| **Sipariş Önerisi** | Son 7/14/30 günün ortalama tüketimi × istenen gün + kritik seviye − son stok. Listeyi tedarikçiye WhatsApp'tan göndermek için kopyalama veya Excel. |
-| **Özet ve Raporlar** | Dönem toplamları (İlk açılış, gelen, net transfer, satılan, zaiyat, fiili tüketim, fark, ₺), KPI kartları, kalem bazında günlük fark grafiği (tolerans bandıyla). |
-| **İstatistikler** | *Genel:* satış tutarı, teorik/fiili maliyet ve **food cost %**, kayıp, zayi, alım tutarı, stok değeri; maliyet yüzdesi eğilimi, en çok kayıp veren kalemler, zayi dağılımı, sayım düzeni. *Kalem Analizi:* beklenen ve fiili tüketim, günlük fark, stok seviyesi. *ABC Analizi:* Pareto grafiği ve A/B/C sınıfları. *Menü Mühendisliği:* popülerlik × kârlılık matrisi (Yıldız, Beygir, Bilmece, Zayıf) ve ürün bazında maliyet oranı. |
+| **Genel Bakış** | Seçili günün sayım ilerlemesi, satış raporu durumu, sorunlu kalem sayısı ve günün kaybı (₺). Ay kartlarında food cost %, personel % ve prime cost hedef çubuklarıyla görünür. Son 14 günün sayım düzeni (tracker) ve kayıp grafiği yer alır. *Dikkat* listeleri: tolerans dışı farklar, **fiyat artışları**, kritik seviyenin altındaki stoklar, açık siparişler ve reçetesi tanımsız satışlar. Hızlı işlemler. |
+| **Günlük Envanter** | Açılış (önceki günden otomatik), Gelen, Transfer, Kapanış girişi. Satılan/Zaiyat reçeteden otomatik gelir; Fiili Tüketim ve Fark hesaplanır. Tolerans ve kritik seviyeye göre renkler, ₺ fark ve *Sayılmayan / Sorunlu* filtresi vardır. Ayrıca gün notu, sayımı yapan kişi, **günü kapatma kilidi**, hareketsiz kalemleri tek tıkla doldurma ve satır bazında hesap dökümü. |
+| **Satış Dökümü** | ModPos satırlarını *reçeteli / stok etkisi yok / reçete tanımsız* olarak ayırır. Her satırın stoktan düşürdüğü miktarlar görünür; reçete tek tıkla tanımlanır. |
+| **Sipariş Önerisi** | Öneri = son 7/14/30 günün ortalama tüketimi × istenen gün + kritik seviye − son stok. Öneriden **satın alma siparişi** oluşturulur; teslim alınınca miktarlar o günün *Gelen* sütununa, fatura fiyatı birim maliyete (fiyat geçmişiyle) işlenir. Liste WhatsApp için kopyalanabilir veya Excel'e aktarılabilir. |
+| **Personel** | Personel listesi (aylık maaş / yevmiye / saatlik, işveren maliyet katsayısı, giriş-çıkış tarihi). Günlük vardiya tablosunda saat, çalıştı işareti ve ek ödeme girilir; *varsayılan vardiyaları doldur* tek tıktır. Ayrıca günlük diğer personel giderleri, aylık personel maliyeti grafiği, kişi bazında döküm, **personel %** ve **prime cost %**. |
+| **Özet ve Raporlar** | Dönem toplamları (ilk açılış, gelen, net transfer, satılan, zaiyat, fiili tüketim, fark, ₺) ve KPI kartları. Kalem bazında günlük fark grafiği tolerans bandıyla gösterilir. |
+| **İstatistikler** | *Genel:* satış tutarı, teorik/fiili maliyet, **food cost %**, personel %, prime cost, kayıp, zayi, alım tutarı, stok değeri; maliyet dağılımı, hedef çizgili eğilim grafikleri ve en çok kayıp veren kalemler. *Kalem Analizi:* beklenen ve fiili tüketim, günlük fark, stok seviyesi. *ABC Analizi:* Pareto grafiği ve A/B/C sınıfları. *Menü Mühendisliği:* popülerlik × kârlılık matrisi (Yıldız, Beygir, Bilmece, Zayıf) ve ürün bazında maliyet oranı. |
 | **Reçeteler** | 386 hazır reçete; hammadde ekleme/çıkarma, başka üründen kopyalama, **reçete maliyeti**, ortalama satış fiyatı ve maliyet oranı. |
-| **Stok Kalemleri** | Birim, reçete birimi ve katsayı; **birim maliyet (₺)**, **kritik seviye**, **tolerans (±)**; sıralama ve gizleme. |
-| **Ayarlar ve Veri** | Şube adı, personel listesi, otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu**, eski Excel dosyasından içe aktarım. |
+| **Stok Kalemleri** | Birim, reçete birimi ve katsayı; **birim maliyet (₺)** ve son fiyat değişimi, **kritik seviye**, **tolerans (±)**; sıralama ve gizleme. |
+| **Ayarlar ve Veri** | Şube adı, sayım yapan personel listesi, **hedefler** (food cost %, personel %, prime cost %, fiyat artışı uyarı eşiği). Ayrıca otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu** ve eski Excel dosyasından içe aktarım. |
+| **Nasıl Kullanılır?** | Adım adım günlük iş akışı, **notlar ve ipuçları**, Excel'den farklar, kısayollar ve aranabilir **terimler sözlüğü**. |
 
 Diğer:
-- **Geri al / Yinele** (⌘Z / ⇧⌘Z) tüm veri değişikliklerinde.
-- Otomatik kayıt (kayıt durumu yan menüde), günlük yedekler (son 30 gün), riskli işlemlerden önce anlık kopya, bozuk dosyada yedekten otomatik dönüş.
-- Satış raporu `.xlsx`, `.csv`, `.txt` (UTF-8, UTF-16, Windows-1254) veya panodan; pencereye sürükle-bırak. Raporda **Tutar** sütunu varsa maliyet yüzdeleri ve menü analizi hesaplanır.
-- Excel'e aktarım eski *Alımlar* sayfasıyla aynı sütun düzenindedir (pivot tablolar çalışmaya devam eder) + Özet, Günlük Maliyet, Notlar sayfaları.
+- **Terim açıklamaları:** ABC analizi, teorik/fiili maliyet, prime cost, tolerans gibi terimlerin yanındaki ⓘ işaretinin üzerine gelince kısa açıklama çıkar, tıklayınca ayrıntılı açıklama açılır. Tablo başlıkları da aynı şekilde açıklamalıdır.
+- **Geri al / Yinele** (⌘Z / ⇧⌘Z) tüm veri değişikliklerinde çalışır.
+- **Kayıt ve yedek:** Otomatik kayıt yapılır, kayıt durumu yan menüde görünür. Günlük yedekler son 30 günü kapsar ve riskli işlemlerden önce anlık kopya alınır. Dosya bozulursa en son yedekten otomatik dönülür; o da okunamazsa bozuk dosya kenara alınır, üzerine yazılmaz.
+- **Satış raporu:** `.xlsx`, `.csv` ve `.txt` (UTF-8, UTF-16, Windows-1254) dosyaları ya da pano kabul edilir; dosya pencereye sürüklenip bırakılabilir. Raporda **Tutar** sütunu varsa maliyet yüzdeleri ve menü analizi hesaplanır.
+- **Excel'e aktarım:** Eski *Alımlar* sayfasıyla aynı sütun düzeni kullanılır (pivot tablolar çalışmaya devam eder). Ek olarak Özet, Günlük Maliyet (personel ve prime cost dahil), Notlar ve Personel sayfaları yazılır.
 
 ### Kısayollar
 
@@ -33,20 +38,22 @@ Diğer:
 | ⌘[ / ⌘] / ⌘T | Önceki gün / sonraki gün / bugün |
 | ⌘L | Günü kapat / kilidi aç |
 | ⌘1 … ⌘9 | Ekranlar arasında geçiş |
+| ⌘, | Ayarlar ve Veri |
 | ⌘Z / ⇧⌘Z | Geri al / yinele |
 
 ## Ekran görüntüleri
 
-Görüntüler CI'da, uygulamanın `EnvanterTool demo` ile üretilen örnek veriyle çalıştırılmasıyla otomatik alınır.
+Görüntüler CI'da, uygulama `EnvanterTool demo` ile üretilen örnek veriyle çalıştırılarak otomatik alınır.
 
 | | |
 | --- | --- |
 | ![Günlük Envanter](docs/screenshots/02-daily.png) **Günlük Envanter** | ![Satış Dökümü](docs/screenshots/03-sales.png) **Satış Dökümü** |
-| ![Özet](docs/screenshots/04-summary.png) **Özet ve Raporlar** | ![İstatistikler](docs/screenshots/05-analytics-general.png) **İstatistikler · Genel** |
-| ![Kalem Analizi](docs/screenshots/06-analytics-item.png) **İstatistikler · Kalem Analizi** | ![ABC](docs/screenshots/07-analytics-abc.png) **İstatistikler · ABC Analizi** |
-| ![Menü Mühendisliği](docs/screenshots/08-analytics-menu.png) **İstatistikler · Menü Mühendisliği** | ![Sipariş Önerisi](docs/screenshots/09-orders.png) **Sipariş Önerisi** |
-| ![Reçeteler](docs/screenshots/10-recipes-11101.png) **Reçeteler** | ![Stok Kalemleri](docs/screenshots/11-items.png) **Stok Kalemleri** |
-| ![Ayarlar](docs/screenshots/12-backup.png) **Ayarlar ve Veri** | |
+| ![Sipariş Önerisi](docs/screenshots/04-orders.png) **Sipariş Önerisi ve Siparişler** | ![Personel](docs/screenshots/05-labor.png) **Personel** |
+| ![Özet](docs/screenshots/06-summary.png) **Özet ve Raporlar** | ![İstatistikler](docs/screenshots/07-analytics-general.png) **İstatistikler · Genel** |
+| ![Kalem Analizi](docs/screenshots/08-analytics-item.png) **İstatistikler · Kalem Analizi** | ![ABC](docs/screenshots/09-analytics-abc.png) **İstatistikler · ABC Analizi** |
+| ![Menü Mühendisliği](docs/screenshots/10-analytics-menu.png) **İstatistikler · Menü Mühendisliği** | ![Reçeteler](docs/screenshots/11-recipes-11101.png) **Reçeteler** |
+| ![Stok Kalemleri](docs/screenshots/12-items.png) **Stok Kalemleri** | ![Ayarlar](docs/screenshots/13-backup.png) **Ayarlar ve Veri** |
+| ![Nasıl Kullanılır](docs/screenshots/14-help.png) **Nasıl Kullanılır?** | |
 
 ## Kurulum (şirket içi)
 
@@ -62,7 +69,7 @@ Görüntüler CI'da, uygulamanın `EnvanterTool demo` ile üretilen örnek veriy
    xattr -dr com.apple.quarantine "/Applications/NextGen Envanter.app"
    ```
 
-Veriler `~/Library/Application Support/Envanter/` altında tutulur (`envanter-verisi.json` ve `Yedekler/`). Uygulamayı silmek veya güncellemek verilere dokunmaz. Başka bir klasör kullanmak için `ENVANTER_DATA_DIR` ortam değişkeni verilebilir.
+Veriler `~/Library/Application Support/Envanter/` altında tutulur (`envanter-verisi.json` ve `Yedekler/`). Uygulamayı silmek veya güncellemek verilere dokunmaz. Başka bir klasör kullanmak için `ENVANTER_DATA_DIR` ortam değişkeni verilebilir. Eski sürümlerin veri dosyası olduğu gibi açılır; yeni alanlar (personel, siparişler, hedefler, fiyat geçmişi) boş başlar.
 
 ## Komut satırı aracı
 
@@ -73,6 +80,7 @@ EnvanterTool status                                      # veri özeti
 EnvanterTool import-excel 01.08.xlsm [--overwrite] [--dry-run]
 EnvanterTool export-excel rapor.xlsx [--from 01.08.2026] [--to 31.08.2026]
 EnvanterTool orders [--date 09.10.2026] [--days 14] [--cover 3]   # sipariş listesi (metin)
+EnvanterTool report [--from 01.08.2026] [--to 31.08.2026]         # satış, food cost %, personel %, prime cost
 EnvanterTool demo --data-dir ~/Desktop/demo [--days 35]           # eğitim için örnek veri
 ```
 
@@ -85,37 +93,52 @@ ENVANTER_DATA_DIR=~/Desktop/demo "/Applications/NextGen Envanter.app/Contents/Ma
 ## Hesaplama
 
 - **Fiili Tüketim** = Açılış + Gelen + Gelen Transfer − (Giden Transfer + Kapanış)
-- **Fark** = (Satılan + Zaiyat) − Fiili Tüketim → negatif: satışlara göre fazla stok çıkmış (kayıp)
+- **Fark** = (Satılan + Zaiyat) − Fiili Tüketim. Negatif fark, satışlara göre fazla stok çıktığını (kayıp) gösterir.
 - **Teorik maliyet** = reçeteye göre tüketim × birim maliyet; **fiili maliyet** = teorik maliyet − sayılan kalemlerdeki net farkın tutarı
-- **Food cost %** = maliyet / satış tutarı
+- **Food cost %** = fiili maliyet / satış tutarı
+- **Personel maliyeti (günlük):**
+  - *Aylık maaş:* maaş × katsayı ÷ ayın gün sayısı. Çalıştığı her takvim gününe yazılır (izin günleri dahil, maaş zaten ödenir).
+  - *Yevmiye:* "çalıştı" işaretli ya da saat girilmiş günlerde yevmiye × katsayı.
+  - *Saatlik:* saat × ücret × katsayı.
+  - Bunlara ek ödemeler × katsayı ve günün diğer personel giderleri eklenir.
+  - *Katsayı*, maaşın üzerine işverenin ödediği SGK primi vb. için kullanılır (ör. 1,2).
+- **Personel %** = personel maliyeti / satış tutarı. Yalnızca satış tutarı girilmiş günler sayılır.
+- **Prime cost** = fiili maliyet + personel maliyeti; **prime cost %** = prime cost / satış tutarı
 - **Sipariş önerisi** = ortalama günlük tüketim × gün + kritik seviye − son sayılan stok (adet yukarı tam sayıya, kg 0,1'e yuvarlanır)
+- **Fiyat artışı uyarısı:** bir kalemin birim maliyeti son 30 gün içinde ayarlardaki eşikten (varsayılan %5) fazla arttıysa
 - **ABC**: tüketim değerinin ilk %80'i A, sonraki %15'i B, kalanı C
 - **Menü mühendisliği** (Kasavana & Smith): popülerlik eşiği beklenen payın %70'i, kârlılık eşiği ağırlıklı ortalama birim kâr
 
 ## Geliştirme
 
 ```
-Sources/EnvanterCore   Platformdan bağımsız iş mantığı (motor, istatistik, Excel/ZIP okuma-yazma, kayıt)
+Sources/EnvanterCore   Platformdan bağımsız iş mantığı (motor, istatistik, personel, satın alma, Excel/ZIP okuma-yazma, kayıt)
 Sources/Envanter       SwiftUI uygulaması (yalnızca macOS)
 Sources/EnvanterTool   Komut satırı aracı
 Tests/EnvanterCoreTests
+Scripts/               build_app.sh (paket), make_icon.swift (ikon), e2e_cli.sh (komut satırı uçtan uca testi)
 ```
 
 ```bash
-swift test        # macOS veya Linux (çekirdek testleri)
-swift build       # macOS'ta uygulama dahil
+swift test                                  # macOS veya Linux (çekirdek testleri)
+swift build                                 # macOS'ta uygulama dahil
+./Scripts/e2e_cli.sh .build/debug/EnvanterTool
+ENVANTER_SELFTEST=1 ".build/debug/Envanter" # uygulama içi sistem testi (geçici klasörde, çıkış kodu 0 = başarılı)
 ```
 
-CI (`.github/workflows/ci.yml`): Linux'ta çekirdek testleri; macOS'ta uygulamanın derlenmesi, testler, dağıtım paketi ve demo veriyle ekran görüntüleri.
+CI (`.github/workflows/ci.yml`) şu adımları çalıştırır:
+- **Linux:** çekirdek testleri ve komut satırı uçtan uca testi.
+- **macOS:** uygulamanın derlenmesi, testler, dağıtım paketi, komut satırı testi ve **uygulama içi sistem testi**. Sistem testi; sayım, satış aktarımı, geri al/yinele, maliyet ve fiyat geçmişi, tolerans, gün kilidi, personel maliyeti, sipariş teslim alma, Excel ve diske kaydı gerçek uygulama durumu üzerinden doğrular.
+- **Ekran görüntüleri:** demo veriyle macOS'ta otomatik alınır.
 
 ## Yol haritası / öneriler
 
-- **Çok şubeli kullanım:** Her şubenin verisini merkezde birleştiren (ör. ortak bir sunucu ya da paylaşılan klasöre günlük JSON aktarımı) bir şube karşılaştırma ekranı.
+- **Çok şubeli kullanım:** Her şubenin verisini merkezde birleştiren bir şube karşılaştırma ekranı (ör. ortak bir sunucu ya da paylaşılan klasöre günlük JSON aktarımı).
 - **ModPos entegrasyonu:** Raporu elle almak yerine ModPos'un dışa aktarım klasörünü izleyip her sabah otomatik içe aktarma.
-- **Tedarikçi ve fatura kaydı:** Gelen mallar için tedarikçi, fatura no ve birim fiyat; maliyetlerin son alış fiyatından otomatik güncellenmesi (FIFO / ağırlıklı ortalama).
+- **Fatura okuma:** Tedarikçi faturasının fotoğrafından/PDF'inden kalem ve fiyatları okuyup siparişi otomatik teslim alma (MarketMan, Restaurant365 gibi ürünlerde var).
+- **Vardiya planlama ve POS saatleri:** Personel ekranına haftalık vardiya planı ve satış saatlerine göre "saat başına satış" (SPLH) göstergesi.
 - **iPad / iPhone ile sayım:** Depoda telefonla (barkod/QR ile) sayım yapıp Mac'e aktarma.
 - **Yetkilendirme:** Gün kilidini yalnızca yöneticinin açabilmesi için basit PIN; kim neyi değiştirdi kaydı (denetim günlüğü).
-- **Bildirimler:** Kritik seviyenin altına düşen kalemler ve yüksek kayıp günleri için günlük e-posta/WhatsApp özeti (`EnvanterTool orders` bir cron/launchd göreviyle bugün de kullanılabilir).
-- **Bütçe hedefleri:** Food cost % hedefi (ör. %30) ve hedef aşımında uyarı; hafta/ay karşılaştırmaları.
+- **Bildirimler:** Kritik seviyenin altına düşen kalemler, fiyat artışları ve yüksek kayıp günleri için günlük e-posta/WhatsApp özeti. `EnvanterTool report` ve `orders` bugün de bir cron/launchd göreviyle kullanılabilir.
 - **Yarı mamul reçeteleri:** Soslar ve hazırlıklar için alt reçeteler (reçete içinde reçete).
-- **Kod imzalama:** Şirket bir Apple Developer hesabı alırsa uygulama Developer ID ile imzalanıp noter onayından (notarization) geçirilerek Gatekeeper uyarısı tamamen kaldırılabilir.
+- **Kod imzalama:** Şirket bir Apple Developer hesabı alırsa uygulama Developer ID ile imzalanıp noter onayından (notarization) geçirilebilir. Böylece Gatekeeper uyarısı tamamen kalkar.

@@ -38,6 +38,29 @@ struct BackupView: View {
                 }
 
                 Card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Hedefler ve uyarılar", systemImage: "target").font(.headline)
+                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+                            targetRow("Hammadde maliyet oranı", .foodCostPct, \.targetFoodCostPct, hint: "ör. %30")
+                            targetRow("Personel oranı", .laborPct, \.targetLaborPct, hint: "ör. %25")
+                            targetRow("Prime cost oranı", .primeCost, \.targetPrimeCostPct, hint: "ör. %60")
+                            GridRow {
+                                HStack(spacing: 4) { Text("Fiyat artışı uyarısı").foregroundStyle(.secondary); InfoTip(term: .priceAlert) }
+                                HStack {
+                                    Text("%")
+                                    DecimalField(value: Binding(get: { store.settings.priceAlertPct * 100 },
+                                                                set: { v in store.updateSettings("Fiyat Uyarısı") { $0.priceAlertPct = max(v, 0) / 100 } }),
+                                                 maxFraction: 1, width: 70)
+                                    Text("ve üzeri artışlar son 30 gün içinde uyarılır").font(.callout).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        Text("Hedefler Genel Bakış, Personel ve İstatistikler ekranlarında çubukla gösterilir; aşıldığında kırmızıya döner. Boş bırakılan hedef gösterilmez.")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Card {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Verileriniz otomatik kaydedilir", systemImage: "checkmark.shield.fill")
                             .font(.headline).foregroundStyle(Brand.ok)
@@ -117,22 +140,58 @@ struct BackupView: View {
     }
 }
 
+extension BackupView {
+    /// Yüzde hedef satırı (veride 0–1 oranı, ekranda yüzde)
+    func targetRow(_ title: String, _ term: Term, _ kp: WritableKeyPath<AppSettings, Double?>, hint: String) -> GridRow<some View> {
+        GridRow {
+            HStack(spacing: 4) { Text(title).foregroundStyle(.secondary); InfoTip(term: term) }
+            HStack {
+                Text("%")
+                OptionalDecimalField(value: Binding(get: { store.settings[keyPath: kp].map { $0 * 100 } },
+                                                    set: { v in store.updateSettings("Hedef") { $0[keyPath: kp] = v.map { $0 / 100 } } }),
+                                     placeholder: hint, maxFraction: 1, width: 90)
+            }
+        }
+    }
+}
+
 struct HelpView: View {
+    @State private var termFilter = ""
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 Text("\(Brand.appName) — Nasıl Kullanılır?").font(.title2.weight(.semibold))
-                Text("Bu uygulama, Excel'deki envanter dosyanızın (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar; üstüne maliyet, kayıp, sipariş ve menü analizleri ekler.")
-                    .foregroundStyle(.secondary)
+                Text("Uygulama, Excel'deki envanter dosyanızın (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar; üstüne maliyet, kayıp, personel, sipariş ve menü analizleri ekler. Terimlerin yanındaki ⓘ işaretinin üzerine gelince ya da tıklayınca açıklaması görünür; tüm terimler en altta sözlükte.")
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
-                step(1, "Kalemleri hazırlayın", "Stok Kalemleri ekranında her kalemin birim maliyetini (₺), kritik seviyesini ve kabul edilebilir farkını (tolerans) girin. Bunlar boş bırakılabilir; girildikçe ₺ hesapları, uyarılar ve sipariş önerisi devreye girer.")
-                step(2, "Sayımı girin", "Günlük Envanter ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış, bir önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ ile alt satıra, Tab ile yana geçersiniz; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Ayarlar ve Veri ekranından sayım formu alabilirsiniz.")
-                step(3, "ModPos satış raporunu aktarın", "Satış raporunu (.xlsx) pencereye sürükleyip bırakın ya da \"Dosyadan Aktar\"a tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" da diyebilirsiniz (⌘⇧V). Tutar sütunu varsa maliyet yüzdeleri ve menü analizi de hesaplanır.")
-                step(4, "Farkı okuyun", "Fark = (Satılan + Zaiyat) − Fiili Tüketim. Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. Satırdaki ⓘ düğmesi hesabın dökümünü gösterir. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri listeler.")
-                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" ile günü kilitleyin; yanlışlıkla değiştirilemez. Güne not ve sayımı yapan kişiyi ekleyebilirsiniz. Hiç hareketi olmayan kalemleri \"Hareketsizleri Doldur\" ile tek tıkla kapatabilirsiniz.")
-                step(6, "Eksik reçeteleri tamamlayın", "Satış raporunda reçetesi tanımlı olmayan bir ürün çıkarsa uyarı görünür. Satış Dökümü ekranından \"Reçete tanımla\" ile hammaddesini girin. Reçeteler ekranı her ürünün reçete maliyetini ve satış fiyatına göre maliyet oranını gösterir.")
-                step(7, "Raporlar ve istatistikler", "Genel Bakış günün durumunu ve son 14 günün kaybını; Özet dönem toplamlarını; İstatistikler ise maliyet yüzdesi (food cost %), en çok kayıp veren kalemler, zayi dağılımı, kalem bazında tüketim grafikleri, ABC analizi ve menü mühendisliğini gösterir.")
-                step(8, "Sipariş verin", "Sipariş Önerisi ekranı son günlerin ortalama tüketimine ve kritik seviyelere göre ne kadar sipariş vermeniz gerektiğini hesaplar; \"Listeyi Kopyala\" ile tedarikçiye WhatsApp'tan gönderebilirsiniz.")
+                section("Günlük akış")
+                step(1, "Sayımı girin", "Günlük Envanter ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Genel Bakış'tan sayım formu alabilirsiniz.")
+                step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) pencereye sürükleyip bırakın ya da \"Dosyadan Aktar\"a tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa maliyet oranları ve menü analizi hesaplanır.")
+                step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
+                step(4, "Vardiyaları girin", "Personel ekranında saatlik çalışanların saatini, yevmiyelilerin \"çalıştı\" işaretini, varsa fazla mesai/prim tutarını girin. \"Vardiyaları Doldur\" boş vardiyalara varsayılanları yazar. Aylık maaşlar ayrıca girilmeden günlere dağıtılır.")
+                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin. Kilitli günün sayımı, satışı ve vardiyası değiştirilemez; gerekirse kilit açılır. Güne not ve sayımı yapan kişiyi ekleyebilirsiniz.")
+
+                section("Haftalık / aylık")
+                step(6, "Sipariş verin ve teslim alın", "Sipariş Önerisi son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince siparişte \"Teslim al\" deyin: gelen miktarlar Gelen sütununa işlenir, fatura fiyatı girerseniz birim maliyet güncellenir.")
+                step(7, "Raporları okuyun", "Genel Bakış ayın hammadde, personel ve prime cost oranlarını hedeflerle; Özet dönem toplamlarını; İstatistikler maliyet eğilimini, en çok kayıp veren kalemleri, zayi dağılımını, kalem grafiklerini, ABC analizini ve menü mühendisliğini gösterir. Her şey Excel'e aktarılabilir.")
+                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Maliyet değişiklikleri fiyat geçmişine yazılır ve artışlar Genel Bakış'ta uyarılır.")
+
+                section("Notlar ve ipuçları")
+                Card {
+                    VStack(alignment: .leading, spacing: 8) {
+                        tip("clock", "Sayımı her gün aynı saatte (kapanıştan sonra) yapın. Açılış devri ve fark hesabı, günler arasındaki sayımların tutarlı olmasına dayanır.")
+                        tip("slider.horizontal.3", "Toleransı başlangıçta günlük tüketimin yaklaşık %1–2'si olarak verin; birkaç hafta sonra İstatistikler > Kalem Analizi'ndeki \"Tutarlılık\"a bakarak ayarlayın. Çok dar tolerans gereksiz alarm, çok geniş tolerans gözden kaçan kayıp demektir.")
+                        tip("arrow.triangle.2.circlepath", "Sayım ertesi sabah yapılıyorsa satış raporunu yine satışın olduğu güne aktarın; içe aktarma ekranı rapor tarihini gösterir.")
+                        tip("exclamationmark.triangle", "Aynı kalemde her gün aynı yönde fark çıkıyorsa sorun genelde reçetededir (porsiyon, katsayı); farklar rastgele dağılıyorsa sayım hatası olasıdır.")
+                        tip("equal.circle", "\"Hareketsizleri Doldur\"u yalnızca o gün gerçekten hiç kullanılmayan kalemlerde kullanın; kapanışa açılışı yazar.")
+                        tip("turkishlirasign.circle", "Birim maliyetleri faturadan güncel tutun; teslim almada fatura fiyatını girmek en kolay yoldur. Maliyeti olmayan kalemler ₺ hesaplarına katılmaz.")
+                        tip("person.2", "Personel oranı yalnızca satış tutarı bilinen günlerden hesaplanır. Aylık maaşlar ayın günlerine eşit dağıtıldığından ay ortasında oran, ay sonundakine göre dalgalanabilir.")
+                        tip("target", "Hedefleri (hammadde %, personel %, prime cost %) Ayarlar'dan girin; kartlardaki çubukta dikey çizgi hedefi gösterir, aşılınca kırmızıya döner.")
+                        tip("arrow.uturn.backward", "Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alın. Veriler otomatik kaydedilir, her gün yedek alınır (Ayarlar ve Veri).")
+                        tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Maliyet, Personel, Notlar.")
+                    }
+                }
 
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
@@ -148,24 +207,54 @@ struct HelpView: View {
                         Group {
                             Text("⌘O  Satış raporu içe aktar     ⌘⇧V  Panodan satış yapıştır     ⌘E  Günü Excel'e aktar")
                             Text("⌘[  Önceki gün     ⌘]  Sonraki gün     ⌘T  Bugüne git     ⌘L  Günü kapat / aç")
-                            Text("⌘1…⌘9  Ekranlar arasında geçiş     ⌘Z / ⇧⌘Z  Geri al / Yinele")
+                            Text("⌘1…⌘9  Ekranlar arasında geçiş     ⌘,  Ayarlar     ⌘Z / ⇧⌘Z  Geri al / Yinele")
                         }.font(.callout.monospaced()).foregroundStyle(.secondary)
                     }
                 }
+
+                section("Terimler sözlüğü")
+                TextField("Terim ara", text: $termFilter).textFieldStyle(.roundedBorder).frame(width: 260)
+                let q = termFilter.trimmingCharacters(in: .whitespaces).lowercased(with: Locale(identifier: "tr_TR"))
+                Card(padding: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Term.allCases.filter { q.isEmpty || $0.title.lowercased(with: Locale(identifier: "tr_TR")).contains(q)
+                                                    || $0.text.lowercased(with: Locale(identifier: "tr_TR")).contains(q) }) { t in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(t.title).font(.callout.weight(.semibold))
+                                Text(t.text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            Divider().padding(.leading, 14)
+                        }
+                    }
+                }
             }
-            .padding(24).frame(maxWidth: 860, alignment: .leading)
+            .padding(24).frame(maxWidth: 880, alignment: .leading)
         }
         .navigationTitle("Nasıl Kullanılır?")
     }
 
+    private func section(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 11, weight: .semibold)).tracking(0.6).foregroundStyle(.tertiary)
+            .padding(.top, 6)
+    }
+
     private func step(_ n: Int, _ title: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            Text("\(n)").font(.headline).foregroundStyle(.white)
-                .frame(width: 28, height: 28).background(Circle().fill(Brand.accent))
+            Text("\(n)").font(.headline).foregroundStyle(Brand.accent)
+                .frame(width: 28, height: 28).background(Circle().fill(Brand.accent.opacity(0.14)))
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.headline)
                 Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private func tip(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon).foregroundStyle(Brand.accent).frame(width: 20)
+            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

@@ -50,23 +50,45 @@ public enum Exporter {
         if !notes.isEmpty {
             sheets.append(XlsxSheetData(name: "Notlar", header: ["Tarih", "Sayımı Yapan", "Durum", "Not"], rows: notes, widths: [12, 20, 12, 60]))
         }
+        if !engine.data.employees.isEmpty { sheets.append(laborSheet(engine: engine, from: from, to: to)) }
         return XlsxWriter.build(sheets: sheets)
     }
 
     /// Günlük ciro, teorik/fiili maliyet ve kayıp
     public static func dailyStatsSheet(engine: Engine, from: String, to: String) -> XlsxSheetData {
         let stats = engine.periodStats(from: from, to: to)
+        func pct(_ v: Double, _ revenue: Double) -> XlsxCell { revenue > 0 ? .number((v / revenue * 1000).rounded() / 10) : XlsxCell(.blank) }
         let rows: [[XlsxCell]] = stats.days.map { s in
             [DateKey.excelSerial(s.date).map { XlsxCell.date(serial: $0) } ?? .text(s.date),
              s.hasRevenue ? .number(s.revenue) : XlsxCell(.blank), .number(s.theoreticalCost), .number(s.actualCost),
-             .number(s.wasteCost), .number(s.lossValue), .diff(s.netValue),
-             s.revenue > 0 ? .number((s.actualCost / s.revenue * 1000).rounded() / 10) : XlsxCell(.blank),
+             .number(s.wasteCost), .number(s.lossValue), .diff(s.netValue), .number(s.laborCost), .number(s.primeCost),
+             pct(s.actualCost, s.revenue), pct(s.laborCost, s.revenue), pct(s.primeCost, s.revenue),
              .number(Double(s.countedItems)), .number(Double(s.problemItems))]
         }
         return XlsxSheetData(name: "Günlük Maliyet",
                              header: ["Tarih", "Satış Tutarı (₺)", "Teorik Maliyet (₺)", "Fiili Maliyet (₺)", "Zayi (₺)",
-                                      "Kayıp (₺)", "Net Fark (₺)", "Fiili Maliyet %", "Sayılan Kalem", "Sorunlu Kalem"],
-                             rows: rows, widths: [12, 15, 16, 15, 11, 11, 13, 14, 13, 13])
+                                      "Kayıp (₺)", "Net Fark (₺)", "Personel (₺)", "Prime Cost (₺)",
+                                      "Hammadde %", "Personel %", "Prime Cost %", "Sayılan Kalem", "Sorunlu Kalem"],
+                             rows: rows, widths: [12, 15, 16, 15, 11, 11, 13, 13, 14, 12, 12, 13, 13, 13])
+    }
+
+    /// Dönemdeki personel maliyeti (kişi bazında; aylık maaşlar takvim günlerine dağıtılır)
+    public static func laborSheet(engine: Engine, from: String, to: String) -> XlsxSheetData {
+        let s = engine.laborSummary(from: from, to: to)
+        var rows: [[XlsxCell]] = s.rows.map { r in
+            [.text(r.employee.name), .text(r.employee.role), .text(r.employee.payType.title), .number(r.employee.rate),
+             .number(r.employee.costFactor), .number(Double(r.days)), .number(r.hours), .number(r.cost)]
+        }
+        if s.other > 0 {
+            rows.append([.text("Diğer personel gideri"), .text(""), .text(""), XlsxCell(.blank), XlsxCell(.blank),
+                         XlsxCell(.blank), XlsxCell(.blank), .number(s.other)])
+        }
+        rows.append([.text("TOPLAM", bold: true), .text(""), .text(""), XlsxCell(.blank), XlsxCell(.blank),
+                     XlsxCell(.blank), .number(s.hours), .number(s.total)])
+        return XlsxSheetData(name: "Personel",
+                             header: ["Personel (\(DateKey.short(from)) – \(DateKey.short(to)))", "Görev", "Ücret Türü", "Ücret (₺)",
+                                      "İşveren Çarpanı", "Çalıştığı Gün", "Saat", "Maliyet (₺)"],
+                             rows: rows, widths: [28, 16, 16, 12, 14, 13, 10, 14])
     }
 
     public static func salesSheet(engine: Engine, date: String) -> XlsxSheetData {

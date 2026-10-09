@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Charts
 import EnvanterCore
 
 enum Brand {
@@ -43,8 +44,9 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Brand.card))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.line.opacity(0.7), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Brand.card))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Brand.line.opacity(0.55), lineWidth: 1))
+            .shadow(color: .black.opacity(0.035), radius: 2, x: 0, y: 1)
     }
 }
 
@@ -61,7 +63,78 @@ struct Pill: View {
     }
 }
 
-/// Pano kartı: başlık, büyük değer, alt açıklama
+/// Değişim rozeti (Tremor "BadgeDelta" deseni): ▲ %4,2 / ▼ %1,3.
+/// `higherIsBetter` false ise (maliyetler) artış kırmızı, azalış yeşil gösterilir.
+struct DeltaBadge: View {
+    var ratio: Double
+    var higherIsBetter = true
+    var body: some View {
+        let up = ratio >= 0
+        let neutral = abs(ratio) < 0.0005
+        let good = neutral ? true : (up == higherIsBetter)
+        let color: Color = neutral ? .secondary : (good ? Brand.ok : Brand.negative)
+        HStack(spacing: 2) {
+            Image(systemName: neutral ? "arrow.right" : (up ? "arrow.up.right" : "arrow.down.right"))
+            Text("%" + Fmt.number(abs(ratio) * 100, maxFraction: 1))
+        }
+        .font(.caption2.weight(.bold)).monospacedDigit()
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .foregroundStyle(color)
+        .background(Capsule().fill(color.opacity(0.12)))
+        .help("Önceki eşit uzunluktaki döneme göre değişim")
+    }
+}
+
+/// Eksensiz küçük eğilim grafiği (sparkline)
+struct Sparkline: View {
+    var values: [Double]
+    var color: Color = Brand.accent
+    var body: some View {
+        Chart {
+            ForEach(Array(values.enumerated()), id: \.offset) { i, v in
+                AreaMark(x: .value("i", i), y: .value("v", v))
+                    .foregroundStyle(color.opacity(0.12).gradient)
+                    .interpolationMethod(.monotone)
+                LineMark(x: .value("i", i), y: .value("v", v))
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    .interpolationMethod(.monotone)
+            }
+        }
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartLegend(.hidden)
+        .chartYScale(domain: .automatic(includesZero: false))
+    }
+}
+
+/// Hedefe göre durum çubuğu (Tremor "MarkerBar" deseni): dolu kısım gerçekleşen, dikey çizgi hedef.
+struct TargetBar: View {
+    /// Gerçekleşen ve hedef oranları (0–1)
+    var value: Double
+    var target: Double
+    /// Maliyet oranlarında düşük olan iyidir
+    var lowerIsBetter = true
+
+    var body: some View {
+        let scale = max(max(value, target) * 1.25, 0.0001)
+        let ok = lowerIsBetter ? value <= target : value >= target
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.08))
+                Capsule().fill((ok ? Brand.ok : Brand.negative).opacity(0.85))
+                    .frame(width: max(4, g.size.width * min(value / scale, 1)))
+                Rectangle().fill(Color.primary.opacity(0.75))
+                    .frame(width: 2, height: g.size.height + 4)
+                    .offset(x: g.size.width * min(target / scale, 1) - 1)
+            }
+        }
+        .frame(height: 6)
+        .help("Gerçekleşen %\(Fmt.number(value * 100, maxFraction: 1)) · hedef %\(Fmt.number(target * 100, maxFraction: 1))")
+    }
+}
+
+/// Pano kartı (Tremor KPI kartı deseni): başlık + ⓘ, büyük değer, değişim rozeti, mini grafik / hedef çubuğu, alt açıklama
 struct StatCard: View {
     var title: String
     var value: String
@@ -69,6 +142,14 @@ struct StatCard: View {
     var icon: String
     var color: Color = Brand.accent
     var progress: Double? = nil
+    var info: Term? = nil
+    /// Önceki döneme göre değişim (oran) ve yönün anlamı
+    var delta: Double? = nil
+    var higherIsBetter = true
+    var spark: [Double]? = nil
+    /// Hedefli oranlar için: gerçekleşen ve hedef (0–1)
+    var targetValue: Double? = nil
+    var target: Double? = nil
 
     var body: some View {
         Card {
@@ -77,15 +158,24 @@ struct StatCard: View {
                     Image(systemName: icon)
                         .font(.callout.weight(.semibold)).foregroundStyle(color)
                         .frame(width: 28, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.14)))
-                    Text(title).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.13)))
+                    Text(title).font(.callout.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    if let info { InfoTip(term: info) }
                     Spacer(minLength: 0)
+                    if let delta { DeltaBadge(ratio: delta, higherIsBetter: higherIsBetter) }
                 }
-                Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6)
+                HStack(alignment: .bottom, spacing: 10) {
+                    Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    if let spark, spark.count > 1 {
+                        Spacer(minLength: 4)
+                        Sparkline(values: spark, color: color).frame(width: 84, height: 28)
+                    }
+                }
                 if let progress {
                     ProgressView(value: min(max(progress, 0), 1)).tint(color)
                 }
+                if let targetValue, let target { TargetBar(value: targetValue, target: target) }
                 if !detail.isEmpty {
                     Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -103,6 +193,62 @@ struct StatRow<Content: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: spacing) { content }
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Gün durum şeridi (Tremor "Tracker" deseni): her kutu bir gün; renk günün durumunu, ipucu ayrıntıyı gösterir.
+struct TrackerStrip: View {
+    let days: [DayOverview]
+    var selected: String? = nil
+    var onSelect: ((String) -> Void)? = nil
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(days) { d in
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(color(d))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 26)
+                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(d.date == selected ? Color.primary.opacity(0.8) : Color.clear, lineWidth: 1.5))
+                    .help(tooltip(d))
+                    .onTapGesture { onSelect?(d.date) }
+            }
+        }
+    }
+
+    private func color(_ d: DayOverview) -> Color {
+        if !d.hasAnyCount && !d.hasSales { return Color.primary.opacity(0.08) }
+        if !d.hasAnyCount { return Color.secondary.opacity(0.35) }
+        if d.problemItems >= 3 || (d.shortageItems > 0 && d.lossValue >= 500) { return Brand.negative.opacity(0.85) }
+        if d.problemItems > 0 || !d.isFullyCounted { return Brand.warn.opacity(0.85) }
+        return Brand.ok.opacity(0.85)
+    }
+
+    private func tooltip(_ d: DayOverview) -> String {
+        var parts = [DateKey.long(d.date)]
+        parts.append(d.hasAnyCount ? "Sayım \(d.countedItems)/\(d.itemCount)" : "Sayım yok")
+        parts.append(d.hasSales ? "Satış raporu var" : "Satış raporu yok")
+        if d.problemItems > 0 { parts.append("\(d.problemItems) sorunlu kalem") }
+        if d.lossValue > 0 { parts.append("Kayıp \(Fmt.money(d.lossValue))") }
+        if d.isLocked { parts.append("Kapatıldı") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Tracker renk açıklaması
+struct TrackerLegend: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            item(Brand.ok.opacity(0.85), "Sayım tam, sorun yok")
+            item(Brand.warn.opacity(0.85), "Eksik sayım / az sorun")
+            item(Brand.negative.opacity(0.85), "Belirgin kayıp")
+            item(Color.secondary.opacity(0.35), "Yalnızca satış")
+            item(Color.primary.opacity(0.08), "Veri yok")
+        }
+        .font(.caption2).foregroundStyle(.secondary)
+    }
+    private func item(_ c: Color, _ t: String) -> some View {
+        HStack(spacing: 4) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 10, height: 10); Text(t) }
     }
 }
 

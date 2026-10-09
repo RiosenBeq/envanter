@@ -1,8 +1,15 @@
 import AppKit
 
+// NextGen Envanter uygulama ikonu: sembol/logo kullanılmaz, yalnızca yazı tabanlı "NG" monogramı.
 // Kullanım: swift make_icon.swift <çıktı.iconset klasörü>
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.iconset"
 try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+
+func roundedFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+    let base = NSFont.systemFont(ofSize: size, weight: weight)
+    if let d = base.fontDescriptor.withDesign(.rounded), let f = NSFont(descriptor: d, size: size) { return f }
+    return base
+}
 
 func render(pixels: Int) -> Data {
     let s = CGFloat(pixels)
@@ -18,7 +25,7 @@ func render(pixels: Int) -> Data {
 
     // gölge
     let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
+    shadow.shadowColor = NSColor.black.withAlphaComponent(0.26)
     shadow.shadowBlurRadius = s * 0.025
     shadow.shadowOffset = NSSize(width: 0, height: -s * 0.012)
     NSGraphicsContext.saveGraphicsState()
@@ -27,36 +34,47 @@ func render(pixels: Int) -> Data {
     path.fill()
     NSGraphicsContext.restoreGraphicsState()
 
-    // degrade
-    let gradient = NSGradient(colors: [NSColor(calibratedRed: 1.0, green: 0.60, blue: 0.20, alpha: 1),
-                                       NSColor(calibratedRed: 0.86, green: 0.22, blue: 0.10, alpha: 1)])!
+    // degrade zemin
+    let gradient = NSGradient(colors: [NSColor(calibratedRed: 1.0, green: 0.58, blue: 0.20, alpha: 1),
+                                       NSColor(calibratedRed: 0.80, green: 0.22, blue: 0.08, alpha: 1)])!
     gradient.draw(in: path, angle: -90)
 
     // üstte hafif parlama
     NSGraphicsContext.saveGraphicsState()
     path.addClip()
-    let gloss = NSGradient(colors: [NSColor.white.withAlphaComponent(0.22), NSColor.white.withAlphaComponent(0.0)])!
+    let gloss = NSGradient(colors: [NSColor.white.withAlphaComponent(0.20), NSColor.white.withAlphaComponent(0.0)])!
     gloss.draw(in: NSRect(x: box.minX, y: box.midY, width: box.width, height: box.height / 2), angle: -90)
     NSGraphicsContext.restoreGraphicsState()
 
-    // sembol
-    let cfg = NSImage.SymbolConfiguration(pointSize: s * 0.46, weight: .semibold)
-    if let sym = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: nil)?.withSymbolConfiguration(cfg) {
-        let tinted = NSImage(size: sym.size)
-        tinted.lockFocus()
-        sym.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
-        NSColor.white.set()
-        NSRect(origin: .zero, size: sym.size).fill(using: .sourceAtop)
-        tinted.unlockFocus()
-        let r = NSRect(x: (s - sym.size.width) / 2, y: (s - sym.size.height) / 2 - s * 0.01, width: sym.size.width, height: sym.size.height)
-        let sh = NSShadow()
-        sh.shadowColor = NSColor.black.withAlphaComponent(0.25)
-        sh.shadowBlurRadius = s * 0.02
-        sh.shadowOffset = NSSize(width: 0, height: -s * 0.01)
-        NSGraphicsContext.saveGraphicsState()
-        sh.set()
-        tinted.draw(in: r)
-        NSGraphicsContext.restoreGraphicsState()
+    // "NG" monogramı
+    let mono = "NG" as NSString
+    let monoAttrs: [NSAttributedString.Key: Any] = [
+        .font: roundedFont(size: s * 0.36, weight: .heavy),
+        .foregroundColor: NSColor.white,
+        .kern: -s * 0.012,
+    ]
+    let ms = mono.size(withAttributes: monoAttrs)
+    let textShadow = NSShadow()
+    textShadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
+    textShadow.shadowBlurRadius = s * 0.015
+    textShadow.shadowOffset = NSSize(width: 0, height: -s * 0.008)
+    NSGraphicsContext.saveGraphicsState()
+    textShadow.set()
+    let showCaption = pixels >= 64
+    let monoY = (s - ms.height) / 2 + (showCaption ? s * 0.05 : 0)
+    mono.draw(at: NSPoint(x: (s - ms.width) / 2, y: monoY), withAttributes: monoAttrs)
+    NSGraphicsContext.restoreGraphicsState()
+
+    // alt yazı (küçük boyutlarda okunmayacağı için çizilmez)
+    if showCaption {
+        let cap = "ENVANTER" as NSString
+        let capAttrs: [NSAttributedString.Key: Any] = [
+            .font: roundedFont(size: s * 0.075, weight: .bold),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.88),
+            .kern: s * 0.012,
+        ]
+        let cs = cap.size(withAttributes: capAttrs)
+        cap.draw(at: NSPoint(x: (s - cs.width) / 2, y: monoY - cs.height * 0.9), withAttributes: capAttrs)
     }
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!

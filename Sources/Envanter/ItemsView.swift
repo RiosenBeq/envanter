@@ -38,10 +38,10 @@ struct ItemsView: View {
                 Text("Ad").frame(maxWidth: .infinity, alignment: .leading)
                 Text("Envanter\nbirimi").frame(width: IW.unit + 10)
                 Text("Reçete\nbirimi").frame(width: IW.recipeUnit + 10)
-                Text("Katsayı").frame(width: IW.factor + 10)
-                Text("Birim maliyet\n(₺)").frame(width: IW.money + 10)
-                Text("Kritik\nseviye").frame(width: IW.min + 10)
-                Text("Tolerans\n(±)").frame(width: IW.tol + 10)
+                Text("Katsayı").frame(width: IW.factor + 10).explains(.factor)
+                Text("Birim maliyet\n(₺)").frame(width: IW.money + 10).explains(.unitCost)
+                Text("Kritik\nseviye").frame(width: IW.min + 10).explains(.minStock)
+                Text("Tolerans\n(±)").frame(width: IW.tol + 10).explains(.tolerance)
                 Color.clear.frame(width: IW.delete, height: 1)
             }
             .font(.caption.weight(.semibold)).multilineTextAlignment(.center)
@@ -106,10 +106,11 @@ private struct ItemRow: View {
             DecimalField(value: Binding(get: { item.factor }, set: { v in store.updateItem(item.id) { $0.factor = max(v, 0.000001) } }),
                          maxFraction: 6, width: IW.factor)
                 .padding(.horizontal, 5)
-            OptionalDecimalField(value: Binding(get: { item.unitCost }, set: { v in store.updateItem(item.id, actionName: "Birim Maliyet") { $0.unitCost = v } }),
+            OptionalDecimalField(value: Binding(get: { item.unitCost }, set: { v in store.setItemCost(item.id, v) }),
                                  placeholder: "₺", maxFraction: 2, width: IW.money)
                 .padding(.horizontal, 5)
                 .help("1 \(item.unit.lowercased()) \(item.name) maliyeti (₺)")
+                .overlay(alignment: .topTrailing) { priceBadge }
             OptionalDecimalField(value: Binding(get: { item.minStock }, set: { v in store.updateItem(item.id, actionName: "Kritik Seviye") { $0.minStock = v } }),
                                  placeholder: "—", maxFraction: item.maxFraction, width: IW.min)
                 .padding(.horizontal, 5)
@@ -123,5 +124,21 @@ private struct ItemRow: View {
         }
         .padding(.vertical, 3)
         .opacity(item.active ? 1 : 0.55)
+    }
+
+    /// Son fiyat değişimi (▲ %13 gibi); ipucunda fiyat geçmişi
+    @ViewBuilder private var priceBadge: some View {
+        if let c = item.lastPriceChange, abs(c.ratio) >= 0.001 {
+            let history = (item.costHistory ?? []).suffix(6).map { p in
+                (p.date.map { DateKey.short($0) } ?? "önceki") + ": " + Fmt.money(p.cost, fraction: 2)
+            }.joined(separator: "\n")
+            Text((c.ratio > 0 ? "▲" : "▼") + Fmt.number(abs(c.ratio) * 100, maxFraction: 0) + "%")
+                .font(.system(size: 9, weight: .bold)).monospacedDigit()
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .foregroundStyle(.white)
+                .background(Capsule().fill(c.ratio > 0 ? Brand.negative : Brand.ok))
+                .offset(x: 2, y: -7)
+                .help("Fiyat geçmişi:\n" + history)
+        }
     }
 }

@@ -18,12 +18,33 @@ public struct Item: Codable, Identifiable, Hashable {
     public var minStock: Double?
     /// Kabul edilebilir fark (envanter birimi, ±). Bu kadarlık fark "normal" sayılır.
     public var tolerance: Double?
+    /// Birim maliyet geçmişi (eskiden yeniye). Maliyet değiştikçe eklenir; fiyat artışı uyarıları için.
+    public var costHistory: [PricePoint]?
 
     public init(id: String, name: String, unit: String, recipeUnit: String, factor: Double, active: Bool = true,
-                unitCost: Double? = nil, minStock: Double? = nil, tolerance: Double? = nil) {
+                unitCost: Double? = nil, minStock: Double? = nil, tolerance: Double? = nil, costHistory: [PricePoint]? = nil) {
         self.id = id; self.name = name; self.unit = unit
         self.recipeUnit = recipeUnit; self.factor = factor; self.active = active
-        self.unitCost = unitCost; self.minStock = minStock; self.tolerance = tolerance
+        self.unitCost = unitCost; self.minStock = minStock; self.tolerance = tolerance; self.costHistory = costHistory
+    }
+
+    /// Birim maliyeti değiştirir ve değişikliği geçmişe yazar (aynı gün içindeki değişiklikler tek kayıt olur).
+    public mutating func setCost(_ cost: Double?, on date: String) {
+        let old = unitCost
+        unitCost = cost
+        guard let cost, cost != old else { return }
+        var h = costHistory ?? []
+        if h.isEmpty, let old { h.append(PricePoint(date: nil, cost: old)) }
+        if let last = h.last, last.date == date { h[h.count - 1].cost = cost } else { h.append(PricePoint(date: date, cost: cost)) }
+        costHistory = h
+    }
+
+    /// Son fiyat değişimi: önceki ve yeni maliyet, oran (ör. 0,12 = %12 artış)
+    public var lastPriceChange: (from: Double, to: Double, ratio: Double, date: String?)? {
+        guard let h = costHistory, h.count >= 2 else { return nil }
+        let a = h[h.count - 2].cost, b = h[h.count - 1].cost
+        guard a > 0 else { return nil }
+        return (a, b, (b - a) / a, h[h.count - 1].date)
     }
 
     public var isKg: Bool { unit.lowercased() == "kg" }
@@ -42,6 +63,136 @@ public struct Item: Codable, Identifiable, Hashable {
     public func isBelowMinimum(_ closing: Double?) -> Bool {
         guard let closing, let minStock, minStock > 0 else { return false }
         return closing < minStock
+    }
+}
+
+/// Bir maliyet kaydı
+public struct PricePoint: Codable, Hashable {
+    /// yyyy-MM-dd (bilinmiyorsa nil: geçmiş tutulmadan önceki maliyet)
+    public var date: String?
+    public var cost: Double
+    public init(date: String?, cost: Double) { self.date = date; self.cost = cost }
+}
+
+// MARK: - Personel
+
+/// Ücret türü
+public enum PayType: String, Codable, CaseIterable, Identifiable {
+    /// Aylık maaş: ayın günlerine eşit dağıtılır (çalışılan gün sayısından bağımsız)
+    case monthly
+    /// Günlük yevmiye: çalıştığı günler için
+    case daily
+    /// Saatlik ücret: girilen saat kadar
+    case hourly
+
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .monthly: return "Aylık maaş"
+        case .daily: return "Günlük yevmiye"
+        case .hourly: return "Saatlik ücret"
+        }
+    }
+    public var rateLabel: String {
+        switch self {
+        case .monthly: return "₺ / ay"
+        case .daily: return "₺ / gün"
+        case .hourly: return "₺ / saat"
+        }
+    }
+}
+
+/// Personel kaydı
+public struct Employee: Codable, Identifiable, Hashable {
+    public var id: String
+    public var name: String
+    /// Görev: Müdür, Usta, Kasiyer, Kurye ...
+    public var role: String
+    public var payType: PayType
+    /// Ücret (ücret türüne göre aylık / günlük / saatlik, ₺)
+    public var rate: Double
+    /// İşveren maliyet çarpanı: ücrete eklenen yasal yükler vb. için (1 = ek yok, ör. 1,2 = %20 ek)
+    public var costFactor: Double
+    /// Günlük vardiya listesinde görünür mü
+    public var active: Bool
+    /// İşe giriş / çıkış (yyyy-MM-dd). Aylık maaş yalnızca bu aralıktaki günlere dağıtılır.
+    public var startDate: String?
+    public var endDate: String?
+    /// Saatlik çalışanlar için varsayılan vardiya süresi (saat)
+    public var defaultHours: Double?
+
+    public init(id: String = UUID().uuidString, name: String, role: String = "", payType: PayType, rate: Double,
+                costFactor: Double = 1, active: Bool = true, startDate: String? = nil, endDate: String? = nil,
+                defaultHours: Double? = nil) {
+        self.id = id; self.name = name; self.role = role; self.payType = payType; self.rate = rate
+        self.costFactor = costFactor; self.active = active; self.startDate = startDate; self.endDate = endDate
+        self.defaultHours = defaultHours
+    }
+
+    /// O gün işte kayıtlı mı (giriş/çıkış tarihlerine göre)
+    public func isEmployed(on date: String) -> Bool {
+        if let s = startDate, date < s { return false }
+        if let e = endDate, date > e { return false }
+        return true
+    }
+}
+
+/// Bir personelin bir günlük vardiyası
+public struct ShiftEntry: Codable, Hashable {
+    /// Çalışılan saat (saatlik çalışanlar için zorunlu; diğerlerinde bilgi amaçlı)
+    public var hours: Double?
+    /// Günlük yevmiyeli çalışan o gün çalıştı mı
+    public var worked: Bool?
+    /// Ek ödeme (mesai, prim, yol/yemek; ₺) — işveren çarpanı uygulanır
+    public var extra: Double?
+
+    public init(hours: Double? = nil, worked: Bool? = nil, extra: Double? = nil) {
+        self.hours = hours; self.worked = worked; self.extra = extra
+    }
+    public var isEmpty: Bool { hours == nil && worked == nil && extra == nil }
+}
+
+// MARK: - Satın alma siparişi
+
+public enum OrderStatus: String, Codable {
+    case open, received, cancelled
+    public var title: String {
+        switch self {
+        case .open: return "Bekliyor"
+        case .received: return "Teslim alındı"
+        case .cancelled: return "İptal"
+        }
+    }
+}
+
+public struct OrderLine: Codable, Hashable, Identifiable {
+    public var itemID: String
+    /// Sipariş edilen miktar (envanter birimi)
+    public var qty: Double
+    /// Teslim alınan miktar
+    public var received: Double?
+    /// Faturadaki birim fiyat (₺); girilirse kalemin birim maliyeti güncellenir
+    public var unitPrice: Double?
+    public var id: String { itemID }
+    public init(itemID: String, qty: Double, received: Double? = nil, unitPrice: Double? = nil) {
+        self.itemID = itemID; self.qty = qty; self.received = received; self.unitPrice = unitPrice
+    }
+}
+
+public struct PurchaseOrder: Codable, Hashable, Identifiable {
+    public var id: String
+    /// Siparişin verildiği gün
+    public var date: String
+    public var supplier: String
+    public var lines: [OrderLine]
+    public var status: OrderStatus
+    public var receivedOn: String?
+    public var note: String?
+
+    public init(id: String = UUID().uuidString, date: String, supplier: String = "", lines: [OrderLine],
+                status: OrderStatus = .open, receivedOn: String? = nil, note: String? = nil) {
+        self.id = id; self.date = date; self.supplier = supplier; self.lines = lines
+        self.status = status; self.receivedOn = receivedOn; self.note = note
     }
 }
 
@@ -139,15 +290,21 @@ public struct DayRecord: Codable, Hashable {
     public var countedBy: String?
     /// Gün kapatıldı: girişler kilitli, yanlışlıkla değiştirilemez
     public var locked: Bool?
+    /// Personel id -> günün vardiyası
+    public var shifts: [String: ShiftEntry]?
+    /// Kayıtlı personel dışındaki günlük personel gideri (ek eleman, dışarıdan kurye ...; ₺)
+    public var otherLabor: Double?
 
     public init(date: String, entries: [String: DayEntry] = [:], sales: [SaleLine] = [],
                 salesSource: String? = nil, salesPeriod: String? = nil, salesImportedAt: Date? = nil,
                 legacySold: [String: Double]? = nil, legacyWaste: [String: Double]? = nil, importedFrom: String? = nil,
-                note: String? = nil, countedBy: String? = nil, locked: Bool? = nil) {
+                note: String? = nil, countedBy: String? = nil, locked: Bool? = nil,
+                shifts: [String: ShiftEntry]? = nil, otherLabor: Double? = nil) {
         self.date = date; self.entries = entries; self.sales = sales
         self.salesSource = salesSource; self.salesPeriod = salesPeriod; self.salesImportedAt = salesImportedAt
         self.legacySold = legacySold; self.legacyWaste = legacyWaste; self.importedFrom = importedFrom
         self.note = note; self.countedBy = countedBy; self.locked = locked
+        self.shifts = shifts; self.otherLabor = otherLabor
     }
 
     public var isLocked: Bool { locked == true }
@@ -170,6 +327,7 @@ public struct DayRecord: Codable, Hashable {
         sales.isEmpty && entries.values.allSatisfy { $0.isEmpty }
             && (legacySold ?? [:]).isEmpty && (legacyWaste ?? [:]).isEmpty
             && (note ?? "").isEmpty && (countedBy ?? "").isEmpty
+            && (shifts ?? [:]).values.allSatisfy { $0.isEmpty } && (otherLabor ?? 0) == 0
     }
 }
 
@@ -183,13 +341,25 @@ public struct AppSettings: Codable, Hashable {
     public var orderCoverDays: Double
     /// Sayımı yapan kişiler (hızlı seçim için)
     public var staff: [String]
+    /// Hedefler (satışa oran, 0–1): hammadde maliyeti, personel maliyeti, prime cost (ikisinin toplamı)
+    public var targetFoodCostPct: Double?
+    public var targetLaborPct: Double?
+    public var targetPrimeCostPct: Double?
+    /// Birim maliyet bu orandan fazla artarsa uyarı (ör. 0,05 = %5)
+    public var priceAlertPct: Double
 
-    public init(branchName: String = "", orderLookbackDays: Int = 14, orderCoverDays: Double = 3, staff: [String] = []) {
+    public init(branchName: String = "", orderLookbackDays: Int = 14, orderCoverDays: Double = 3, staff: [String] = [],
+                targetFoodCostPct: Double? = nil, targetLaborPct: Double? = nil, targetPrimeCostPct: Double? = nil,
+                priceAlertPct: Double = 0.05) {
         self.branchName = branchName; self.orderLookbackDays = orderLookbackDays
         self.orderCoverDays = orderCoverDays; self.staff = staff
+        self.targetFoodCostPct = targetFoodCostPct; self.targetLaborPct = targetLaborPct
+        self.targetPrimeCostPct = targetPrimeCostPct; self.priceAlertPct = priceAlertPct
     }
 
-    enum CodingKeys: String, CodingKey { case branchName, orderLookbackDays, orderCoverDays, staff }
+    enum CodingKeys: String, CodingKey {
+        case branchName, orderLookbackDays, orderCoverDays, staff, targetFoodCostPct, targetLaborPct, targetPrimeCostPct, priceAlertPct
+    }
 
     // Eksik alanlar varsayılanla doldurulur (eski / yeni sürümler arasında uyumluluk)
     public init(from decoder: Decoder) throws {
@@ -199,6 +369,10 @@ public struct AppSettings: Codable, Hashable {
         orderLookbackDays = try c.decodeIfPresent(Int.self, forKey: .orderLookbackDays) ?? d.orderLookbackDays
         orderCoverDays = try c.decodeIfPresent(Double.self, forKey: .orderCoverDays) ?? d.orderCoverDays
         staff = try c.decodeIfPresent([String].self, forKey: .staff) ?? d.staff
+        targetFoodCostPct = try c.decodeIfPresent(Double.self, forKey: .targetFoodCostPct)
+        targetLaborPct = try c.decodeIfPresent(Double.self, forKey: .targetLaborPct)
+        targetPrimeCostPct = try c.decodeIfPresent(Double.self, forKey: .targetPrimeCostPct)
+        priceAlertPct = try c.decodeIfPresent(Double.self, forKey: .priceAlertPct) ?? d.priceAlertPct
     }
 }
 
@@ -209,14 +383,17 @@ public struct AppData: Codable {
     public var products: [Product]
     public var days: [String: DayRecord]
     public var settings: AppSettings
+    public var employees: [Employee]
+    public var purchaseOrders: [PurchaseOrder]
 
     public init(schemaVersion: Int = AppData.currentSchema, items: [Item], products: [Product],
-                days: [String: DayRecord] = [:], settings: AppSettings = AppSettings()) {
+                days: [String: DayRecord] = [:], settings: AppSettings = AppSettings(),
+                employees: [Employee] = [], purchaseOrders: [PurchaseOrder] = []) {
         self.schemaVersion = schemaVersion; self.items = items; self.products = products
-        self.days = days; self.settings = settings
+        self.days = days; self.settings = settings; self.employees = employees; self.purchaseOrders = purchaseOrders
     }
 
-    enum CodingKeys: String, CodingKey { case schemaVersion, items, products, days, settings }
+    enum CodingKeys: String, CodingKey { case schemaVersion, items, products, days, settings, employees, purchaseOrders }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -225,6 +402,8 @@ public struct AppData: Codable {
         products = try c.decode([Product].self, forKey: .products)
         days = try c.decodeIfPresent([String: DayRecord].self, forKey: .days) ?? [:]
         settings = try c.decodeIfPresent(AppSettings.self, forKey: .settings) ?? AppSettings()
+        employees = try c.decodeIfPresent([Employee].self, forKey: .employees) ?? []
+        purchaseOrders = try c.decodeIfPresent([PurchaseOrder].self, forKey: .purchaseOrders) ?? []
     }
 
     /// İlk açılışta kullanılan varsayılan reçeteler ve stok kalemleri.

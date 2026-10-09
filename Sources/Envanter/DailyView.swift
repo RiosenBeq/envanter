@@ -144,7 +144,7 @@ struct DailyView: View {
                 Label(locked ? "Kilidi Aç" : "Günü Kapat", systemImage: locked ? "lock.open" : "lock")
             }
             .buttonStyle(SoftButtonStyle(tint: locked ? Brand.warn : .primary))
-            .help(locked ? "Girişleri tekrar düzenlenebilir yapar" : "Sayım tamamlanınca günü kilitler; yanlışlıkla değişiklik yapılamaz")
+            .help(locked ? "Girişleri tekrar düzenlenebilir yapar" : Term.lock.text)
             .disabled(!locked && allRows.allSatisfy { !$0.isCounted })
         }
         .padding(.horizontal, 20).padding(.bottom, 8)
@@ -153,11 +153,12 @@ struct DailyView: View {
     private var gridHeader: some View {
         HStack(spacing: 0) {
             Text("Ürün").frame(minWidth: W.nameMin, maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
-            ForEach(["Açılış", "Gelen", "Gelen\nTransfer (+)", "Giden\nTransfer (−)", "Kapanış"], id: \.self) { t in
-                Text(t).frame(width: W.input + 8)
+            ForEach([("Açılış", Term.opening), ("Gelen", .incoming), ("Gelen\nTransfer (+)", .transfer),
+                     ("Giden\nTransfer (−)", .transfer), ("Kapanış", .closing)], id: \.0) { t, term in
+                Text(t).frame(width: W.input + 8).explains(term)
             }
-            ForEach(["Satılan", "Zaiyat", "Fiili\nTüketim", "Fark"], id: \.self) { t in
-                Text(t).frame(width: W.calc).foregroundStyle(.secondary)
+            ForEach([("Satılan", Term.sold), ("Zaiyat", .waste), ("Fiili\nTüketim", .actualUsage), ("Fark", .diff)], id: \.0) { t, term in
+                Text(t).frame(width: W.calc).foregroundStyle(.secondary).explains(term)
             }
             Color.clear.frame(width: W.info, height: 1)
         }

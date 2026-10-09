@@ -42,6 +42,7 @@ struct Card<Content: View>: View {
     var body: some View {
         content
             .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 10).fill(Brand.card))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.line.opacity(0.7), lineWidth: 1))
     }
@@ -90,8 +91,18 @@ struct StatCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+}
+
+/// Eşit yükseklikte kart satırı (StatCard'lar için)
+struct StatRow<Content: View>: View {
+    var spacing: CGFloat = 12
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(alignment: .top, spacing: spacing) { content }
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

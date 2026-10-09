@@ -114,7 +114,7 @@ struct SummaryView: View {
         let net = counted.compactMap { $0.diffValue }.reduce(0, +)
         let worst = counted.filter { $0.severity == .shortage }.min { ($0.diffValue ?? 0) < ($1.diffValue ?? 0) }
         let hasCosts = counted.contains { $0.diffValue != nil }
-        return HStack(spacing: 12) {
+        return StatRow {
             StatCard(title: "Sayılan kalem", value: "\(counted.count) / \(rows.count)", icon: "checklist", color: Brand.accent)
             StatCard(title: "Sorunlu kalem", value: "\(problems)", detail: "Dönem toplamında tolerans dışı",
                      icon: "exclamationmark.triangle", color: problems == 0 ? Brand.ok : Brand.negative)

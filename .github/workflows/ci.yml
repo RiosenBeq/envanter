@@ -51,6 +51,7 @@ jobs:
           export ENVANTER_DATA_DIR="$RUNNER_TEMP/demo"
           export ENVANTER_SNAPSHOT_DIR="$RUNNER_TEMP/shots"
           export ENVANTER_DATE="$TODAY"
+          export ENVANTER_SNAPSHOT_SIZE="1440x1000"
           export ENVANTER_SECTIONS="overview,daily,sales,summary,analytics:general,analytics:item,analytics:abc,analytics:menu,orders,recipes:11101,items,backup"
           export ENVANTER_QUIT_AFTER_SNAPSHOT=1
           # exec { $ARGV[0] } liste biçimi: yol içindeki boşluk ("NextGen Envanter.app") kelimelere bölünmesin

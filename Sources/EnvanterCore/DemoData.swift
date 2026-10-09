@@ -49,13 +49,14 @@ public enum DemoData {
         var weights: [String: Double] = [:]
         var prices: [String: Double] = [:]
         for p in tracked {
-            let w = pow(rng.unit(), 3) * 22
-            if w > 0.6 { weights[p.code] = w }
+            // Az sayıda çok satan, çok sayıda az satan ürün (orta ölçekli bir burger restoranı)
+            let w = pow(rng.unit(), 3) * 10
+            if w > 0.3 { weights[p.code] = w }
             let cost = engine0.recipeCost(p).cost
             prices[p.code] = max(60, ((cost * rng.range(2.7, 3.6)) / 5).rounded(.up) * 5)
         }
         let drinks = Array(untracked.prefix(12))
-        for p in drinks { weights[p.code] = rng.range(2, 14); prices[p.code] = (rng.range(35, 75) / 5).rounded() * 5 }
+        for p in drinks { weights[p.code] = rng.range(1.5, 8); prices[p.code] = (rng.range(35, 75) / 5).rounded() * 5 }
         let wasteMix = Array(waste.prefix(6))
 
         let start = DateKey.addDays(-(days - 1), to: end)
@@ -101,6 +102,9 @@ public enum DemoData {
         for i in data.items.indices where data.items[i].active {
             let u = avgUsage[data.items[i].id] ?? 0
             if u > 0 { data.items[i].minStock = round(u * 1.5, data.items[i], step: data.items[i].isKg ? 0.5 : 5) }
+            // Tolerans günlük tüketimin ~%1,5'i (sayım ve porsiyon hassasiyeti)
+            data.items[i].tolerance = data.items[i].isKg ? max(0.05, (u * 0.015 * 100).rounded() / 100)
+                                                        : max(2, (u * 0.015).rounded())
         }
 
         var stock: [String: Double] = [:]

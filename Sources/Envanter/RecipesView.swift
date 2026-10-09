@@ -194,15 +194,15 @@ private struct RecipeEditor: View {
         if p.isTracked {
             let rc = store.engine.recipeCost(p)
             let price = store.engine.lastUnitPrice(code: p.code)
-            HStack(spacing: 12) {
-                StatCard(title: "Reçete maliyeti", value: rc.cost > 0 || rc.isComplete ? Fmt.money(rc.cost, fraction: 2) : "—",
+            StatRow {
+                StatCard(title: "Maliyet", value: rc.cost > 0 || rc.isComplete ? Fmt.money(rc.cost, fraction: 2) : "—",
                          detail: rc.isComplete ? "1 adet için hammadde maliyeti" : "Maliyeti eksik: " + rc.missing.joined(separator: ", "),
                          icon: "turkishlirasign.circle", color: rc.isComplete ? Brand.accent : Brand.warn)
-                StatCard(title: "Ortalama satış fiyatı", value: price.map { Fmt.money($0.price, fraction: 2) } ?? "—",
+                StatCard(title: "Satış fiyatı", value: price.map { Fmt.money($0.price, fraction: 2) } ?? "—",
                          detail: price.map { "\(DateKey.short($0.date)) satış raporundan" } ?? "Raporda tutar sütunu yok",
                          icon: "tag", color: Brand.positive)
                 let pct: Double? = (rc.isComplete && (price?.price ?? 0) > 0) ? rc.cost / price!.price : nil
-                StatCard(title: "Maliyet oranı", value: pct.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—",
+                StatCard(title: "Oran", value: pct.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—",
                          detail: pct.map { $0 > 0.35 ? "Yüksek: fiyatı veya porsiyonu gözden geçirin" : "Kâr payı: \(Fmt.money(price!.price - rc.cost, fraction: 2))" } ?? "Maliyet ve fiyat gerekli",
                          icon: "percent", color: (pct ?? 0) > 0.35 ? Brand.negative : Brand.ok)
             }

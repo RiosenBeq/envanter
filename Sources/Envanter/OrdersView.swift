@@ -77,7 +77,7 @@ struct OrdersView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }.width(90)
                     TableColumn("Günlük tüketim") { s in
-                        Text(s.sampleDays > 0 ? num(s.dailyUsage, s.item) : "—").monospacedDigit()
+                        Text(s.sampleDays > 0 ? Fmt.number(s.dailyUsage, maxFraction: s.item.isKg ? 2 : 1) : "—").monospacedDigit()
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .help(s.sampleDays > 0 ? "\(s.sampleDays) günün ortalaması" : "Veri yok")
                     }.width(110)
@@ -91,7 +91,7 @@ struct OrdersView: View {
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }.width(90)
                     TableColumn("Hedef stok") { s in
-                        Text(num(s.target, s.item)).monospacedDigit().foregroundStyle(.secondary)
+                        Text(Fmt.number(s.target, maxFraction: s.item.isKg ? 2 : 0)).monospacedDigit().foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }.width(90)
                     TableColumn("Önerilen sipariş") { s in

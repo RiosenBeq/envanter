@@ -36,7 +36,7 @@ struct OverviewView: View {
     // MARK: Kartlar
 
     private func cards(_ o: DayOverview, hasCosts: Bool) -> some View {
-        HStack(spacing: 14) {
+        StatRow(spacing: 14) {
             StatCard(title: "Sayım", value: "\(o.countedItems) / \(o.itemCount)",
                      detail: o.isFullyCounted ? "Tüm kalemler sayıldı" : (o.hasAnyCount ? "\(o.itemCount - o.countedItems) kalem bekliyor" : "Bugün henüz sayım girilmedi"),
                      icon: "checklist", color: o.isFullyCounted ? Brand.ok : Brand.accent,

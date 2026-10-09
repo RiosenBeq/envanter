@@ -125,8 +125,8 @@ struct ContentView: View {
         return Button { store.section = s } label: {
             HStack(spacing: 10) {
                 Image(systemName: s.icon).frame(width: 20)
-                Text(s.title)
-                Spacer()
+                Text(s.title).lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 4)
                 if let badge {
                     Text(badge.text)
                         .font(.caption2.weight(.bold)).monospacedDigit()

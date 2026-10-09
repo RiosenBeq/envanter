@@ -134,7 +134,15 @@ final class AppStore: ObservableObject {
             MainActor.assumeIsolated { self?.flush() }
         }
         // İlk açılışta dosyayı hemen oluştur
-        if !FileManager.default.fileExists(atPath: persistence.dataFile.path) { scheduleSave(immediately: true) }
+        if !FileManager.default.fileExists(atPath: persistence.dataFile.path) {
+            scheduleSave(immediately: true)
+        } else if !FileManager.default.fileExists(atPath: persistence.backupDirectory.appendingPathComponent("envanter-\(DateKey.today()).json").path),
+                  let encoded = try? persistence.encode(data) {
+            // Günün ilk açılışı: henüz değişiklik yapılmadan günün yedeğini al
+            let p = persistence
+            saveQueue.async { p.dailyBackup(encoded) }
+            lastBackupAt = Date()
+        }
     }
 
     // MARK: - Kayıt

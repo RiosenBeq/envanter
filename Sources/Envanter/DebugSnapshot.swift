@@ -6,6 +6,7 @@ import EnvanterCore
 ///   ENVANTER_SECTIONS="overview,daily,analytics:abc,recipes:11101"  ekranlar sırayla gezilir
 ///     (iki noktadan sonrası: İstatistikler sekmesi — general/item/abc/menu — ya da Reçeteler'de seçilecek ürün kodu)
 ///   ENVANTER_DATE=2026-08-15                                          seçili gün
+///   ENVANTER_SNAPSHOT_SIZE=1440x1000                                  pencere boyutu (ekrandan büyük olabilir)
 ///   ENVANTER_QUIT_AFTER_SNAPSHOT=1                                    bitince çık
 /// Normal kullanımda hiçbir etkisi yoktur.
 @MainActor
@@ -17,7 +18,12 @@ enum DebugSnapshot {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         if let d = env["ENVANTER_DATE"], DateKey.isValid(d) { store.selectedDate = d }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if let size = env["ENVANTER_SNAPSHOT_SIZE"]?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
+               let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
+                window.setFrame(NSRect(x: 0, y: 0, width: size[0], height: size[1]), display: true)
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             for (i, spec) in sections.enumerated() {
                 let parts = spec.split(separator: ":", maxSplits: 1).map(String.init)
                 let name = parts[0]

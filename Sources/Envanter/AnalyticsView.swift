@@ -97,7 +97,7 @@ private struct GeneralStatsView: View {
             if !stats.hasCosts {
                 notice("Maliyet tanımlı değil", "İstatistiklerin ₺ karşılığı için Stok Kalemleri ekranında her kalemin birim maliyetini girin. Satış raporunda \"Tutar\" sütunu varsa maliyet yüzdeleri de hesaplanır.")
             }
-            HStack(spacing: 12) {
+            StatRow {
                 StatCard(title: "Satış tutarı", value: stats.revenueDays > 0 ? Fmt.money(stats.revenue) : "—",
                          detail: stats.revenueDays > 0 ? "\(stats.revenueDays) günlük raporda tutar var" : "Raporlarda tutar sütunu yok",
                          icon: "banknote", color: Brand.ok)
@@ -109,7 +109,7 @@ private struct GeneralStatsView: View {
                          detail: "Net fark: \(Fmt.money(stats.netValue))", icon: "arrow.down.right.circle",
                          color: stats.lossValue > 0 ? Brand.negative : Brand.ok)
             }
-            HStack(spacing: 12) {
+            StatRow {
                 StatCard(title: "Zayi", value: stats.hasCosts ? Fmt.money(stats.wasteCost) : "—",
                          detail: "Satışa oranı " + percent(stats.wastePct), icon: "trash", color: Brand.warn)
                 StatCard(title: "Alım (gelen)", value: stats.hasCosts ? Fmt.money(stats.incomingValue) : "—",
@@ -175,6 +175,7 @@ private struct CostTrendChart: View {
             }
             .chartForegroundStyleScale(domain: usePct ? ["Teorik %", "Fiili %"] : ["Teorik maliyet", "Fiili maliyet"],
                                        range: [Brand.positive, Brand.negative])
+            .chartYScale(domain: .automatic(includesZero: false))
             .chartLegend(position: .top, alignment: .leading)
             .frame(height: 220)
         }
@@ -315,7 +316,7 @@ private struct ItemAnalysisView: View {
         let totalDiff = counted.reduce(0) { $0 + ($1.diff ?? 0) }
         let accuracy = counted.isEmpty ? nil : Double(counted.filter { item.severity(of: $0.diff ?? 0).isProblem == false }.count) / Double(counted.count)
         let u = item.unit.lowercased()
-        return HStack(spacing: 12) {
+        return StatRow {
             StatCard(title: "Ort. beklenen tüketim", value: "\(Fmt.number(avgExpected, maxFraction: item.maxFraction)) \(u)",
                      detail: "Reçeteye göre, günlük", icon: "function", color: Brand.positive)
             StatCard(title: "Ort. fiili tüketim", value: avgActual.map { "\(Fmt.number($0, maxFraction: item.maxFraction)) \(u)" } ?? "—",
@@ -424,7 +425,7 @@ private struct ABCView: View {
                                message: "ABC analizi için kalemlerin birim maliyeti ve dönemde tüketim (sayım veya satış) olmalı.")
                     .frame(height: 260)
             } else {
-                HStack(spacing: 12) {
+                StatRow {
                     ForEach([ABCClass.a, .b, .c], id: \.self) { k in
                         let list = rows.filter { $0.klass == k }
                         StatCard(title: "\(k.rawValue) sınıfı", value: "\(list.count) kalem",
@@ -498,7 +499,7 @@ private struct MenuEngineeringView: View {
                                message: stats.isEmpty ? "Bu dönemde tutar bilgisi olan satış raporu yok." : "Ürünlerin hammaddelerine birim maliyet girin (Stok Kalemleri).")
                     .frame(height: 260)
             } else {
-                HStack(spacing: 12) {
+                StatRow {
                     ForEach(MenuClass.allCases, id: \.self) { k in
                         let list = classified.filter { $0.klass == k }
                         StatCard(title: k.rawValue, value: "\(list.count) ürün",
@@ -575,15 +576,25 @@ private struct MenuMatrixChart: View {
         let threshold = 70.0 / Double(max(stats.count, 1))
         let totalQty = stats.reduce(0) { $0 + $1.qty }
         let avgMargin = totalQty > 0 ? stats.reduce(0) { $0 + ($1.totalMargin ?? 0) } / totalQty : 0
+        let maxX = (stats.map { $0.popularity * 100 }.max() ?? 1) * 1.08
+        // Kalabalığı önlemek için yalnızca ciroya göre ilk 8 ürün ile en kârlı ve en popüler ürün etiketlenir
+        let labelled: Set<String> = {
+            var codes = Set(stats.sorted { $0.revenue > $1.revenue }.prefix(8).map { $0.product.code })
+            if let m = stats.max(by: { ($0.unitMargin ?? 0) < ($1.unitMargin ?? 0) }) { codes.insert(m.product.code) }
+            if let p = stats.max(by: { $0.popularity < $1.popularity }) { codes.insert(p.product.code) }
+            return codes
+        }()
         ChartCard(title: "Popülerlik × kârlılık matrisi",
                   subtitle: "Yatay: satış payı (%) · Dikey: birim kâr (₺) · Kesikli çizgiler sınıf eşikleri") {
             Chart {
                 ForEach(stats) { s in
                     PointMark(x: .value("Popülerlik", s.popularity * 100), y: .value("Birim kâr", s.unitMargin ?? 0))
                         .foregroundStyle(color(s.klass ?? .dog))
-                        .symbolSize(60)
+                        .symbolSize(labelled.contains(s.product.code) ? 70 : 34)
                         .annotation(position: .top, spacing: 2) {
-                            Text(s.product.name).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                            if labelled.contains(s.product.code) {
+                                Text(s.product.name).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                            }
                         }
                 }
                 RuleMark(x: .value("Eşik", threshold)).foregroundStyle(.secondary)
@@ -591,7 +602,10 @@ private struct MenuMatrixChart: View {
                 RuleMark(y: .value("Ort. kâr", avgMargin)).foregroundStyle(.secondary)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
-            .frame(height: 320)
+            .chartXScale(domain: 0...maxX)
+            .chartXAxisLabel("Satış payı (%)")
+            .chartYAxisLabel("Birim kâr (₺)")
+            .frame(height: 340)
         }
     }
 }

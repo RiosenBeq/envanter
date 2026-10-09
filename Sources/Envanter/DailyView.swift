@@ -7,7 +7,7 @@ private enum W {
     static let input: CGFloat = 80
     static let calc: CGFloat = 80
     static let info: CGFloat = 30
-    static let nameMin: CGFloat = 140
+    static let nameMin: CGFloat = 130
 }
 
 private enum RowFilter: String, CaseIterable, Identifiable {

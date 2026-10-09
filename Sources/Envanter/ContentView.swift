@@ -23,7 +23,7 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 220)
+                .frame(width: 228)
                 .frame(maxHeight: .infinity)
                 .background(SidebarBackground())
             Divider()
@@ -123,14 +123,14 @@ struct ContentView: View {
     private func row(_ s: AppSection, badge: (text: String, color: Color)?) -> some View {
         let selected = (store.section ?? .overview) == s
         return Button { store.section = s } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: s.icon).frame(width: 20)
-                Text(s.title).lineLimit(1).minimumScaleFactor(0.8)
-                Spacer(minLength: 4)
+                Text(s.title).lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 2)
                 if let badge {
                     Text(badge.text)
                         .font(.caption2.weight(.bold)).monospacedDigit()
-                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
                         .foregroundStyle(selected ? Brand.accent : Color.white)
                         .background(Capsule().fill(selected ? Color.white : badge.color))
                 }

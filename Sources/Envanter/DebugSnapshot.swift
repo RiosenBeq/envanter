@@ -11,9 +11,14 @@ import EnvanterCore
 /// Normal kullanımda hiçbir etkisi yoktur.
 @MainActor
 enum DebugSnapshot {
+    /// onAppear birden fazla kez tetiklenebilir (ör. pencere stili değişince); görev yalnızca bir kez çalışmalı,
+    /// yoksa iki görev aynı dosyalara farklı anlarda yazar ve görüntüler ekranlarla kayar.
+    private static var started = false
+
     static func installIfRequested(store: AppStore) {
         let env = ProcessInfo.processInfo.environment
-        guard let dir = env["ENVANTER_SNAPSHOT_DIR"], !dir.isEmpty else { return }
+        guard let dir = env["ENVANTER_SNAPSHOT_DIR"], !dir.isEmpty, !started else { return }
+        started = true
         let sections = (env["ENVANTER_SECTIONS"] ?? "daily").split(separator: ",").map(String.init)
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         if let d = env["ENVANTER_DATE"], DateKey.isValid(d) { store.selectedDate = d }

@@ -219,7 +219,7 @@ struct TrackerStrip: View {
         if !d.hasAnyCount && !d.hasSales { return Color.primary.opacity(0.08) }
         if !d.hasAnyCount { return Color.secondary.opacity(0.35) }
         if d.hasSignificantLoss { return Brand.negative.opacity(0.85) }
-        if d.problemItems > 0 || !d.isFullyCounted { return Brand.warn.opacity(0.85) }
+        if d.hasNotableLoss || !d.isFullyCounted { return Brand.warn.opacity(0.85) }
         return Brand.ok.opacity(0.85)
     }
 
@@ -241,8 +241,8 @@ struct TrackerStrip: View {
 struct TrackerLegend: View {
     var body: some View {
         HStack(spacing: 12) {
-            item(Brand.ok.opacity(0.85), "Sayım tam, sorun yok")
-            item(Brand.warn.opacity(0.85), "Eksik sayım / tolerans dışı fark")
+            item(Brand.ok.opacity(0.85), "Sayım tam, kayıp düşük")
+            item(Brand.warn.opacity(0.85), "Eksik sayım / kayıp ≥ %0,5")
             item(Brand.negative.opacity(0.85), "Kayıp ≥ satışın %1'i")
             item(Color.secondary.opacity(0.35), "Yalnızca satış")
             item(Color.primary.opacity(0.08), "Veri yok")

@@ -150,7 +150,7 @@ struct OrdersView: View {
             }
             Divider()
             HStack(spacing: 14) {
-                Label("Önerilen = günlük tüketim × gün sayısı + kritik seviye − son stok", systemImage: "function")
+                Label("Önerilen = günlük tüketim × gün sayısı + kritik seviye − mevcut stok − siparişte", systemImage: "function")
                 Label("Kritik seviye ve maliyet Stok Kalemleri ekranından girilir", systemImage: "shippingbox")
                 Spacer()
             }

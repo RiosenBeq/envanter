@@ -133,6 +133,10 @@ final class ReviewFixesTests: XCTestCase {
                             problemItems: 3, shortageItems: 3, belowMinimumItems: 0, lossValue: 600, netValue: -600, isLocked: false)
         o.revenue = 80_000
         XCTAssertFalse(o.hasSignificantLoss)            // %0,75
+        XCTAssertTrue(o.hasNotableLoss)
+        o.revenue = 200_000
+        XCTAssertFalse(o.hasNotableLoss)                // %0,3
+        o.revenue = 80_000
         o.revenue = 40_000
         XCTAssertTrue(o.hasSignificantLoss)             // %1,5
         o.revenue = nil

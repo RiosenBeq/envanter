@@ -96,6 +96,11 @@ public struct DayOverview: Identifiable {
         if let revenue, revenue > 0 { return lossValue >= revenue * 0.01 }
         return lossValue >= 500
     }
+    /// Dikkat edilecek kayıp: satışın %0,5'i ve üzeri (satış tutarı yoksa tolerans dışı fark olması)
+    public var hasNotableLoss: Bool {
+        if let revenue, revenue > 0 { return lossValue >= revenue * 0.005 }
+        return problemItems > 0
+    }
     public var hasAnyCount: Bool { countedItems > 0 }
 }
 

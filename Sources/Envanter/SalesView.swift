@@ -63,6 +63,8 @@ struct SalesView: View {
                     TableColumn("") { l in
                         if (analysis.status[l.code] ?? .unknown) == .unknown {
                             Button("Reçete tanımla") { store.startNewProduct(from: l) }.buttonStyle(SoftButtonStyle(tint: Brand.warn))
+                                .disabled(!store.canEditCatalog)
+                                .help(store.canEditCatalog ? "Bu ürün için reçete oluştur" : CloudPermission.catalogReadOnlyNote)
                         } else {
                             Button("Reçeteyi aç") { store.recipeSelection = l.code; store.section = .recipes }
                                 .buttonStyle(.link)

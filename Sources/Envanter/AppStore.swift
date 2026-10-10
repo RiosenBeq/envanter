@@ -93,13 +93,22 @@ final class AppStore: ObservableObject {
     @Published var analyticsTab: AnalyticsTab = .general
     @Published private(set) var saveState: SaveState = .saved
     @Published private(set) var lastSavedAt: Date?
+    /// Web eşitlemesinde bu Mac'in şubedeki rolü (CloudSyncController günceller; eşleşme yoksa nil). Personel ise
+    /// tanım belgeleri ve kapatılmış günler bu Mac'te de salt okunurdur (docs/SYNC.md §2).
+    @Published var enforcedRole: String?
+    /// Onay bekleyen gün kapatma (personel: kapatılan günün kilidini yalnızca patron veya müdür açabilir)
+    @Published var pendingDayClose: String?
 
     let persistence: Persistence
+    /// Web paneliyle (Supabase) arka planda eşitleme
+    let cloud: CloudSyncController
     /// Pencerenin geri alma yöneticisi (ContentView bağlar); Düzen > Geri Al / Yinele ile çalışır
     weak var undoManager: UndoManager?
     private var engineCache: Engine?
     private var saveTask: Task<Void, Never>?
-    private let saveQueue = DispatchQueue(label: "envanter.save", qos: .utility)
+    /// Veri dosyası ve eşitleme durumu aynı seri kuyrukta yazılır (DiskWriteQueue): kodlama ve yazma arka planda
+    /// yapılır, eşitlemenin kayıt noktasında önce veri sonra durum sırası korunur.
+    let diskQueue: DiskWriteQueue
     private var saveGeneration = 0
     private var lastBackupAt: Date?
     private var saveErrorReported = false
@@ -113,8 +122,21 @@ final class AppStore: ObservableObject {
 
     var settings: AppSettings { data.settings }
 
+    /// Stok kalemleri, reçeteler, ayarlar, personel ve siparişler değiştirilebilir mi (personel hesabıyla hayır)
+    var canEditCatalog: Bool { CloudRole.canWriteCatalog(enforcedRole) }
+    /// Kapatılmış günü değiştirme / kilidini açma yetkisi (personel hesabıyla yok)
+    var canChangeLockedDays: Bool { CloudRole.canChangeLockedDay(enforcedRole) }
+    /// Gün bu kullanıcı için salt okunur mu: kapatılmış ve kilidi açılamıyor
+    func isReadOnlyDay(_ date: String) -> Bool { isLocked(date) && !canChangeLockedDays }
+
     init(persistence: Persistence = Persistence(directory: Persistence.defaultDirectory())) {
         self.persistence = persistence
+        let queue = DiskWriteQueue(label: "envanter.save")
+        diskQueue = queue
+        // Otomatik test ve ekran görüntüsü modlarında web eşitlemesi kapalıdır
+        let env = ProcessInfo.processInfo.environment
+        let automated = !(env["ENVANTER_SELFTEST"] ?? "").isEmpty || !(env["ENVANTER_SNAPSHOT_DIR"] ?? "").isEmpty
+        cloud = CloudSyncController(directory: persistence.directory, enabled: !automated, diskQueue: queue)
         var startupAlert: AppAlert?
         switch persistence.load() {
         case .fresh:
@@ -143,9 +165,10 @@ final class AppStore: ObservableObject {
                   let encoded = try? persistence.encode(data) {
             // Günün ilk açılışı: henüz değişiklik yapılmadan günün yedeğini al
             let p = persistence
-            saveQueue.async { p.dailyBackup(encoded) }
+            diskQueue.async { p.dailyBackup(encoded) }
             lastBackupAt = Date()
         }
+        cloud.attach(self)
     }
 
     // MARK: - Kayıt
@@ -162,13 +185,21 @@ final class AppStore: ObservableObject {
 
     /// Kodlama ve yazma arka planda yapılır; günlük yedek en fazla 10 dakikada bir güncellenir.
     private func writeNow() {
+        let job = makeWriteJob()
+        diskQueue.async { _ = job() }
+    }
+
+    /// Şu anki verinin yazma işi (kuyrukta çalışır): kodlar, yazar, zamanı geldiyse günlük yedeği günceller ve sonucu
+    /// ana iş parçacığına bildirir. Kopya burada (ana iş parçacığında) alınır; kodlama ve yazma kuyrukta yapılır.
+    /// - Returns: iş; çalışınca veri dosyası yazıldı mı
+    private func makeWriteJob() -> @Sendable () -> Bool {
         let snapshot = data
         let p = persistence
         let backup = lastBackupAt.map { Date().timeIntervalSince($0) > 600 } ?? true
         if backup { lastBackupAt = Date() }
         saveGeneration += 1
         let generation = saveGeneration
-        saveQueue.async { [weak self] in
+        return { [weak self] in
             var failure: String?
             do {
                 let encoded = try p.encode(snapshot)
@@ -178,9 +209,11 @@ final class AppStore: ObservableObject {
                 failure = error.localizedDescription
                 NSLog("Kayıt hatası: \(error)")
             }
+            let result = failure, owner = self
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.finishSave(failure: failure, generation: generation) }
+                MainActor.assumeIsolated { owner?.finishSave(failure: result, generation: generation) }
             }
+            return result == nil
         }
     }
 
@@ -199,11 +232,24 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Web eşitlemesinin kayıt noktası (SyncCheckpoint, docs/SYNC.md §3 "Kayıt sırası"): yerel veri değiştiyse önce veri
+    /// dosyası, sonra eşitleme durumu (`writeState`) yazılır; veri yazılamazsa durum yazılmaz. İkisi de arka planda,
+    /// durumun diğer kayıtlarıyla aynı seri kuyrukta yazılır: ana iş parçacığı kodlamayı ve yazmayı beklemez, sonradan
+    /// kuyruğa giren durum kaydı da bu verinin önüne geçemez. Bekleyen (gecikmeli) kayıt bu yazmaya katılır.
+    func syncCheckpoint(dataChanged: Bool, writeState: @escaping @Sendable () -> Void) {
+        var job: (@Sendable () -> Bool)?
+        if dataChanged {
+            saveTask?.cancel()
+            job = makeWriteJob()
+        }
+        diskQueue.checkpoint(writeData: job, writeState: writeState)
+    }
+
     /// Bekleyen değişiklikleri hemen (eşzamanlı) diske yazar.
     func flush() {
         saveTask?.cancel()
         guard let encoded = try? persistence.encode(data) else { return }
-        saveQueue.sync { [persistence] in
+        diskQueue.sync { [persistence] in
             try? persistence.write(encoded)
             persistence.dailyBackup(encoded)
         }
@@ -212,20 +258,51 @@ final class AppStore: ObservableObject {
     // MARK: - Değişiklik + geri alma
 
     /// Veriyi değiştirir ve işlemi pencerenin geri alma geçmişine ekler.
-    func mutateData(_ actionName: String? = nil, _ f: (inout AppData) -> Void) {
+    /// - Returns: uygulandı mı (personel hesabıyla yetkisiz işlem bütünüyle reddedilir)
+    @discardableResult
+    func mutateData(_ actionName: String? = nil, _ f: (inout AppData) -> Void) -> Bool {
         var d = data
         f(&d)
-        setData(d, actionName: actionName)
+        return setData(d, actionName: actionName)
     }
 
-    private func setData(_ new: AppData, actionName: String?) {
+    @discardableResult
+    private func setData(_ new: AppData, actionName: String?) -> Bool {
         let old = data
+        // Değişen belgeler (items, products, settings, employees, orders, day:YYYY-MM-DD)
+        let keys = DocCodec.changedKeys(old, new)
+        // Personel hesabıyla: tanım belgelerine ya da kapatılmış güne dokunan işlem bütünüyle reddedilir. Sunucu da
+        // reddeder; yarısı gönderilip yarısı geri alınan işlem (ör. teslim alma: Gelen gider, sipariş açık kalır;
+        // kalem silme: günlerden sayımlar silinir, kalem geri gelir) veriyi bozardı.
+        if let refusal = CloudPermission.refusal(role: enforcedRole, old: old, keys: keys) {
+            NSSound.beep()
+            alert = AppAlert(title: refusal.title, message: refusal.message)
+            return false
+        }
         data = new
-        guard let um = undoManager else { return }
+        cloud.noteLocalChange(keys)
+        guard let um = undoManager else { return true }
+        // Geri alma yalnızca bu işlemin değiştirdiği belgelere ve onlarda yalnızca bu işlemin değiştirdiği alanlara
+        // dokunur: arada web panelinden gelen değişiklikler (ör. aynı günde müdürün düzelttiği başka kalem, not ya da
+        // patronun değiştirdiği maliyet) geri alınmaz.
         um.registerUndo(withTarget: self) { store in
-            MainActor.assumeIsolated { store.setData(old, actionName: actionName) }
+            MainActor.assumeIsolated {
+                store.setData(DocCodec.undoing(keys: keys, old: old, new: new, current: store.data), actionName: actionName)
+            }
         }
         if let actionName { um.setActionName(actionName) }
+        return true
+    }
+
+    /// Web panelinden (buluttan) gelen veriyi uygular: geri alma geçmişine eklenmez ve yeniden gönderilmek üzere
+    /// işaretlenmez. Kayıt ve hesap önbelleği normal değişiklikteki gibi yenilenir.
+    func applyRemote(_ new: AppData) {
+        data = new
+    }
+
+    /// Geri alma geçmişini temizler (buluttaki veri indirildikten sonra eski adımlar onun üzerine yazmasın)
+    func clearUndoHistory() {
+        undoManager?.removeAllActions()
     }
 
     // MARK: - Gün gezinme
@@ -257,7 +334,8 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func updateDay(_ date: String, actionName: String, _ mutate: (inout DayRecord) -> Void) {
+    @discardableResult
+    func updateDay(_ date: String, actionName: String, _ mutate: (inout DayRecord) -> Void) -> Bool {
         mutateData(actionName) { d in
             var day = d.days[date] ?? DayRecord(date: date)
             mutate(&day)
@@ -267,6 +345,36 @@ final class AppStore: ObservableObject {
 
     func setLocked(_ date: String, _ locked: Bool) {
         updateDay(date, actionName: locked ? "Günü Kapat" : "Gün Kilidini Aç") { $0.locked = locked ? true : nil }
+    }
+
+    /// "Günü Kapat / Kilidi Aç" isteğinin sonucu (Gün menüsü ⌘L ve Günlük Envanter düğmesi aynı kuralı kullanır)
+    func lockAction(_ date: String) -> DayLockAction {
+        DayLockAction.resolve(locked: isLocked(date), counted: engine.hasCount(date: date), role: enforcedRole)
+    }
+
+    /// Gün menüsündeki öğenin adı (personel hesabıyla kapatma onay ister: "…")
+    func lockMenuTitle(_ date: String) -> String {
+        if isLocked(date) { return "Gün Kilidini Aç" }
+        return lockAction(date) == .confirmClose ? "Günü Kapat…" : "Günü Kapat"
+    }
+
+    /// Gün menüsü (⌘L) ve Günlük Envanter düğmesi: sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel
+    /// hesabıyla gün onaydan sonra kapatılır (kilidini yalnızca patron veya müdür açabilir), kilit açılamaz.
+    func requestLockToggle(_ date: String) {
+        switch lockAction(date) {
+        case .close: setLocked(date, true)
+        case .unlock: setLocked(date, false)
+        case .confirmClose: pendingDayClose = date
+        case .nothingCounted, .unlockNotAllowed: NSSound.beep()
+        }
+    }
+
+    /// Personelin onayladığı gün kapatma
+    func confirmDayClose(_ date: String) {
+        pendingDayClose = nil
+        let action = lockAction(date)
+        guard action == .confirmClose || action == .close else { return }
+        setLocked(date, true)
     }
 
     func setDayNote(_ date: String, _ text: String) {
@@ -282,10 +390,10 @@ final class AppStore: ObservableObject {
         rememberStaff(v)
     }
 
+    /// Personel hesabıyla ayarlar yazılamadığından ad listeye eklenmez (her yeni ad reddedilen bir yazma olurdu)
     private func rememberStaff(_ name: String) {
-        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !n.isEmpty, !settings.staff.contains(n) else { return }
-        mutateData { $0.settings.staff.append(n) }
+        guard let updated = settings.rememberingStaff(name, role: enforcedRole) else { return }
+        mutateData { $0.settings = updated }
     }
 
     /// Sayımı yapılmamış kalemlere önceki günün kapanışını aynen yazar (hareket olmayan kalemler için hızlı doldurma).
@@ -293,12 +401,12 @@ final class AppStore: ObservableObject {
         guard !isLocked(date) else { return 0 }
         let rows = engine.calc(date: date).rows.filter { !$0.isCounted && $0.incoming == 0 && $0.transferIn == 0 && $0.transferOut == 0 && $0.sold == 0 && $0.waste == 0 && $0.opening > 0 }
         guard !rows.isEmpty else { return 0 }
-        mutateData("Hareketsiz Kalemleri Doldur") { d in
+        let applied = mutateData("Hareketsiz Kalemleri Doldur") { d in
             var day = d.days[date] ?? DayRecord(date: date)
             for r in rows { day.entries[r.itemID, default: DayEntry()].closing = r.opening }
             d.days[date] = day
         }
-        return rows.count
+        return applied ? rows.count : 0
     }
 
     // MARK: - Ayarlar
@@ -373,8 +481,9 @@ final class AppStore: ObservableObject {
     func confirmWorkbookImport(_ imp: WorkbookImport, overwrite: Bool) {
         if let current = try? persistence.encode(data) { persistence.snapshot(current, label: "aktarim-oncesi") }
         var report = WorkbookImportReport()
-        mutateData("Excel'den Aktarım") { report = WorkbookImporter.apply(imp, to: &$0, overwrite: overwrite) }
+        let applied = mutateData("Excel'den Aktarım") { report = WorkbookImporter.apply(imp, to: &$0, overwrite: overwrite) }
         workbookPreview = nil
+        guard applied else { return }
         if let d = imp.currentDate ?? imp.historyDates.last { selectedDate = d }
         section = .daily
         alert = AppAlert(title: "Excel verileri aktarıldı",
@@ -387,10 +496,12 @@ final class AppStore: ObservableObject {
 
     func confirmImport(report: SalesReport, date: String) {
         guard !isLocked(date) else {
-            alert = AppAlert(title: "Gün kapatılmış", message: "\(DateKey.short(date)) günü kilitli. Satış aktarmak için önce günün kilidini açın.")
+            // Personel kilidi kendisi açamaz: başka gün seçmesi söylenir
+            let hint = canChangeLockedDays ? "Satış aktarmak için önce günün kilidini açın." : CloudPermission.lockedDayPickAnotherNote
+            alert = AppAlert(title: "Gün kapatılmış", message: "\(DateKey.short(date)) günü kilitli. \(hint)")
             return
         }
-        mutateData("Satış Raporu Aktarımı") { d in
+        let applied = mutateData("Satış Raporu Aktarımı") { d in
             var day = d.days[date] ?? DayRecord(date: date)
             day.sales = report.lines
             day.salesSource = report.sourceName
@@ -398,6 +509,7 @@ final class AppStore: ObservableObject {
             day.salesImportedAt = Date()
             d.days[date] = day
         }
+        guard applied else { return }
         selectedDate = date
         importPreview = nil
     }
@@ -425,12 +537,11 @@ final class AppStore: ObservableObject {
     @discardableResult
     func addProduct(_ p: Product) -> Bool {
         guard engine.productsByCode[p.code] == nil else { return false }
-        mutateData("Ürün Ekle") { $0.products.append(p) }
-        return true
+        return mutateData("Ürün Ekle") { $0.products.append(p) }
     }
 
     func deleteProduct(_ code: String) {
-        mutateData("Ürün Sil") { $0.products.removeAll { $0.code == code } }
+        guard mutateData("Ürün Sil", { $0.products.removeAll { $0.code == code } }) else { return }
         if recipeSelection == code { recipeSelection = nil }
     }
 
@@ -479,12 +590,12 @@ final class AppStore: ObservableObject {
     func restoreMissingDefaults() -> (items: Int, products: Int) {
         let seed = AppData.seeded()
         var addedItems = 0, addedProducts = 0
-        mutateData("Varsayılanları Geri Ekle") { d in
+        let applied = mutateData("Varsayılanları Geri Ekle") { d in
             let ids = Set(d.items.map { $0.id }), codes = Set(d.products.map { $0.code })
             for i in seed.items where !ids.contains(i.id) { d.items.append(i); addedItems += 1 }
             for p in seed.products where !codes.contains(p.code) { d.products.append(p); addedProducts += 1 }
         }
-        return (addedItems, addedProducts)
+        return applied ? (addedItems, addedProducts) : (0, 0)
     }
 
     // MARK: - İstatistikler
@@ -604,12 +715,12 @@ final class AppStore: ObservableObject {
         }
         // Doldurulacak bir şey yoksa geri alma geçmişine boş adım eklenmez
         guard !fills.isEmpty else { return 0 }
-        updateDay(date, actionName: "Vardiyaları Doldur") { day in
+        let applied = updateDay(date, actionName: "Vardiyaları Doldur") { day in
             var shifts = day.shifts ?? [:]
             for (id, s) in fills { shifts[id] = s }
             day.shifts = shifts
         }
-        return fills.count
+        return applied ? fills.count : 0
     }
 
     // MARK: - Fiyat geçmişi
@@ -631,15 +742,14 @@ final class AppStore: ObservableObject {
             alert = AppAlert(title: "Sipariş oluşturulamadı", message: "Bu gün için önerilen sipariş yok.")
             return false
         }
-        mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
-        return true
+        return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
     }
 
     func receiveOrder(_ id: String, on date: String, quantities: [String: Double], prices: [String: Double]) -> Bool {
         var copy = data
         do {
             let r = try Purchasing.receive(orderID: id, on: date, quantities: quantities, prices: prices, data: &copy)
-            mutateData("Teslim Al") { $0 = copy }
+            guard mutateData("Teslim Al", { $0 = copy }) else { return false }
             alert = AppAlert(title: "Teslim alındı",
                              message: "\(r.lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi" + (r.priceUpdates > 0 ? "; \(r.priceUpdates) kalemin birim maliyeti fatura fiyatıyla güncellendi." : "."))
             return true
@@ -727,7 +837,7 @@ final class AppStore: ObservableObject {
             let restored = try Persistence.decode(Data(contentsOf: url))
             // Mevcut hali güvenlik için ayrıca yedekle
             if let current = try? persistence.encode(data) { persistence.snapshot(current, label: "geri-yukleme-oncesi") }
-            mutateData("Yedekten Geri Yükleme") { $0 = restored }
+            guard mutateData("Yedekten Geri Yükleme", { $0 = restored }) else { return }
             alert = AppAlert(title: "Yedek geri yüklendi",
                              message: "\(Engine(data: restored).datesWithData.count) günlük kayıt ve \(restored.products.count) ürün reçetesi yüklendi. Önceki hal \"Yedekler\" klasörüne kaydedildi; Düzen > Geri Al ile de dönebilirsiniz.")
         } catch {

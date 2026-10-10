@@ -8,6 +8,7 @@ import EnvanterCore
 //   EnvanterTool orders [--date …] [--days 14] [--cover 3]    Sipariş önerisini yazdırır
 //   EnvanterTool demo --data-dir KLASÖR [--date …] [--days 35] Eğitim/tanıtım için örnek veri kurar
 //   EnvanterTool report [--from …] [--to …]                    Dönem özeti: satış, maliyet %, personel %, prime cost
+//   EnvanterTool metrics [--date …] [--from …] [--to …]        Hesap sonuçları JSON (web paneli eşlik testi)
 // Tüm komutlar --data-dir KLASÖR ile başka bir veri klasörüne yönlendirilebilir.
 
 func fail(_ msg: String) -> Never {
@@ -22,6 +23,7 @@ let usage = """
       EnvanterTool orders [--date TARİH] [--days 14] [--cover 3]
       EnvanterTool demo --data-dir KLASÖR [--date TARİH] [--days 35]
       EnvanterTool report [--from TARİH] [--to TARİH]
+      EnvanterTool metrics [--date TARİH] [--from TARİH] [--to TARİH]   (JSON; web paneli eşlik testi)
     Ortak seçenek: --data-dir KLASÖR
     """
 
@@ -158,6 +160,15 @@ case "report":
     for a in alerts { print("Fiyat artışı        : \(a.item.name) \(Fmt.money(a.from, fraction: 2)) → \(Fmt.money(a.to, fraction: 2)) (\(pct(a.ratio)))") }
     let open = data.purchaseOrders.filter { $0.status == .open }
     if !open.isEmpty { print("Açık sipariş        : \(open.count)") }
+
+case "metrics":
+    // Web panelinin hesap motoru için eşlik fikstürü (docs/SYNC.md §4)
+    let engine = Engine(data: data)
+    let date = dateArg(option("--date")) ?? engine.datesWithData.last ?? DateKey.today()
+    let to = dateArg(option("--to")) ?? date
+    let from = dateArg(option("--from")) ?? DateKey.startOfMonth(to)
+    FileHandle.standardOutput.write(Metrics.json(engine: engine, date: date, from: from, to: to))
+    print("")
 
 default:
     fail("Bilinmeyen komut: \(command)\n\(usage)")

@@ -30,6 +30,7 @@ struct ItemsView: View {
                 }
                 Text("Günlük Envanter ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Maliyet farkların ₺ karşılığını, kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if !store.canEditCatalog { ReadOnlyNote() }
             }
             .padding(20).frame(maxWidth: .infinity, alignment: .leading)
             Divider()
@@ -50,6 +51,7 @@ struct ItemsView: View {
             List {
                 ForEach(store.data.items) { item in
                     ItemRow(item: item) { deleting = item }
+                        .disabled(!store.canEditCatalog)
                 }
                 .onMove { store.moveItems(from: $0, to: $1) }
             }
@@ -65,6 +67,7 @@ struct ItemsView: View {
                 Spacer()
             }
             .padding(14)
+            .disabled(!store.canEditCatalog)
         }
         .navigationTitle("Stok Kalemleri")
         .confirmationDialog("\"\(deleting?.name ?? "")\" silinsin mi?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -107,7 +110,7 @@ private struct ItemRow: View {
                          maxFraction: 6, width: IW.factor)
                 .padding(.horizontal, 5)
             OptionalDecimalField(value: Binding(get: { item.unitCost }, set: { v in store.setItemCost(item.id, v) }),
-                                 placeholder: "₺", maxFraction: 2, width: IW.money)
+                                 placeholder: "₺", maxFraction: 2, width: IW.money, amount: true)
                 .padding(.horizontal, 5)
                 .help("1 \(item.unit.lowercased()) \(item.name) maliyeti (₺)")
                 .overlay(alignment: .topTrailing) { priceBadge }

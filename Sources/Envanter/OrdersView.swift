@@ -22,8 +22,9 @@ struct OrdersView: View {
                 Spacer()
                 Button { showCreate = true } label: { Label("Sipariş Oluştur", systemImage: "cart.badge.plus") }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(!all.contains { $0.suggested > 0 })
-                    .help("Önerilen miktarlarla bir satın alma siparişi kaydeder; mal gelince \"Teslim al\" ile Gelen'e işlenir")
+                    .disabled(!store.canEditCatalog || !all.contains(where: { $0.suggested > 0 }))
+                    .help(store.canEditCatalog ? "Önerilen miktarlarla bir satın alma siparişi kaydeder; mal gelince \"Teslim al\" ile Gelen'e işlenir"
+                          : CloudPermission.ordersStaffNote)
                     .popover(isPresented: $showCreate, arrowEdge: .bottom) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Sipariş oluştur").font(.headline)
@@ -57,19 +58,23 @@ struct OrdersView: View {
 
             HStack(spacing: 18) {
                 Picker("Ortalama", selection: store.settingsBinding(\.orderLookbackDays)) {
-                    Text("Son 7 gün").tag(7)
-                    Text("Son 14 gün").tag(14)
-                    Text("Son 30 gün").tag(30)
+                    // Web panelinde 1–120 gün arası herhangi bir değer seçilebilir; seçili değer listede yoksa ekle
+                    ForEach(Array(Set([7, 14, 30, store.settings.orderLookbackDays])).sorted(), id: \.self) { days in
+                        Text("Son \(days) gün").tag(days)
+                    }
                 }
                 .frame(width: 210)
                 .help("Günlük tüketim bu dönemin ortalamasından hesaplanır")
+                .disabled(!store.canEditCatalog)
                 Stepper(value: store.settingsBinding(\.orderCoverDays), in: 1...30, step: 1) {
                     Text("\(Fmt.number(store.settings.orderCoverDays, maxFraction: 0)) günlük ihtiyaç")
                         .monospacedDigit()
                 }
                 .help("Sipariş, bu kadar günü (kritik seviye üstünde) karşılayacak şekilde önerilir")
+                .disabled(!store.canEditCatalog)
                 Toggle("Yalnızca sipariş gerekenler", isOn: $onlyNeeded)
                 InfoTip(term: .orderSuggestion)
+                if !store.canEditCatalog { ReadOnlyNote(text: CloudPermission.ordersStaffNote) }
                 Spacer()
                 if hasCosts && totalCost > 0 {
                     Text("Tahmini tutar: \(Fmt.money(totalCost))").font(.callout.weight(.semibold))
@@ -227,12 +232,14 @@ private struct OrderRow: View {
             if cost > 0 { Text(Fmt.money(cost)).monospacedDigit().foregroundStyle(.secondary) }
             if order.status == .open {
                 Button("Teslim al") { receiving = order }.buttonStyle(SoftButtonStyle(tint: Brand.positive))
+                    .disabled(!store.canEditCatalog)
+                    .help(store.canEditCatalog ? "Gelen miktarları seçili günün Gelen sütununa işler" : CloudPermission.ordersStaffNote)
             }
             Menu {
                 Button("Metni kopyala") { store.copyOrder(order.id) }
-                if order.status == .open { Button("İptal et") { store.cancelOrder(order.id) } }
+                if order.status == .open { Button("İptal et") { store.cancelOrder(order.id) }.disabled(!store.canEditCatalog) }
                 Divider()
-                Button("Sil", role: .destructive) { store.deleteOrder(order.id) }
+                Button("Sil", role: .destructive) { store.deleteOrder(order.id) }.disabled(!store.canEditCatalog)
             } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
         }
@@ -272,7 +279,8 @@ private struct ReceiveSheet: View {
                                              placeholder: "0", maxFraction: 3, width: 100, live: true)
                         HStack(spacing: 6) {
                             OptionalDecimalField(value: Binding(get: { prices[l.itemID] ?? nil }, set: { prices[l.itemID] = $0 }),
-                                                 placeholder: item?.unitCost.map { Fmt.number($0, maxFraction: 2) } ?? "—", maxFraction: 2, width: 110, live: true)
+                                                 placeholder: item?.unitCost.map { Fmt.number($0, maxFraction: 2) } ?? "—", maxFraction: 2, width: 110, live: true,
+                                                 amount: true)
                             Text("/ \(item?.unit.lowercased() ?? "birim")").font(.caption).foregroundStyle(.secondary)
                             // Koli fiyatı gibi yanlış birimle girilen fiyatlara karşı uyarı (güncel maliyetten %50'den fazla sapma)
                             if let p = prices[l.itemID] ?? nil, let c = item?.unitCost, c > 0, abs(p - c) / c > 0.5 {
@@ -283,7 +291,10 @@ private struct ReceiveSheet: View {
                     }
                 }
             }
-            if store.isLocked(date) {
+            if !store.canEditCatalog {
+                Label(CloudPermission.ordersStaffNote, systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(Brand.negative)
+            } else if store.isLocked(date) {
                 Label("Seçili gün kapatılmış; önce kilidi açın veya başka bir gün seçin.", systemImage: "lock.fill")
                     .font(.callout).foregroundStyle(Brand.negative)
             }
@@ -299,7 +310,7 @@ private struct ReceiveSheet: View {
                     if store.receiveOrder(order.id, on: date, quantities: q, prices: p) { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
-                .disabled(store.isLocked(date))
+                .disabled(store.isLocked(date) || !store.canEditCatalog)
             }
         }
         .padding(22).frame(width: 700)

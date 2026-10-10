@@ -2,6 +2,12 @@ import SwiftUI
 import AppKit
 import EnvanterCore
 
+/// Kayıt noktası denetimi: durum yazılırken diskteki veri dosyasının durumu (arka plan kuyruğunda yazılır)
+private final class CheckpointProbe: @unchecked Sendable {
+    var dataWasCurrent = false
+    var stateWritten = false
+}
+
 /// Yakalanmamış Objective-C istisnasının nedenini ve yığınını yazar (C işlev göstericisi olarak verilir)
 private func selfTestExceptionHandler(_ e: NSException) {
     print("SELFTEST İSTİSNA: \(e.name.rawValue): \(e.reason ?? "")")
@@ -218,5 +224,62 @@ enum SelfTest {
         check(store.product("11101") == nil, "ürün silindi")
         let restored = store.restoreMissingDefaults()
         check(restored.products == 1 && store.product("11101") != nil, "silinen varsayılan ürün geri eklendi")
+
+        print("14) Personel hesabı: gün kapatma onayı, kapatılmış gün ve rol değişimi")
+        // Web eşitlemesi bu modda kapalı; rolü CloudSyncController'ın yaptığı gibi doğrudan veriyoruz
+        store.enforcedRole = CloudRole.staff
+        check(!store.canEditCatalog && !store.canChangeLockedDays, "personel: tanımlar ve kapatılmış günler salt okunur")
+        // (a) Sayımı olmayan (ileri tarihli) gün ⌘L ile kapatılmaz
+        let future = DateKey.addDays(30, to: d2)
+        store.selectedDate = future
+        check(store.lockAction(future) == .nothingCounted && !store.lockAction(future).isAvailable, "sayımı olmayan günde Günü Kapat kapalı")
+        store.requestLockToggle(future)
+        check(!store.isLocked(future) && store.pendingDayClose == nil && store.data.days[future] == nil, "boş gün kapatılmadı")
+        // (b) Sayılmış gün: önce onay istenir
+        store.selectedDate = d2
+        check(!store.isLocked(d2) && store.lockAction(d2) == .confirmClose, "personel: kapatmadan önce onay istenir")
+        check(store.lockMenuTitle(d2) == "Günü Kapat…", "Gün menüsünde \"Günü Kapat…\"")
+        store.requestLockToggle(d2)
+        check(store.pendingDayClose == d2 && !store.isLocked(d2), "onay verilmeden gün kapatılmadı")
+        store.pendingDayClose = nil                                            // Vazgeç
+        check(!store.isLocked(d2), "vazgeçince gün açık kaldı")
+        store.requestLockToggle(d2)
+        if let pending = store.pendingDayClose { store.confirmDayClose(pending) }
+        check(store.isLocked(d2) && store.pendingDayClose == nil, "onaydan sonra gün kapatıldı")
+        check(store.lockAction(d2) == .unlockNotAllowed && store.isReadOnlyDay(d2), "personel kapatılmış günün kilidini açamaz")
+        store.requestLockToggle(d2)
+        check(store.isLocked(d2), "⌘L personel hesabıyla kilidi açmadı")
+        // (c) Kapatılmış güne satış aktarma: personele kilidi açması söylenmez
+        store.alert = nil
+        store.confirmImport(report: report, date: d2)
+        let importMessage = store.alert?.message ?? ""
+        check(importMessage.contains("patron veya müdür") && !importMessage.contains("kilidini açın"),
+              "kapatılmış gün uyarısı personele başka gün seçmesini söylüyor")
+        store.alert = nil
+        // (d) Rol web panelinde müdüre yükseltildi (CloudSyncController şube listesinden günceller): kısıtlar kalkar
+        store.enforcedRole = CloudRole.manager
+        check(store.canEditCatalog && store.canChangeLockedDays, "müdür: tanımlar ve kapatılmış günler düzenlenebilir")
+        check(store.lockAction(d2) == .unlock && store.lockMenuTitle(d2) == "Gün Kilidini Aç", "müdür kilidi açabilir")
+        store.requestLockToggle(d2)
+        check(!store.isLocked(d2), "müdür ⌘L ile kilidi açtı")
+        store.requestLockToggle(d2)
+        check(store.isLocked(d2) && store.pendingDayClose == nil, "müdür onaysız kapatır")
+        store.enforcedRole = nil
+
+        print("15) Eşitleme kayıt noktası arayüzü bekletmez (önce veri, sonra durum)")
+        let year = DemoData.make(endingAt: d2, days: 365)
+        store.applyRemote(year)
+        let probe = CheckpointProbe()
+        let dataFile = persistence.dataFile
+        let expectedDays = year.days.count
+        let started = Date()
+        store.syncCheckpoint(dataChanged: true) {
+            probe.dataWasCurrent = (try? Persistence.decode(Data(contentsOf: dataFile)))?.days.count == expectedDays
+            probe.stateWritten = true
+        }
+        let mainMs = Date().timeIntervalSince(started) * 1000
+        check(mainMs < 40, "kayıt noktasının ana iş parçacığındaki kısmı kısa (\(Int(mainMs)) ms; kodlama arka planda)")
+        store.diskQueue.sync {}
+        check(probe.stateWritten && probe.dataWasCurrent, "durum yazılırken veri dosyası güncel (365 gün)")
     }
 }

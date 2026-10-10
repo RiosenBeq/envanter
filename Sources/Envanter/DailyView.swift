@@ -140,12 +140,20 @@ struct DailyView: View {
             }
             if let fillMessage { Text(fillMessage).font(.callout).foregroundStyle(.secondary).lineLimit(1) }
             Spacer()
-            Button { store.setLocked(date, !locked) } label: {
-                Label(locked ? "Kilidi Aç" : "Günü Kapat", systemImage: locked ? "lock.open" : "lock")
+            if locked && !store.canChangeLockedDays {
+                // Personel: kapatılmış günün kilidini yalnızca patron / müdür açar (sunucu da reddeder)
+                Label(CloudPermission.lockedDayStaffNote, systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(Brand.warn)
+                    .help("Düzeltme gerekiyorsa patron ya da müdür web panelinden veya kendi hesabıyla günün kilidini açabilir.")
+            } else {
+                // Personel hesabıyla önce onay istenir (kapatılan günün kilidini yalnızca patron / müdür açar)
+                Button { store.requestLockToggle(date) } label: {
+                    Label(locked ? "Kilidi Aç" : "Günü Kapat", systemImage: locked ? "lock.open" : "lock")
+                }
+                .buttonStyle(SoftButtonStyle(tint: locked ? Brand.warn : .primary))
+                .help(locked ? "Girişleri tekrar düzenlenebilir yapar" : Term.lock.text)
+                .disabled(!locked && allRows.allSatisfy { !$0.isCounted })
             }
-            .buttonStyle(SoftButtonStyle(tint: locked ? Brand.warn : .primary))
-            .help(locked ? "Girişleri tekrar düzenlenebilir yapar" : Term.lock.text)
-            .disabled(!locked && allRows.allSatisfy { !$0.isCounted })
         }
         .padding(.horizontal, 20).padding(.bottom, 8)
     }
@@ -208,8 +216,13 @@ private struct DayNotePopover: View {
     @State private var countedBy = ""
 
     var body: some View {
+        let readOnly = store.isReadOnlyDay(date)
         VStack(alignment: .leading, spacing: 10) {
             Text("\(DateKey.short(date)) notu").font(.headline)
+            if readOnly {
+                Label(CloudPermission.lockedDayStaffNote, systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(Brand.warn)
+            }
             HStack {
                 Text("Sayımı yapan").foregroundStyle(.secondary)
                 TextField("Ad Soyad", text: $countedBy).textFieldStyle(.roundedBorder).frame(width: 180)
@@ -223,15 +236,18 @@ private struct DayNotePopover: View {
                         .menuStyle(.borderlessButton).fixedSize()
                 }
             }
+            .disabled(readOnly)
             TextEditor(text: $note)
                 .font(.body)
                 .frame(width: 360, height: 110)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Brand.line))
+                .disabled(readOnly)
             Text("Örn: \"Dondurucu arızası, 3 kg patates atıldı\" — Excel'e ve raporlara not olarak geçer.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Kaydet") { save(); dismiss() }.keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                    .disabled(readOnly)
             }
         }
         .padding(16)
@@ -243,6 +259,8 @@ private struct DayNotePopover: View {
     }
 
     private func save() {
+        // Personel kapatılmış günü değiştiremez (alanlar kapalı; kapanırken de yazılmaz)
+        guard !store.isReadOnlyDay(date) else { return }
         store.setDayNote(date, note)
         store.setCountedBy(date, countedBy)
     }

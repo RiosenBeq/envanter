@@ -53,7 +53,8 @@ struct RecipesView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Ürün, kod veya kategori ara", text: $search).textFieldStyle(.plain)
                 Button { showNew = true } label: { Image(systemName: "plus") }
-                    .buttonStyle(SoftButtonStyle()).help("Yeni ürün ekle")
+                    .buttonStyle(SoftButtonStyle()).help(store.canEditCatalog ? "Yeni ürün ekle" : CloudPermission.catalogReadOnlyNote)
+                    .disabled(!store.canEditCatalog)
             }
             .padding(10)
             Picker("", selection: $filter) {
@@ -97,6 +98,7 @@ private struct RecipeEditor: View {
         if let p = store.product(code) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if !store.canEditCatalog { ReadOnlyNote() }
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Ürün adı").font(.caption).foregroundStyle(.secondary)
@@ -180,6 +182,8 @@ private struct RecipeEditor: View {
                     }
                 }
                 .padding(22)
+                // Personel hesabıyla reçeteler salt okunur (web panelindeki hal geçerli)
+                .disabled(!store.canEditCatalog)
             }
             .sheet(isPresented: $showCopy) { CopyRecipeSheet(targetCode: code).environmentObject(store) }
             .confirmationDialog("\"\(p.name)\" silinsin mi?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -222,8 +226,7 @@ private struct RecipeEditor: View {
         var copy = p
         copy.code = newCode; copy.name = p.name + " (kopya)"
         copy.note = "Kopya ürün: ModPos'taki gerçek kodu \(newCode) yerine Yeni Ürün ile tanımlayın veya bu kaydı silin."
-        store.addProduct(copy)
-        store.recipeSelection = newCode
+        if store.addProduct(copy) { store.recipeSelection = newCode }
     }
 }
 

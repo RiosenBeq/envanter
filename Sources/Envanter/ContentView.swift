@@ -46,6 +46,15 @@ struct ContentView: View {
                presenting: store.alert) { _ in
             Button("Tamam", role: .cancel) {}
         } message: { a in Text(a.message) }
+        // Personel hesabıyla gün kapatma onayı (Gün menüsü ⌘L ve Günlük Envanter düğmesi)
+        .confirmationDialog(store.pendingDayClose.map { DayLockAction.confirmTitle(date: $0) } ?? "",
+                            isPresented: Binding(get: { store.pendingDayClose != nil }, set: { if !$0 { store.pendingDayClose = nil } }),
+                            titleVisibility: .visible, presenting: store.pendingDayClose) { date in
+            Button("Günü Kapat") { store.confirmDayClose(date) }
+            Button("Vazgeç", role: .cancel) { store.pendingDayClose = nil }
+        } message: { _ in
+            Text(DayLockAction.confirmMessage)
+        }
     }
 
     private var dropOverlay: some View {

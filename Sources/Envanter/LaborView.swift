@@ -25,6 +25,8 @@ struct LaborView: View {
                     }
                     Button { showAdd = true } label: { Label("Personel Ekle", systemImage: "person.badge.plus") }
                         .buttonStyle(PrimaryButtonStyle())
+                        .disabled(!store.canEditCatalog)
+                        .help(store.canEditCatalog ? "Yeni çalışan ekle" : CloudPermission.catalogReadOnlyNote)
                 }
                 if let fillMessage { Text(fillMessage).font(.callout).foregroundStyle(.secondary) }
                 if store.employees.isEmpty {
@@ -153,7 +155,7 @@ private struct ShiftTable: View {
                             }
                         }
                         .frame(width: 70)
-                        OptionalDecimalField(value: store.shiftBinding(e.id, date: date, \.extra), placeholder: "0", maxFraction: 2, width: 90)
+                        OptionalDecimalField(value: store.shiftBinding(e.id, date: date, \.extra), placeholder: "0", maxFraction: 2, width: 90, amount: true)
                             .frame(width: 110)
                         Text(cost > 0 ? Fmt.money(cost) : "—").monospacedDigit().fontWeight(.semibold)
                             .frame(width: 110, alignment: .trailing)
@@ -164,7 +166,7 @@ private struct ShiftTable: View {
                 Divider()
                 HStack(spacing: 12) {
                     Text("Diğer personel gideri").foregroundStyle(.secondary)
-                    OptionalDecimalField(value: store.otherLaborBinding(date), placeholder: "0", maxFraction: 2, width: 110)
+                    OptionalDecimalField(value: store.otherLaborBinding(date), placeholder: "0", maxFraction: 2, width: 110, amount: true)
                         .help("Listede olmayan giderler: günlük ek eleman, dışarıdan kurye vb. (₺)")
                     Spacer()
                     Text("Toplam").foregroundStyle(.secondary)
@@ -274,6 +276,9 @@ private struct EmployeeList: View {
                     Text("\(store.employees.filter { $0.active }.count) aktif").font(.callout).foregroundStyle(.secondary)
                 }
                 .padding(14)
+                if !store.canEditCatalog {
+                    ReadOnlyNote().frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 10)
+                }
                 Divider()
                 HStack(spacing: 8) {
                     Text("Ad").frame(maxWidth: .infinity, alignment: .leading)
@@ -288,6 +293,7 @@ private struct EmployeeList: View {
                 .background(Color.primary.opacity(0.04))
                 ForEach(store.employees) { e in
                     EmployeeRow(employee: e) { deleting = e }
+                        .disabled(!store.canEditCatalog)
                     Divider().padding(.leading, 14)
                 }
             }
@@ -402,7 +408,7 @@ private struct PayChangeForm: View {
                 }
                 GridRow {
                     Text("Ücret")
-                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120, live: true); Text(payType.rateLabel).foregroundStyle(.secondary) }
+                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120, live: true, amount: true); Text(payType.rateLabel).foregroundStyle(.secondary) }
                 }
                 GridRow {
                     HStack(spacing: 4) { Text("İşveren çarpanı"); InfoTip(term: .costFactor) }
@@ -427,6 +433,13 @@ private struct PayChangeForm: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if affectedLocked > 0 {
                 Label("Kapatılmış \(affectedLocked) günün personel maliyeti değişecek.", systemImage: "lock.fill")
+                    .font(.callout).foregroundStyle(Brand.warn)
+            }
+            // Yanlış yazılan tutara karşı (ör. "35.000" yerine "35"): aynı ücret türünde %50'den fazla değişim
+            if payType == employee.payType, let r = rate, r > 0, employee.rate > 0, abs(r - employee.rate) / employee.rate > 0.5 {
+                let pct = Fmt.number(abs(r - employee.rate) / employee.rate * 100, maxFraction: 0)
+                let warning: String = "Önceki ücretten (\(Fmt.money(employee.rate, fraction: 0))) %\(pct) \(r > employee.rate ? "fazla" : "az"). Tutarı kontrol edin."
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout).foregroundStyle(Brand.warn)
             }
             HStack {
@@ -525,7 +538,7 @@ private struct AddEmployeeSheet: View {
                 }
                 GridRow {
                     Text("Ücret")
-                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120, live: true); Text(payType.rateLabel).foregroundStyle(.secondary) }
+                    HStack { OptionalDecimalField(value: $rate, placeholder: "0", maxFraction: 2, width: 120, live: true, amount: true); Text(payType.rateLabel).foregroundStyle(.secondary) }
                 }
                 GridRow {
                     HStack(spacing: 4) { Text("İşveren çarpanı"); InfoTip(term: .costFactor) }

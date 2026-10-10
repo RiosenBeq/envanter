@@ -96,6 +96,8 @@ final class AppStore: ObservableObject {
     /// Web eşitlemesinde bu Mac'in şubedeki rolü (CloudSyncController günceller; eşleşme yoksa nil). Personel ise
     /// tanım belgeleri ve kapatılmış günler bu Mac'te de salt okunurdur (docs/SYNC.md §2).
     @Published var enforcedRole: String?
+    /// Onay bekleyen gün kapatma (personel: kapatılan günün kilidini yalnızca patron veya müdür açabilir)
+    @Published var pendingDayClose: String?
 
     let persistence: Persistence
     /// Web paneliyle (Supabase) arka planda eşitleme
@@ -104,7 +106,9 @@ final class AppStore: ObservableObject {
     weak var undoManager: UndoManager?
     private var engineCache: Engine?
     private var saveTask: Task<Void, Never>?
-    private let saveQueue = DispatchQueue(label: "envanter.save", qos: .utility)
+    /// Veri dosyası ve eşitleme durumu aynı seri kuyrukta yazılır (DiskWriteQueue): kodlama ve yazma arka planda
+    /// yapılır, eşitlemenin kayıt noktasında önce veri sonra durum sırası korunur.
+    let diskQueue: DiskWriteQueue
     private var saveGeneration = 0
     private var lastBackupAt: Date?
     private var saveErrorReported = false
@@ -127,10 +131,12 @@ final class AppStore: ObservableObject {
 
     init(persistence: Persistence = Persistence(directory: Persistence.defaultDirectory())) {
         self.persistence = persistence
+        let queue = DiskWriteQueue(label: "envanter.save")
+        diskQueue = queue
         // Otomatik test ve ekran görüntüsü modlarında web eşitlemesi kapalıdır
         let env = ProcessInfo.processInfo.environment
         let automated = !(env["ENVANTER_SELFTEST"] ?? "").isEmpty || !(env["ENVANTER_SNAPSHOT_DIR"] ?? "").isEmpty
-        cloud = CloudSyncController(directory: persistence.directory, enabled: !automated)
+        cloud = CloudSyncController(directory: persistence.directory, enabled: !automated, diskQueue: queue)
         var startupAlert: AppAlert?
         switch persistence.load() {
         case .fresh:
@@ -159,7 +165,7 @@ final class AppStore: ObservableObject {
                   let encoded = try? persistence.encode(data) {
             // Günün ilk açılışı: henüz değişiklik yapılmadan günün yedeğini al
             let p = persistence
-            saveQueue.async { p.dailyBackup(encoded) }
+            diskQueue.async { p.dailyBackup(encoded) }
             lastBackupAt = Date()
         }
         cloud.attach(self)
@@ -179,13 +185,21 @@ final class AppStore: ObservableObject {
 
     /// Kodlama ve yazma arka planda yapılır; günlük yedek en fazla 10 dakikada bir güncellenir.
     private func writeNow() {
+        let job = makeWriteJob()
+        diskQueue.async { _ = job() }
+    }
+
+    /// Şu anki verinin yazma işi (kuyrukta çalışır): kodlar, yazar, zamanı geldiyse günlük yedeği günceller ve sonucu
+    /// ana iş parçacığına bildirir. Kopya burada (ana iş parçacığında) alınır; kodlama ve yazma kuyrukta yapılır.
+    /// - Returns: iş; çalışınca veri dosyası yazıldı mı
+    private func makeWriteJob() -> @Sendable () -> Bool {
         let snapshot = data
         let p = persistence
         let backup = lastBackupAt.map { Date().timeIntervalSince($0) > 600 } ?? true
         if backup { lastBackupAt = Date() }
         saveGeneration += 1
         let generation = saveGeneration
-        saveQueue.async { [weak self] in
+        return { [weak self] in
             var failure: String?
             do {
                 let encoded = try p.encode(snapshot)
@@ -195,9 +209,11 @@ final class AppStore: ObservableObject {
                 failure = error.localizedDescription
                 NSLog("Kayıt hatası: \(error)")
             }
+            let result = failure, owner = self
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.finishSave(failure: failure, generation: generation) }
+                MainActor.assumeIsolated { owner?.finishSave(failure: result, generation: generation) }
             }
+            return result == nil
         }
     }
 
@@ -216,32 +232,24 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Veri dosyasını hemen (eşzamanlı) yazar; günlük yedek alınmaz. Web eşitlemesi, tabanı ilerlemiş eşitleme
-    /// durumunu kaydetmeden önce çağırır (SyncCheckpoint): durum hiçbir zaman diskteki veriden ileride kalmaz.
-    /// - Returns: yazıldı mı
-    @discardableResult
-    func writeDataNow() -> Bool {
-        saveTask?.cancel()
-        saveGeneration += 1
-        let generation = saveGeneration
-        let p = persistence
-        var failure: String?
-        do {
-            let encoded = try p.encode(data)
-            try saveQueue.sync { try p.write(encoded) }
-        } catch {
-            failure = error.localizedDescription
-            NSLog("Kayıt hatası: \(error)")
+    /// Web eşitlemesinin kayıt noktası (SyncCheckpoint, docs/SYNC.md §3 "Kayıt sırası"): yerel veri değiştiyse önce veri
+    /// dosyası, sonra eşitleme durumu (`writeState`) yazılır; veri yazılamazsa durum yazılmaz. İkisi de arka planda,
+    /// durumun diğer kayıtlarıyla aynı seri kuyrukta yazılır: ana iş parçacığı kodlamayı ve yazmayı beklemez, sonradan
+    /// kuyruğa giren durum kaydı da bu verinin önüne geçemez. Bekleyen (gecikmeli) kayıt bu yazmaya katılır.
+    func syncCheckpoint(dataChanged: Bool, writeState: @escaping @Sendable () -> Void) {
+        var job: (@Sendable () -> Bool)?
+        if dataChanged {
+            saveTask?.cancel()
+            job = makeWriteJob()
         }
-        finishSave(failure: failure, generation: generation)
-        return failure == nil
+        diskQueue.checkpoint(writeData: job, writeState: writeState)
     }
 
     /// Bekleyen değişiklikleri hemen (eşzamanlı) diske yazar.
     func flush() {
         saveTask?.cancel()
         guard let encoded = try? persistence.encode(data) else { return }
-        saveQueue.sync { [persistence] in
+        diskQueue.sync { [persistence] in
             try? persistence.write(encoded)
             persistence.dailyBackup(encoded)
         }
@@ -337,6 +345,36 @@ final class AppStore: ObservableObject {
 
     func setLocked(_ date: String, _ locked: Bool) {
         updateDay(date, actionName: locked ? "Günü Kapat" : "Gün Kilidini Aç") { $0.locked = locked ? true : nil }
+    }
+
+    /// "Günü Kapat / Kilidi Aç" isteğinin sonucu (Gün menüsü ⌘L ve Günlük Envanter düğmesi aynı kuralı kullanır)
+    func lockAction(_ date: String) -> DayLockAction {
+        DayLockAction.resolve(locked: isLocked(date), counted: engine.hasCount(date: date), role: enforcedRole)
+    }
+
+    /// Gün menüsündeki öğenin adı (personel hesabıyla kapatma onay ister: "…")
+    func lockMenuTitle(_ date: String) -> String {
+        if isLocked(date) { return "Gün Kilidini Aç" }
+        return lockAction(date) == .confirmClose ? "Günü Kapat…" : "Günü Kapat"
+    }
+
+    /// Gün menüsü (⌘L) ve Günlük Envanter düğmesi: sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel
+    /// hesabıyla gün onaydan sonra kapatılır (kilidini yalnızca patron veya müdür açabilir), kilit açılamaz.
+    func requestLockToggle(_ date: String) {
+        switch lockAction(date) {
+        case .close: setLocked(date, true)
+        case .unlock: setLocked(date, false)
+        case .confirmClose: pendingDayClose = date
+        case .nothingCounted, .unlockNotAllowed: NSSound.beep()
+        }
+    }
+
+    /// Personelin onayladığı gün kapatma
+    func confirmDayClose(_ date: String) {
+        pendingDayClose = nil
+        let action = lockAction(date)
+        guard action == .confirmClose || action == .close else { return }
+        setLocked(date, true)
     }
 
     func setDayNote(_ date: String, _ text: String) {
@@ -458,7 +496,9 @@ final class AppStore: ObservableObject {
 
     func confirmImport(report: SalesReport, date: String) {
         guard !isLocked(date) else {
-            alert = AppAlert(title: "Gün kapatılmış", message: "\(DateKey.short(date)) günü kilitli. Satış aktarmak için önce günün kilidini açın.")
+            // Personel kilidi kendisi açamaz: başka gün seçmesi söylenir
+            let hint = canChangeLockedDays ? "Satış aktarmak için önce günün kilidini açın." : CloudPermission.lockedDayPickAnotherNote
+            alert = AppAlert(title: "Gün kapatılmış", message: "\(DateKey.short(date)) günü kilitli. \(hint)")
             return
         }
         let applied = mutateData("Satış Raporu Aktarımı") { d in

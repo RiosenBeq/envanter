@@ -41,6 +41,9 @@ envanter_docs       (workspace_id uuid FK, key text, body jsonb, rev bigint, del
                     PK (workspace_id, key); index (workspace_id, rev)
 envanter_activity   (id bigserial PK, workspace_id uuid, user_id uuid, email text, at timestamptz,
                      client text, key text, summary text); index (workspace_id, id desc)
+                    key = belge anahtarı ya da 'members' (patronun üyelik işlemleri: hesap açma,
+                    şifre belirleme, davet, yetki değişikliği, şubeden çıkarma; belge değil,
+                    client = null)
 envanter_rev_seq    belge her yazıldığında rev = nextval (çalışma alanları arasında tekdüze artar)
 ```
 
@@ -48,7 +51,7 @@ envanter_rev_seq    belge her yazıldığında rev = nextval (çalışma alanlar
 
 | Rol | Okuma | Yazma |
 | --- | --- | --- |
-| owner (patron) | hepsi | hepsi + kullanıcı/yetki yönetimi + şube adı |
+| owner (patron) | hepsi | hepsi + kullanıcı/yetki yönetimi (hesap açma, şifre belirleme, davet) + şube adı |
 | manager (müdür) | hepsi | tüm belgeler |
 | staff (personel) | hepsi | yalnızca `day:*` (sayım, satış, vardiya, not); kapatılmış (kilitli) günü değiştiremez |
 
@@ -66,7 +69,7 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 
 - `envanter_create_workspace(p_name text) returns uuid` — Şube açar ve çağıranı owner yapar. Yalnızca hiç şube yokken (ilk kurulum) ya da çağıran en az bir şubede owner ise izin verilir.
 - `envanter_my_workspaces() returns table(id uuid, name text, role text)` — Önce `envanter_accept_invites()` çalışır.
-- `envanter_accept_invites() returns integer` — Çağıranın e-postasına (`auth.jwt() ->> 'email'`, küçük harf) yapılmış davetleri üyeliğe çevirir ve sayısını döner. `auth.users` ekleme tetikleyicisi de aynı işi yapar.
+- `envanter_accept_invites() returns integer` — Çağıranın e-postasına (`auth.jwt() ->> 'email'`, küçük harf) yapılmış davetleri üyeliğe çevirir ve sayısını döner. `auth.users` ekleme tetikleyicisi de aynı işi yapar. Patronun açtığı ya da şifresini belirlediği hesaplar (`raw_app_meta_data.envanter_managed_by`) davetleri kendiliğinden kabul etmez (e-posta sahipliği kanıtlanmamıştır, şifreyi o patron bilir); başka şubenin patronu böyle bir hesabı yeniden davet ederek (hesap var → doğrudan üye) ekler.
 - `envanter_rename_workspace(p_workspace uuid, p_name text)` — Yalnızca owner.
 - `envanter_put(p_workspace uuid, p_key text, p_body jsonb, p_base_rev bigint, p_deleted boolean default false, p_client text default null, p_summary text default null) returns table(ok boolean, rev bigint, body jsonb, deleted boolean)`
   - Belge yoksa ve `p_base_rev = 0` ise eklenir.
@@ -78,8 +81,11 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 - `envanter_invite(p_workspace uuid, p_email text, p_role text)` — Yalnızca owner. Kullanıcı zaten kayıtlıysa doğrudan üye yapılır, değilse davet kaydedilir (kayıt olunca otomatik üye olur). Sonuç olarak `'member' | 'invited'` döner.
 - `envanter_cancel_invite(p_workspace uuid, p_email text)` — Yalnızca owner.
 - `envanter_set_role(p_workspace uuid, p_user uuid, p_role text)` — Yalnızca owner. Son owner düşürülemez.
-- `envanter_remove_member(p_workspace uuid, p_user uuid)` — Yalnızca owner. Son owner silinemez.
-- `envanter_members_list(p_workspace uuid) returns table(user_id uuid, email text, role text, added_at timestamptz, pending boolean)` — Üyeler ve bekleyen davetler. Davetleri yalnızca owner görür.
+- `envanter_remove_member(p_workspace uuid, p_user uuid)` — Yalnızca owner. Son owner silinemez. Rol denetimi her istekte üyeliğe bakar; çıkarılan üyenin erişimi hemen kesilir.
+- `envanter_members_list(p_workspace uuid) returns table(user_id uuid, email text, role text, added_at timestamptz, pending boolean, can_set_password boolean)` — Üyeler ve bekleyen davetler. Davetleri yalnızca owner görür. `can_set_password`: çağıran (owner) bu üyenin şifresini `envanter_set_member_password` ile belirleyebilir mi (owner olmayanlar ve davetler için hep `false`).
+- `envanter_create_account(p_workspace uuid, p_email text, p_password text, p_role text) returns text` — Yalnızca owner. E-posta gerektirmeden hesap açar (Supabase'in yerleşik e-postası yalnızca organizasyon ekibine ulaşır; özel SMTP yoksa davet/onay e-postası gelmez). E-postayla hesap yoksa e-postası onaylı, verilen şifreli bir hesap açılır (`auth.users` + `auth.identities`), `p_role` ile üye yapılır ve `'created'` döner; e-postası onaylı hesap varsa `envanter_invite` gibi üye yapılır, şifresine dokunulmaz ve `'member'` döner (farklı rolle zaten üyeyse `23505`). Hesap var ama e-postası onaylanmamışsa (kişi kendisi kayıt olmuş, doğrulama e-postası gelmemiş): çağıran şifresini belirleyebiliyorsa (`envanter_set_member_password` kuralları) hesap verilen şifreyle açılır, e-postası onaylanır, üye yapılır ve `'created'` döner; belirleyemiyorsa hiçbir şey değişmez ve `'unconfirmed'` döner. Şifre en az 8 karakter, en fazla 72 bayt (`22023`). Bu e-postaya bu şubede ve çağıranın patronu olduğu şubelerde bekleyen davetler kapanır; başka patronların davetleri beklemede kalır.
+- `envanter_set_member_password(p_workspace uuid, p_user uuid, p_password text)` — Yalnızca owner. Üyenin şifresini belirler (eski şifre hemen geçmez), onaylanmamış e-postasını onaylar ve oturumlarını yenilenemez yapar (yenileme jetonları silinir; elde kalan erişim anahtarı süresi dolana kadar, varsayılan 1 saat, geçerlidir; erişimi hemen kesmek için `envanter_remove_member`). Hedef bu şubenin üyesi olmalı (`22023`), çağıranın kendisi olmamalı (`22023`; kendi şifresi `PUT /auth/v1/user` ile değişir), hiçbir şubede owner olmamalı ve üye olduğu her şubenin owner'ı çağıran olmalı (`42501`; başka bir patronun çalışanının hesabını ele geçirmeyi önler).
+- Patronun üyelik işlemleri (`envanter_create_account`, `envanter_set_member_password`, `envanter_invite`, `envanter_cancel_invite`, `envanter_set_role`, `envanter_remove_member`) bir şey değiştirdiyse `envanter_activity`'e `key = 'members'` satırı yazar: "Hesap oluşturuldu: x (Personel)", "Hesap açıldı (doğrulanmamış kayıt): x (Personel)", "Mevcut hesap şubeye eklendi: x (Müdür)", "Davet edildi: x (Personel)", "Davetin yetkisi değişti: x (Personel → Müdür)", "Davet iptal edildi: x (Müdür)", "Yetki değişti: x (Müdür → Personel)", "Şubeden çıkarıldı: x (Personel)", "Şifre belirlendi: x; eski şifresi geçersiz, açık oturumları en geç 1 saat içinde kapanır". Şifre hiçbir yere yazılmaz.
 
 ### Hata kodları ve sınır durumlar
 
@@ -88,7 +94,8 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 - Yetki hatası: SQLSTATE `42501`, HTTP 403 (oturum yoksa 401). Örnekler: üye değil ("Bu şubeye erişiminiz yok."), personelin katalog yazması ("Personel (staff) yalnızca gün kayıtlarını …"), personelin kapatılmış günü değiştirmesi ("Kapatılmış günü yalnızca müdür veya patron değiştirebilir.").
 - Üye değil: `22023`, HTTP 400.
 - Son owner kuralı: `P0001`, HTTP 400.
-- Var olan üyeyi farklı rolle davet: `23505`, HTTP 409. Aynı rolle davet `'member'` döner.
+- Var olan üyeyi farklı rolle davet (ya da `envanter_create_account`): `23505`, HTTP 409. Aynı rolle davet `'member'` döner.
+- Hesap / şifre: şifre kuralı ve kendi şifresini belirleme `22023` (HTTP 400); owner olmayan çağıran, owner hedef ya da başka patronun şubesinde de çalışan hedef `42501` (HTTP 403).
 - `day:*` anahtarları gerçek takvim günü olmalıdır.
 - `p_client` 100, `p_summary` 500 karakterle kırpılır.
 - Kilitli ama başka verisi olmayan gün silinmez (Mac'teki `isEmpty && !isLocked` kuralı). `salesImportedAt` kesirli saniye içermez (`2026-08-01T10:15:00Z`), çünkü Mac'in ISO 8601 çözücüsü kesirli saniyeyi kabul etmez.
@@ -101,7 +108,8 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 **Canlı güncelleme:** `envanter_docs` ve `envanter_activity` tabloları `supabase_realtime` yayınına eklenir. Web paneli değişiklikleri anında görür. Mac uygulaması 60 saniyede bir ve her değişiklikten birkaç saniye sonra eşitler.
 
 **Mac uygulaması isteği:**
-- Giriş: `POST {URL}/auth/v1/token?grant_type=password` (başlık `apikey: <publishable key>`). Yanıttaki `access_token` ve `refresh_token` saklanır.
+- Giriş: `POST {URL}/auth/v1/token?grant_type=password` (başlık `apikey: <publishable key>`). Yanıttaki `access_token` ve `refresh_token` saklanır. Web paneliyle aynı e-posta ve şifre kullanılır (patronun panelden açtığı hesaplar dahil).
+- Yenileme reddedilirse (ör. patron şifre belirledi, kullanıcı şifresini başka yerde değiştirdi) oturum düşmüş sayılır: kullanıcıdan yeniden giriş istenir, bekleyen değişiklikler korunur.
 - Sonraki istekler: `apikey` başlığı ve `Authorization: Bearer <access_token>`.
 - RPC: `POST {URL}/rest/v1/rpc/<ad>`. Süre dolunca `grant_type=refresh_token` ile yenilenir.
 
@@ -124,7 +132,9 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 - Kalıcı hata (`42501` yetki, `22023` doğrulama …): anahtar `dirty`'den çıkar, yerel hal `base.body` ile değiştirilir (sunucu kazanır; `base` yoksa yerelden silinir), kullanıcıya bir kez bildirilir. Yeniden denenmez.
 - Mac: gün belgesinde `42501` yalnızca `base` kilitliyse (kapatılmış gün) "sunucu kazanır" ile sonuçlanır; sonraki anahtarların gönderimi aynı turda sürer. Kilitsiz gün için `42501` (ör. şubeden çıkarılma) çevrimdışı işi kaybetmemek için yerel veriyi geri almaz: hata gösterilir, anahtar `dirty` kalır. Çakışma sınırı aşılan anahtar da `dirty` kalır, diğer anahtarlar gönderilmeye devam eder.
 
-**Yerel rol denetimi (Mac).** Personel hesabıyla tanım belgelerine (items, products, settings, employees, orders) ya da yerelde kapatılmış bir güne dokunan işlem uygulanmadan bütünüyle reddedilir (web'deki `applyMany` / `dayChangeAllowed` ile aynı). Yarısı gönderilip yarısı sunucuca geri alınan işlem veriyi bozardı (ör. teslim alma: Gelen gider, sipariş açık kalır).
+**Yerel rol denetimi (Mac).** Personel hesabıyla tanım belgelerine (items, products, settings, employees, orders) ya da yerelde kapatılmış bir güne dokunan işlem uygulanmadan bütünüyle reddedilir (web'deki `applyMany` / `dayChangeAllowed` ile aynı). Yarısı gönderilip yarısı sunucuca geri alınan işlem veriyi bozardı (ör. teslim alma: Gelen gider, sipariş açık kalır). Hiç kalem sayılmamış gün kapatılamaz (Gün menüsü ⌘L dahil); personel günü onaydan sonra kapatır, çünkü kilidi yalnızca patron veya müdür açabilir.
+
+**Rol güncellemesi (Mac).** Patronun yetki değişikliği oturumu kapatmaz. Mac şube listesini (`envanter_my_workspaces`) açılıştan sonraki ilk eşitleme turunda, en geç 5 dakikada bir, uygulama öne geldiğinde ve bir yazması yetki yüzünden reddedildiğinde yeniden okur. Rol ya da şube adı değiştiyse turun başında güncellenir: önce eski rolün yazamadığı, `dirty` olmayan ve `base`'den ayrışmış tanım belgeleri `base`'e döner (terfide eski tanımlar gönderilmez), sonra rol ve ad değişir. Bekleyen (`dirty`) değişikliklere dokunulmaz; personele alınan müdürün bekleyen tanım değişikliği gönderimde `42501` ile reddedilir ve sunucudaki hal geri gelir. Şube listede yoksa (şubeden çıkarılma) bir şey değişmez.
 
 **İlk bağlantı (Mac).** Bulut boşsa her şey yüklenir. Yerel veri yalnızca varsayılan (seed) haldeyse buluttan indirilir. İkisi de doluysa kullanıcıya sorulur: "Buluttakini indir" (yerel yedek alınır) ya da "Bu Mac'tekini yükle". Personel yüklerken tanım belgelerinde sunucudaki hal geçerli olur; personel Mac'i ayrıca her eşitlemede `dirty` olmayan ve `base`'den ayrışmış tanım belgelerini `base`'e döndürür (rol müdüre yükselince eski tanımlar yerel değişiklik sanılıp gönderilmez).
 
@@ -132,7 +142,7 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 
 **Çıkış (Mac).** Çıkış yalnızca oturum anahtarlarını siler; şube eşleşmesi (`base`, `lastRev`, `dirty`, rol) korunur ve eşitleme durur. Aynı sunucuda yeniden girişte (başka hesapla da) aynı şube seçilirse kaldığı yerden devam edilir: `base`'den ayrışan belgeler `dirty` olur ve olağan çek/gönder (merge3) ile gönderilir; arada web panelinde yapılan değişiklikler ezilmez. Eşleşme yalnızca "Bu Mac'i şubeden ayır" ile silinir.
 
-**Kayıt sırası (Mac).** Eşitleme yerel veriyi değiştirdiyse önce veri dosyası, sonra eşitleme durumu (`esitleme.json`) yazılır; veri yazılamazsa durum da yazılmaz. Böylece ilerlemiş `base` diskte eski veriyle kalmaz (yeniden açılışta eski belgeler güncel `base.rev` ile çakışmasız gönderilip web'deki değişikliği ezerdi).
+**Kayıt sırası (Mac).** Eşitleme yerel veriyi değiştirdiyse önce veri dosyası, sonra eşitleme durumu (`esitleme.json`) yazılır; veri yazılamazsa durum da yazılmaz. Böylece ilerlemiş `base` diskte eski veriyle kalmaz (yeniden açılışta eski belgeler güncel `base.rev` ile çakışmasız gönderilip web'deki değişikliği ezerdi). Veri ve durum kayıtlarının hepsi aynı seri kuyrukta, arka planda yazılır: arayüz kodlamayı beklemez ve sonradan kuyruğa giren bir durum kaydı, bekleyen veri yazmasının önüne geçemez.
 
 ### merge3 (üç yollu birleştirme)
 

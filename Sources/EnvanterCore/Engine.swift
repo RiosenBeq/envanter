@@ -211,6 +211,13 @@ public struct Engine {
 
     // MARK: - Günlük hesap
 
+    /// Günde en az bir (aktif) kalemin kapanışı girilmiş mi: `calc(date:).rows.contains { $0.isCounted }` ile aynı,
+    /// satış analizi yapılmadan (Gün menüsü her çizimde sorar)
+    public func hasCount(date: String) -> Bool {
+        guard let entries = data.days[date]?.entries, !entries.isEmpty else { return false }
+        return activeItems.contains { entries[$0.id]?.closing != nil }
+    }
+
     public func calc(date: String) -> (rows: [ItemCalc], analysis: SalesAnalysis) {
         let day = data.days[date]
         let analysis = analyze(sales: day?.sales ?? [])

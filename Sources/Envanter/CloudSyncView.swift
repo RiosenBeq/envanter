@@ -49,10 +49,10 @@ struct CloudSyncCard: View {
 
                 DisclosureGroup("Roller ve yetkiler", isExpanded: $showRoles) {
                     VStack(alignment: .leading, spacing: 6) {
-                        roleRow("Patron", "Tüm veriler, kullanıcı daveti ve yetkileri, şube adı. Birden çok şubeyi tek hesaptan karşılaştırır.")
+                        roleRow("Patron", "Tüm veriler, kullanıcı hesapları (hesap açma, şifre belirleme, davet) ve yetkileri, şube adı. Birden çok şubeyi tek hesaptan karşılaştırır.")
                         roleRow("Müdür", "Tüm verileri görür ve değiştirir: stok kalemleri, reçeteler, personel, siparişler, ayarlar ve günlük kayıtlar.")
                         roleRow("Personel", "Tüm verileri görür; yalnızca günlük kayıtları (sayım, satış, vardiya, not) değiştirebilir ve günü kapatabilir. Kapatılmış günü yalnızca patron veya müdür değiştirebilir ya da kilidini açabilir. Stok kalemi, reçete, personel, sipariş (teslim alma dahil) ve ayar değişiklikleri için müdür yetkisi gerekir.")
-                        Text("Kullanıcılar web panelinde Kullanıcılar bölümünden e-posta adresiyle davet edilir. Davet edilen kişi aynı e-postayla hesap açınca şubeye otomatik eklenir.")
+                        Text("Hesapları patron web panelindeki Kullanıcılar bölümünden açar ve giriş e-postanızı ve geçici şifrenizi size (WhatsApp/SMS ile) iletir; e-posta gelmesi gerekmez. E-postayla davet edildiyseniz aynı e-postayla kendiniz hesap açarsınız. Şifrenizi web panelinde Ayarlar > Hesap > Şifremi değiştir bölümünden değiştirin; unutursanız patronunuz yeni şifre belirleyebilir.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 6)
@@ -105,7 +105,7 @@ struct CloudSyncCard: View {
                 Label(signedOutText, systemImage: "building.2")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Web paneli hesabınızın e-posta adresi ve şifresiyle bağlanın. Hesabınız yoksa patronunuz web panelinden sizi davet etmelidir. Hiç şube yoksa bu hesapla, işletme adıyla yeni bir şube açılır ve hesap patron olur.")
+                Text("Web paneli hesabınızın e-posta adresi ve şifresiyle bağlanın. Hesabınız yoksa patronunuz web panelindeki Kullanıcılar bölümünden açar ve giriş e-postanızı ve geçici şifrenizi size (WhatsApp/SMS ile) iletir. Hiç şube yoksa bu hesapla, işletme adıyla yeni bir şube açılır ve hesap patron olur.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {

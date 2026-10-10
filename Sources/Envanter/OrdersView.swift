@@ -58,9 +58,10 @@ struct OrdersView: View {
 
             HStack(spacing: 18) {
                 Picker("Ortalama", selection: store.settingsBinding(\.orderLookbackDays)) {
-                    Text("Son 7 gün").tag(7)
-                    Text("Son 14 gün").tag(14)
-                    Text("Son 30 gün").tag(30)
+                    // Web panelinde 1–120 gün arası herhangi bir değer seçilebilir; seçili değer listede yoksa ekle
+                    ForEach(Array(Set([7, 14, 30, store.settings.orderLookbackDays])).sorted(), id: \.self) { days in
+                        Text("Son \(days) gün").tag(days)
+                    }
                 }
                 .frame(width: 210)
                 .help("Günlük tüketim bu dönemin ortalamasından hesaplanır")

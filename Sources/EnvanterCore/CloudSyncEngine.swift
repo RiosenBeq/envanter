@@ -152,6 +152,23 @@ public enum CloudSyncEngine {
         return healed.data
     }
 
+    /// Eşitleme sürerken rol ya da şube adı web panelinde değişti mi (ör. "Hesap oluştur" ile personel olarak açılan
+    /// hesap müdüre yükseltildi ya da müdür personele alındı): şube listesindeki (`envanter_my_workspaces`) kayıt bu
+    /// Mac'tekinden farklıysa `resume` sırasıyla güncellenir: önce eski rolün yazamadığı ve tabandan ayrışmış tanım
+    /// belgeleri sunucudaki haline döner (terfide eskimiş tanımlar yerel değişiklik sanılıp gönderilmesin), sonra rol ve
+    /// ad güncellenir. Bekleyen ("dirty") değişikliklere dokunulmaz: oturum açık olduğundan her yerel değişiklik zaten
+    /// işaretlidir. Şube listede yoksa (ör. şubeden çıkarıldı) bir şey değişmez; sunucu yetkisiz yazmayı zaten reddeder.
+    /// - Returns: rol ya da ad değiştiyse uygulanacak yerel veri (`state` güncellenir); değişiklik yoksa nil
+    public static func refreshRole(workspaces: [CloudWorkspace], local: AppData, state: inout SyncState) -> AppData? {
+        guard let id = state.config?.workspaceID, state.initialized,
+              let w = workspaces.first(where: { $0.id == id }) else { return nil }
+        guard w.role != state.config?.role || w.name != state.config?.workspaceName else { return nil }
+        let healed = restoreReadOnlyDocs(local: local, state: state)
+        state.config?.role = w.role
+        state.config?.workspaceName = w.name
+        return healed.data
+    }
+
     /// Rolün yazamadığı (personel: tanım belgeleri) ve sunucudaki halinden (taban) ayrışmış belgeleri sunucudaki
     /// haliyle değiştirir ("sunucu kazanır"). "dirty" anahtarlara (gönderimde reddedilip geri yüklenir), tabanı olmayan,
     /// silinmiş ya da çözülemeyen belgelere dokunulmaz. Personelken eskimiş kalan tanımlar böylece hem web'le aynı olur

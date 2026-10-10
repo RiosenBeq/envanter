@@ -66,10 +66,17 @@ final class CloudSyncController: ObservableObject {
     private var stateSaveTask: Task<Void, Never>?
     private var permissionNoticeShown = false
     private var observers: [NSObjectProtocol] = []
-    private let saveQueue = DispatchQueue(label: "envanter.sync.state", qos: .utility)
+    /// Veri dosyasıyla ortak seri yazma kuyruğu (AppStore.diskQueue): durum kaydı, kuyrukta bekleyen veri yazmasının
+    /// önüne geçemez (docs/SYNC.md §3 "Kayıt sırası")
+    private let diskQueue: DiskWriteQueue
+    /// Şube listesinden (rol, şube adı) son denetim zamanı; rol web panelinde değişebilir
+    private var lastRoleCheck: Date?
+    /// Bir sonraki eşitleme turunda rol de denetlensin (uygulama öne geldi)
+    private var roleCheckRequested = false
 
-    init(directory: URL, enabled: Bool) {
+    init(directory: URL, enabled: Bool, diskQueue: DiskWriteQueue) {
         self.enabled = enabled
+        self.diskQueue = diskQueue
         syncStore = SyncStore(directory: directory)
         state = enabled ? syncStore.load() : SyncState()
     }
@@ -137,7 +144,11 @@ final class CloudSyncController: ObservableObject {
 
     private func appBecameActive() {
         guard isConnected else { return }
-        if let last = state.lastSyncAt, Date().timeIntervalSince(last) < 15 { return }
+        // Rol web panelinde değişmiş olabilir (ör. personel müdüre yükseltildi): öne gelişte şube listesi de okunur
+        roleCheckRequested = true
+        let now = Date()
+        if let last = state.lastSyncAt, now.timeIntervalSince(last) < 15,
+           let checked = lastRoleCheck, now.timeIntervalSince(checked) < 15 { return }
         syncNow()
     }
 
@@ -209,6 +220,7 @@ final class CloudSyncController: ObservableObject {
             guard !list.isEmpty else { throw CloudSyncError.noWorkspace }
         }
         storeSession(await api.currentSession)
+        lastRoleCheck = Date()
         guard autoSelect else { workspaces = list; return }
         if let current = state.config?.workspaceID, state.initialized {
             if let w = list.first(where: { $0.id == current }) {
@@ -247,7 +259,7 @@ final class CloudSyncController: ObservableObject {
             let dataChanged = !DocCodec.changedKeys(app.data, data).isEmpty
             if dataChanged { app.applyRemote(data) }
             state = s
-            SyncCheckpoint.persist(dataChanged: dataChanged, writeData: { app.writeDataNow() }, writeState: { saveState() })
+            checkpoint(app, dataChanged: dataChanged)
             status = .idle(s.lastSyncAt)
             syncNow()
             return
@@ -353,7 +365,7 @@ final class CloudSyncController: ObservableObject {
         }
         state = s
         // Önce veri, sonra durum: yeni taban eski veriyle diskte kalmasın
-        SyncCheckpoint.persist(dataChanged: dataChanged, writeData: { app.writeDataNow() }, writeState: { saveState() })
+        checkpoint(app, dataChanged: dataChanged)
         startupCheckDone = true
         status = .idle(nil)
         switch mode {
@@ -392,8 +404,11 @@ final class CloudSyncController: ObservableObject {
     private func performSync(generation gen: Int) async {
         defer { finishSyncCycle() }
         guard let app, let api = currentAPI() else { return }
-        changedDuringSync = []
         status = .syncing
+        // Rol önce güncellenir: terfide eskimiş tanımlar geri yüklenir, düşürülmede gönderim yeni rolle yapılır
+        await refreshRoleIfDue(api: api, generation: gen)
+        guard gen == generation, state.isActive else { return }
+        changedDuringSync = []
         let started = app.data
         var st = state
         do {
@@ -417,7 +432,7 @@ final class CloudSyncController: ObservableObject {
             state = st
             // Önce veri dosyası, sonra durum: tabanı ilerlemiş durum eski veriyle diskte kalırsa (çökme / zorla kapatma)
             // yeniden açılışta eski belgeler güncel tabanla gönderilip web panelindeki değişikliği ezerdi
-            SyncCheckpoint.persist(dataChanged: dataChanged, writeData: { app.writeDataNow() }, writeState: { saveState() })
+            checkpoint(app, dataChanged: dataChanged)
             if !out.rejected.isEmpty { reportRejected(out.rejected) }
             if let e = out.error {
                 report(e)
@@ -431,6 +446,34 @@ final class CloudSyncController: ObservableObject {
             storeSession(await api.currentSession)
             report(error)
         }
+    }
+
+    /// Rol ve şube adı web panelinde değişebilir (patron "Hesap oluştur"la açtığı personeli müdüre yükseltir ya da müdürü
+    /// personele alır; oturum kapanmaz). Şube listesi açılıştan sonraki ilk turda, en fazla 5 dakikada bir
+    /// (`CloudDefaults.roleCheckSeconds`) ve uygulama öne gelince okunur; yoksa personel kısıtları (yerel rol denetimi,
+    /// gizli "Kilidi Aç") çıkış yapıp yeniden girene kadar sürerdi. Okunamazsa (ağ hatası) sessizce geçilir; eşitleme
+    /// turu hatayı zaten gösterir.
+    private func refreshRoleIfDue(api: SupabaseAPI, generation gen: Int) async {
+        let now = Date()
+        let due = roleCheckRequested || (lastRoleCheck.map { now.timeIntervalSince($0) >= CloudDefaults.roleCheckSeconds } ?? true)
+        guard due else { return }
+        roleCheckRequested = false
+        lastRoleCheck = now
+        guard let list = try? await api.myWorkspaces() else { return }
+        applyRoleRefresh(list, generation: gen)
+    }
+
+    /// Şube listesindeki rol / ad bu Mac'tekinden farklıysa uygular (CloudSyncEngine.refreshRole). Eşitleme turu
+    /// verinin kopyasını aldıktan sonra çağrılmamalı: turun sonundaki yeniden birleştirme, geri yüklenen tanımları
+    /// yerel değişiklik sanardı (performSync turun başında, reportRejected tur bitince çağırır).
+    private func applyRoleRefresh(_ list: [CloudWorkspace], generation gen: Int) {
+        guard gen == generation, state.isActive, let app else { return }
+        var s = state
+        guard let data = CloudSyncEngine.refreshRole(workspaces: list, local: app.data, state: &s) else { return }
+        let dataChanged = !DocCodec.changedKeys(app.data, data).isEmpty
+        if dataChanged { app.applyRemote(data) }
+        state = s
+        checkpoint(app, dataChanged: dataChanged)
     }
 
     private func finishSyncCycle() {
@@ -531,15 +574,18 @@ final class CloudSyncController: ObservableObject {
             }
         }
         notice = parts.joined(separator: " ")
-        // Rol değişmiş olabilir (ör. müdürken personele alındı): şube listesinden güncelle
+        // Rol değişmiş olabilir (ör. müdürken personele alındı): şube listesinden güncelle. Bu sırada yeni bir eşitleme
+        // turu başlamışsa güncelleme bir sonraki turun başına bırakılır.
         if let api = currentAPI() {
-            let wsID = state.config?.workspaceID
+            let gen = generation
+            lastRoleCheck = Date()
             Task { [weak self] in
-                guard let list = try? await api.myWorkspaces(), let w = list.first(where: { $0.id == wsID }) else { return }
-                guard let self, self.state.config?.workspaceID == w.id else { return }
-                self.state.config?.role = w.role
-                self.state.config?.workspaceName = w.name
-                self.saveState()
+                guard let list = try? await api.myWorkspaces(), let self else { return }
+                if self.isSyncing {
+                    self.roleCheckRequested = true
+                } else {
+                    self.applyRoleRefresh(list, generation: gen)
+                }
             }
         }
     }
@@ -555,20 +601,31 @@ final class CloudSyncController: ObservableObject {
         }
     }
 
-    /// Durum dosyasını arka planda yazar (sırayla)
+    /// Durum dosyasını arka planda yazar (veri dosyasıyla aynı kuyrukta, sırayla)
     private func saveState() {
         guard enabled else { return }
         stateSaveTask?.cancel()
-        let s = state, store = syncStore
-        saveQueue.async {
-            do { try store.save(s) } catch { NSLog("Eşitleme durumu kaydedilemedi: \(error)") }
-        }
+        diskQueue.async(stateWriter())
     }
 
     private func saveStateNow() {
         guard enabled else { return }
+        let write = stateWriter()
+        diskQueue.sync { write() }
+    }
+
+    /// Kayıt noktası: yerel veri değiştiyse önce veri dosyası, sonra durum; ikisi de arka planda, sırayla
+    /// (AppStore.syncCheckpoint). Kodlama ana iş parçacığında yapılmaz.
+    private func checkpoint(_ app: AppStore, dataChanged: Bool) {
+        guard enabled else { return }
+        stateSaveTask?.cancel()
+        app.syncCheckpoint(dataChanged: dataChanged, writeState: stateWriter())
+    }
+
+    /// Şu anki durumun yazma işi (kopya şimdi alınır, kuyrukta yazılır)
+    private func stateWriter() -> @Sendable () -> Void {
         let s = state, store = syncStore
-        saveQueue.sync {
+        return {
             do { try store.save(s) } catch { NSLog("Eşitleme durumu kaydedilemedi: \(error)") }
         }
     }

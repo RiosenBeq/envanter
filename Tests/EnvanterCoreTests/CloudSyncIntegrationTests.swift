@@ -200,7 +200,10 @@ final class CloudSyncIntegrationTests: XCTestCase {
 
         // --- Değişiklik geçmişi özetlerle yazıldı
         let activity = try await owner.activity(workspace: wsID, limit: 200)
-        XCTAssertTrue(activity.allSatisfy { $0.client == CloudDefaults.client && !$0.summary.isEmpty })
+        // Belge yazmaları Mac'ten; patronun üyelik işlemleri `members` satırıdır (istemci yok, belge değil)
+        XCTAssertTrue(activity.filter { $0.key != "members" }.allSatisfy { $0.client == CloudDefaults.client && !$0.summary.isEmpty })
+        XCTAssertTrue(activity.contains { $0.key == "members" && $0.client == nil && $0.email == ownerEmail
+                && $0.summary == "Davet edildi: \(staffEmail) (Personel)" })
         XCTAssertTrue(activity.contains { $0.key == "items" && $0.summary.hasPrefix("Stok kalemleri: ") && $0.email == ownerEmail })
         XCTAssertTrue(activity.contains { $0.key == dayKey && $0.email == ownerEmail && $0.summary.contains("31.08.2026 sayımı: 90 Gr kapanış") })
         XCTAssertTrue(activity.contains { $0.key == dayKey && $0.email == staffEmail && $0.summary.contains("Peynir kapanış") })
@@ -208,6 +211,56 @@ final class CloudSyncIntegrationTests: XCTestCase {
         XCTAssertFalse(activity.contains { $0.email == staffEmail && !DocKey.isDay($0.key) })
         // Personelin kapatılmış güne tek yazması aynı gövdenin yeniden yazılmasıdır
         XCTAssertEqual(activity.filter { $0.email == staffEmail && $0.key == lockedKey }.count, 1)
+
+        // --- Rol oturum açıkken değişir (patron web panelinden yükseltir / düşürür; oturum kapanmaz): Mac şube
+        // listesinden günceller (CloudSyncEngine.refreshRole); eskimiş tanımlar gönderilmez, müdür yazması kabul edilir
+        func rpc(_ name: String, _ params: [String: JSONValue]) async throws -> JSONValue {
+            let r = try await owner.authorized("POST", owner.url("rest/v1/rpc/\(name)"), body: .object(params))
+            return r.body.isEmpty ? .null : try JSONCoding.parse(r.body)
+        }
+        func refreshRole(_ c: SimClient) async throws -> Bool {
+            var st = c.state
+            guard let data = CloudSyncEngine.refreshRole(workspaces: try await staff.myWorkspaces(), local: c.data, state: &st) else { return false }
+            c.data = data
+            c.state = st
+            return true
+        }
+        let members = try await rpc("envanter_members_list", ["p_workspace": .string(wsID)])
+        let staffID = try XCTUnwrap(members.arrayValue?.first { $0["email"]?.stringValue == staffEmail }?["user_id"]?.stringValue)
+        b.state.config?.workspaceName = wsName
+        let unchangedRole = try await refreshRole(b)
+        XCTAssertFalse(unchangedRole)
+        let itemsRev = try XCTUnwrap(b.state.base["items"]?.rev)
+        if let i = b.data.items.firstIndex(where: { $0.id == "patates" }) { b.data.items[i].unitCost = 7777 }  // eskimiş tanım
+        _ = try await rpc("envanter_set_role", ["p_workspace": .string(wsID), "p_user": .string(staffID), "p_role": .string(CloudRole.manager)])
+        let promoted = try await refreshRole(b)
+        XCTAssertTrue(promoted)
+        XCTAssertEqual(b.state.enforcedRole, CloudRole.manager)
+        XCTAssertEqual(b.data.items, a.data.items)
+        let ob7 = try await b.sync()
+        XCTAssertNil(ob7.error)
+        XCTAssertEqual(ob7.pushed, [])
+        XCTAssertEqual(b.state.base["items"]?.rev, itemsRev)
+        var managerEdit = b.data
+        if let i = managerEdit.items.firstIndex(where: { $0.id == "patates" }) { managerEdit.items[i].unitCost = 42.5 }
+        XCTAssertNil(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: managerEdit))
+        b.edit { $0 = managerEdit }
+        let ob8 = try await b.sync()
+        XCTAssertNil(ob8.error)
+        XCTAssertEqual(ob8.rejected, [:])
+        XCTAssertEqual(ob8.pushed, ["items"])
+        try await a.sync()
+        XCTAssertEqual(a.data.items.first { $0.id == "patates" }?.unitCost, 42.5)
+        _ = try await rpc("envanter_set_role", ["p_workspace": .string(wsID), "p_user": .string(staffID), "p_role": .string(CloudRole.staff)])
+        let demoted = try await refreshRole(b)
+        XCTAssertTrue(demoted)
+        XCTAssertEqual(b.state.enforcedRole, CloudRole.staff)
+        var staffEdit = b.data
+        if let i = staffEdit.items.firstIndex(where: { $0.id == "patates" }) { staffEdit.items[i].unitCost = 1 }
+        XCTAssertEqual(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: staffEdit)?.catalogKeys, ["items"])
+        let roleRows = try await owner.activity(workspace: wsID, limit: 200).filter { $0.key == "members" }.map { $0.summary }
+        XCTAssertTrue(roleRows.contains("Yetki değişti: \(staffEmail) (Personel → Müdür)"), "\(roleRows)")
+        XCTAssertTrue(roleRows.contains("Yetki değişti: \(staffEmail) (Müdür → Personel)"), "\(roleRows)")
 
         // --- Oturum yenileme (gerçek GoTrue): süresi dolmak üzere → önceden; geçersiz anahtar → 401 sonrası
         guard let s0 = await owner.currentSession else { return XCTFail("oturum yok") }

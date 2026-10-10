@@ -420,7 +420,8 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
     }
 
     /// Oturumlu istek: süresi dolmak üzereyse önce yenilenir; 401 / JWT süresi dolduysa bir kez yenilenip tekrarlanır.
-    private func authorized(_ method: String, _ url: URL, body: JSONValue?) async throws -> SyncResponse {
+    /// (Entegrasyon testi patronun üyelik RPC'lerini de bununla çağırır.)
+    func authorized(_ method: String, _ url: URL, body: JSONValue?) async throws -> SyncResponse {
         guard session != nil else { throw CloudSyncError.sessionExpired }
         if let exp = session?.expiresAt, exp.timeIntervalSince(now()) < 60, !(session?.refreshToken.isEmpty ?? true) {
             _ = try await refresh()

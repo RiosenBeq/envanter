@@ -63,12 +63,13 @@ struct EnvanterApp: App {
                 Button("Sonraki Gün") { store.shiftDay(1) }.keyboardShortcut("]")
                 Button("Bugün") { store.goToday() }.keyboardShortcut("t")
                 Divider()
-                Button(store.isLocked(store.selectedDate) ? "Gün Kilidini Aç" : "Günü Kapat") {
-                    store.setLocked(store.selectedDate, !store.isLocked(store.selectedDate))
+                Button(store.lockMenuTitle(store.selectedDate)) {
+                    store.requestLockToggle(store.selectedDate)
                 }
                 .keyboardShortcut("l")
-                // Personel hesabıyla kapatılmış günün kilidini yalnızca patron / müdür açar
-                .disabled(store.isReadOnlyDay(store.selectedDate))
+                // Günlük Envanter düğmesiyle aynı kural: sayım yapılmamış gün kapatılmaz; personel hesabıyla kapatmadan
+                // önce onay istenir ve kapatılmış günün kilidini yalnızca patron / müdür açar
+                .disabled(!store.lockAction(store.selectedDate).isAvailable)
             }
             CommandMenu("Git") {
                 ForEach(AppSection.allCases.filter { $0 != .backup }) { s in

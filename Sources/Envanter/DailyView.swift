@@ -146,7 +146,8 @@ struct DailyView: View {
                     .font(.callout).foregroundStyle(Brand.warn)
                     .help("Düzeltme gerekiyorsa patron ya da müdür web panelinden veya kendi hesabıyla günün kilidini açabilir.")
             } else {
-                Button { store.setLocked(date, !locked) } label: {
+                // Personel hesabıyla önce onay istenir (kapatılan günün kilidini yalnızca patron / müdür açar)
+                Button { store.requestLockToggle(date) } label: {
                     Label(locked ? "Kilidi Aç" : "Günü Kapat", systemImage: locked ? "lock.open" : "lock")
                 }
                 .buttonStyle(SoftButtonStyle(tint: locked ? Brand.warn : .primary))

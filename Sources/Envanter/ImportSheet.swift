@@ -67,7 +67,9 @@ struct ImportSheet: View {
             }
             if locked {
                 notice(icon: "lock.fill", color: Brand.negative,
-                       text: "\(DateKey.short(date)) günü kapatılmış (kilitli). Aktarmak için başka bir gün seçin ya da Günlük Envanter'den kilidi açın.")
+                       text: store.canChangeLockedDays
+                        ? "\(DateKey.short(date)) günü kapatılmış (kilitli). Aktarmak için başka bir gün seçin ya da Günlük Envanter'den kilidi açın."
+                        : "\(DateKey.short(date)) günü kapatılmış (kilitli). \(CloudPermission.lockedDayPickAnotherNote)")
             } else if existing > 0 {
                 notice(icon: "arrow.triangle.2.circlepath", color: Brand.warn,
                        text: "\(DateKey.short(date)) gününün mevcut satış verisi (\(existing) satır) bu rapor ile değiştirilecek.")

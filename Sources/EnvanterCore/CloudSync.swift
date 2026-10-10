@@ -14,6 +14,8 @@ public enum CloudDefaults {
     public static let debounceSeconds: Double = 8
     /// Düzenli eşitleme aralığı (saniye)
     public static let intervalSeconds: Double = 60
+    /// Mac: rol ve şube adı (şube listesi) en fazla bu kadar saniyede bir yeniden okunur; uygulama öne gelince de okunur
+    public static let roleCheckSeconds: Double = 300
     /// Çakışmada en fazla yeniden deneme
     public static let maxConflictRetries = 3
     /// Okumada sayfa boyutu
@@ -102,6 +104,8 @@ public enum CloudPermission {
     public static let lockedDayStaffNote = "Gün kapatıldı. Kilidi yalnızca patron veya müdür açabilir."
     /// Personel hesabıyla sipariş ve teslimat işlemleri kapalıdır (yarım kalan teslim alma Gelen'i iki kez yazdırırdı)
     public static let ordersStaffNote = "Teslimatı ve siparişleri patron / müdür işler (web paneli)."
+    /// Personel hesabıyla kapatılmış güne satış aktarılmak istendiğinde (kilidi kendisi açamaz)
+    public static let lockedDayPickAnotherNote = "Kapatılmış günün kilidini yalnızca patron veya müdür açabilir; başka bir gün seçin."
 
     /// `old` → `new` değişikliği `role` için reddedilir mi (nil: izinli). Personel tanım belgelerini değiştiremez;
     /// yerelde kapatılmış bir günü de hiçbir şekilde değiştiremez (kilidini açmak ve silmek dahil). Açık günü kapatmak serbesttir.
@@ -117,6 +121,40 @@ public enum CloudPermission {
         if catalog.isEmpty && locked.isEmpty { return nil }
         return LocalChangeRefusal(catalogKeys: catalog, lockedDates: locked)
     }
+}
+
+/// "Günü Kapat / Kilidi Aç" isteğinin sonucu. Gün menüsü (⌘L) ve Günlük Envanter düğmesi aynı kuralı kullanır:
+/// sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel kapatmadan önce onaylar, çünkü kapatılan günün
+/// kilidini yalnızca patron veya müdür açabilir (docs/SYNC.md §2 "Kapatılmış gün").
+public enum DayLockAction: Equatable, Sendable {
+    /// Gün kapatılır
+    case close
+    /// Personel: gün onaydan sonra kapatılır
+    case confirmClose
+    /// Kilit açılır
+    case unlock
+    /// Hiçbir kalem sayılmamış: gün kapatılamaz
+    case nothingCounted
+    /// Personel kapatılmış günün kilidini açamaz
+    case unlockNotAllowed
+
+    /// - Parameters:
+    ///   - locked: gün kapatılmış mı
+    ///   - counted: en az bir (aktif) kalemin kapanışı girilmiş mi (`Engine.hasCount`)
+    ///   - role: web eşitlemesindeki rol (`AppStore.enforcedRole`; eşleşme yoksa nil)
+    public static func resolve(locked: Bool, counted: Bool, role: String?) -> DayLockAction {
+        let canChange = CloudRole.canChangeLockedDay(role)
+        if locked { return canChange ? .unlock : .unlockNotAllowed }
+        if !counted { return .nothingCounted }
+        return canChange ? .close : .confirmClose
+    }
+
+    /// Menü öğesi / düğme etkin mi
+    public var isAvailable: Bool { self != .nothingCounted && self != .unlockNotAllowed }
+
+    /// Personelin gün kapatma onayı
+    public static func confirmTitle(date: String) -> String { "\(DateKey.short(date)) günü kapatılsın mı?" }
+    public static let confirmMessage = "Günü kapatınca sayım, satış ve vardiya değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
 }
 
 /// Bir belgenin sunucudan son alınan / yazılan hali
@@ -306,6 +344,41 @@ public enum SyncCheckpoint {
         if dataChanged && !writeData() { return false }
         writeState()
         return true
+    }
+}
+
+/// Veri dosyası ve eşitleme durumu (esitleme.json) için ortak seri yazma kuyruğu. Mac uygulamasında yerel kayıtlar,
+/// eşitlemenin kayıt noktaları (`SyncCheckpoint`) ve durum kayıtları hep bu kuyruktan geçer: kodlama ve yazma ana iş
+/// parçacığını (arayüzü) bekletmez, sıra yine korunur. Kayıt noktasında önce veri, sonra durum yazılır (veri yazılamazsa
+/// durum yazılmaz); sonradan kuyruğa giren durum kaydı, kayıt noktasının verisinden önce diske ulaşamaz. (Durum ayrı bir
+/// kuyrukta yazılsaydı tabanı ilerlemiş durum, bekleyen veri yazmasının önüne geçip çökme penceresini yeniden açardı.)
+public final class DiskWriteQueue: @unchecked Sendable {
+    private let queue: DispatchQueue
+
+    public init(label: String, qos: DispatchQoS = .utility) {
+        queue = DispatchQueue(label: label, qos: qos)
+    }
+
+    /// Arka planda, kuyruğa giriş sırasıyla
+    public func async(_ work: @escaping @Sendable () -> Void) {
+        queue.async(execute: work)
+    }
+
+    /// Kuyruktakiler bittikten sonra eşzamanlı (uygulama kapanırken; testlerde kuyruğu beklemek için)
+    public func sync<T>(_ work: () throws -> T) rethrows -> T {
+        try queue.sync(execute: work)
+    }
+
+    /// Kayıt noktası (`SyncCheckpoint.persist` sırasıyla), arka planda: `writeData` verildiyse önce o çalışır ve false
+    /// dönerse durum yazılmaz; `writeData` nil ise (yerel veri değişmedi) yalnızca durum yazılır.
+    /// `completion` kuyrukta çağrılır: durum yazıldı mı.
+    public func checkpoint(writeData: (@Sendable () -> Bool)?, writeState: @escaping @Sendable () -> Void,
+                           completion: (@Sendable (_ stateWritten: Bool) -> Void)? = nil) {
+        queue.async {
+            let written = SyncCheckpoint.persist(dataChanged: writeData != nil, writeData: { writeData?() ?? true },
+                                                 writeState: writeState)
+            completion?(written)
+        }
     }
 }
 

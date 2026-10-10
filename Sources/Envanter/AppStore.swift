@@ -9,7 +9,8 @@ enum AppSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .overview: return "Genel Bakış"
-        case .daily: return "Günlük Envanter"
+        // Web panelindeki adla aynı ("Günlük Sayım")
+        case .daily: return "Günlük Sayım"
         case .sales: return "Satış Dökümü"
         case .summary: return "Özet ve Raporlar"
         case .analytics: return "İstatistikler"
@@ -128,6 +129,9 @@ final class AppStore: ObservableObject {
     var canChangeLockedDays: Bool { CloudRole.canChangeLockedDay(enforcedRole) }
     /// Gün bu kullanıcı için salt okunur mu: kapatılmış ve kilidi açılamıyor
     func isReadOnlyDay(_ date: String) -> Bool { isLocked(date) && !canChangeLockedDays }
+
+    /// İlk kullanım: bu Mac'te henüz günlük kayıt, personel ve sipariş yok (Genel Bakış başlangıç seçeneklerini gösterir)
+    var isFirstRun: Bool { Onboarding.isEmpty(data) }
 
     init(persistence: Persistence = Persistence(directory: Persistence.defaultDirectory())) {
         self.persistence = persistence
@@ -347,9 +351,15 @@ final class AppStore: ObservableObject {
         updateDay(date, actionName: locked ? "Günü Kapat" : "Gün Kilidini Aç") { $0.locked = locked ? true : nil }
     }
 
-    /// "Günü Kapat / Kilidi Aç" isteğinin sonucu (Gün menüsü ⌘L ve Günlük Envanter düğmesi aynı kuralı kullanır)
+    /// "Günü Kapat / Kilidi Aç" isteğinin sonucu (Gün menüsü ⌘L ve Günlük Sayım düğmesi aynı kuralı kullanır)
     func lockAction(_ date: String) -> DayLockAction {
         DayLockAction.resolve(locked: isLocked(date), counted: engine.hasCount(date: date), role: enforcedRole)
+    }
+
+    /// Personelin gün kapatma onayındaki metin: günün sayım ve satış durumu, sonra kural
+    func dayCloseConfirmMessage(_ date: String) -> String {
+        let o = engine.overview(date: date)
+        return DayLockAction.confirmDetail(counted: o.countedItems, total: o.itemCount, hasSales: o.hasSales)
     }
 
     /// Gün menüsündeki öğenin adı (personel hesabıyla kapatma onay ister: "…")
@@ -358,7 +368,7 @@ final class AppStore: ObservableObject {
         return lockAction(date) == .confirmClose ? "Günü Kapat…" : "Günü Kapat"
     }
 
-    /// Gün menüsü (⌘L) ve Günlük Envanter düğmesi: sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel
+    /// Gün menüsü (⌘L) ve Günlük Sayım düğmesi: sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel
     /// hesabıyla gün onaydan sonra kapatılır (kilidini yalnızca patron veya müdür açabilir), kilit açılamaz.
     func requestLockToggle(_ date: String) {
         switch lockAction(date) {

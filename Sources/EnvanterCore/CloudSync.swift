@@ -106,6 +106,8 @@ public enum CloudPermission {
     public static let ordersStaffNote = "Teslimatı ve siparişleri patron / müdür işler (web paneli)."
     /// Personel hesabıyla kapatılmış güne satış aktarılmak istendiğinde (kilidi kendisi açamaz)
     public static let lockedDayPickAnotherNote = "Kapatılmış günün kilidini yalnızca patron veya müdür açabilir; başka bir gün seçin."
+    /// Personel hesabıyla satış dökümünde reçetesi tanımsız ürün varken (reçete tanımlamak tanım belgesidir)
+    public static let recipeStaffNote = "Reçetesi tanımsız ürünlerin reçetesini patron veya müdür tanımlar (web paneli → Reçeteler); tanımlanınca bu Mac'te de stoktan düşer."
 
     /// `old` → `new` değişikliği `role` için reddedilir mi (nil: izinli). Personel tanım belgelerini değiştiremez;
     /// yerelde kapatılmış bir günü de hiçbir şekilde değiştiremez (kilidini açmak ve silmek dahil). Açık günü kapatmak serbesttir.
@@ -123,7 +125,7 @@ public enum CloudPermission {
     }
 }
 
-/// "Günü Kapat / Kilidi Aç" isteğinin sonucu. Gün menüsü (⌘L) ve Günlük Envanter düğmesi aynı kuralı kullanır:
+/// "Günü Kapat / Kilidi Aç" isteğinin sonucu. Gün menüsü (⌘L) ve Günlük Sayım düğmesi aynı kuralı kullanır:
 /// sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel kapatmadan önce onaylar, çünkü kapatılan günün
 /// kilidini yalnızca patron veya müdür açabilir (docs/SYNC.md §2 "Kapatılmış gün").
 public enum DayLockAction: Equatable, Sendable {
@@ -155,6 +157,25 @@ public enum DayLockAction: Equatable, Sendable {
     /// Personelin gün kapatma onayı
     public static func confirmTitle(date: String) -> String { "\(DateKey.short(date)) günü kapatılsın mı?" }
     public static let confirmMessage = "Günü kapatınca sayım, satış ve vardiya değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+
+    /// Onay penceresinin metni: günün sayım ve satış durumu (kapatmadan önce eksik kalan görülsün), sonra kural.
+    /// - Parameters:
+    ///   - counted, total: kapanışı girilmiş ve toplam aktif kalem sayısı
+    ///   - hasSales: satış raporu (ya da Excel'den gelen satış) var mı
+    public static func confirmDetail(counted: Int, total: Int, hasSales: Bool) -> String {
+        var lines: [String] = []
+        if total > 0 {
+            lines.append(counted >= total
+                         ? "Sayım tamam: \(total) / \(total) kalem sayıldı."
+                         : "Sayım eksik: \(counted) / \(total) kalem sayıldı, \(total - counted) kalem sayılmadı.")
+        }
+        lines.append(hasSales ? "Satış raporu aktarıldı."
+                              : "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır.")
+        return lines.joined(separator: "\n") + "\n\n" + confirmMessage
+    }
+
+    /// Hiç sayım girilmemiş gün kapatılamaz: düğmenin yanında gösterilen açıklama
+    public static let nothingCountedNote = "Sayım girilmeden gün kapatılamaz"
 }
 
 /// Bir belgenin sunucudan son alınan / yazılan hali

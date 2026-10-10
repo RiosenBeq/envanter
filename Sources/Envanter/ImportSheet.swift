@@ -55,7 +55,7 @@ struct ImportSheet: View {
 
             if report.isMultiDay {
                 notice(icon: "exclamationmark.triangle.fill", color: Brand.warn,
-                       text: "Bu rapor birden fazla günü kapsıyor (\(report.periodText ?? "")). Günlük envanter için tek günlük rapor almanız gerekir; aksi halde fark sütunu anlamsız çıkar. Yine de seçili güne aktarabilirsiniz.")
+                       text: "Bu rapor birden fazla günü kapsıyor (\(report.periodText ?? "")). Günlük sayım için tek günlük rapor almanız gerekir; aksi halde fark sütunu anlamsız çıkar. Yine de seçili güne aktarabilirsiniz.")
             } else if let d = report.dateFrom, d != date {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "info.circle.fill").foregroundStyle(Brand.positive)
@@ -68,7 +68,7 @@ struct ImportSheet: View {
             if locked {
                 notice(icon: "lock.fill", color: Brand.negative,
                        text: store.canChangeLockedDays
-                        ? "\(DateKey.short(date)) günü kapatılmış (kilitli). Aktarmak için başka bir gün seçin ya da Günlük Envanter'den kilidi açın."
+                        ? "\(DateKey.short(date)) günü kapatılmış (kilitli). Aktarmak için başka bir gün seçin ya da Günlük Sayım'dan kilidi açın."
                         : "\(DateKey.short(date)) günü kapatılmış (kilitli). \(CloudPermission.lockedDayPickAnotherNote)")
             } else if existing > 0 {
                 notice(icon: "arrow.triangle.2.circlepath", color: Brand.warn,

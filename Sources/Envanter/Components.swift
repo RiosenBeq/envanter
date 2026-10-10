@@ -296,17 +296,23 @@ struct DateNavigator: View {
                 Button { store.shiftDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 22, height: 22).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
                     .help("Önceki gün (⌘[)")
+                    .accessibilityLabel("Önceki gün")
                 VStack(alignment: .leading, spacing: 0) {
                     Text(DateKey.long(store.selectedDate))
                         .font(compact ? .title3.weight(.semibold) : .title2.weight(.semibold))
                     if store.isLocked(store.selectedDate) {
+                        // Kim, nereden açar: personel açamaz (patron / müdür), diğerleri Günlük Sayım'dan (⌘L)
                         Label("Gün kapatıldı", systemImage: "lock.fill").font(.caption).foregroundStyle(Brand.warn)
+                            .help(store.canChangeLockedDays
+                                  ? "Sayım, satış ve vardiya kilitli. Değiştirmek için Günlük Sayım'da \"Kilidi Aç\"a basın (⌘L)."
+                                  : CloudPermission.lockedDayStaffNote)
                     }
                 }
                 .frame(minWidth: compact ? 210 : 250, alignment: .leading)
                 Button { store.shiftDay(1) } label: { Image(systemName: "chevron.right").frame(width: 22, height: 22).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
                     .help("Sonraki gün (⌘])")
+                    .accessibilityLabel("Sonraki gün")
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .glassSurface(in: Capsule())
@@ -340,6 +346,8 @@ struct NumberCell: View {
     var placeholder: String = ""
     var maxFraction: Int = 3
     var tint: Color? = nil
+    /// Ekran okuyucu için hücrenin adı ("90 Gr kapanış"); tabloda hücrenin görünen etiketi yok
+    var label: String = ""
     @FocusState.Binding var focus: CellID?
     @State private var text = ""
     @State private var dirty = false
@@ -352,6 +360,7 @@ struct NumberCell: View {
             .textFieldStyle(.plain)
             .multilineTextAlignment(.trailing)
             .monospacedDigit()
+            .accessibilityLabel(label)
             .focused($focus, equals: id)
             .overlay(alignment: .trailing) {
                 if text.isEmpty && !placeholder.isEmpty && !isFocused {

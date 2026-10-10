@@ -15,23 +15,28 @@ struct OverviewView: View {
         let o = engine.overview(date: date, rows: rows, analysis: analysis)
         let trend30 = engine.trend(endingAt: date, days: 30)
         let hasCosts = engine.activeItems.contains { $0.unitCost != nil }
+        // İlk kullanım (henüz günlük kayıt, personel, sipariş yok): başlangıç seçenekleri; boş grafikler gösterilmez
+        let firstRun = store.isFirstRun
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .center) {
                     DateNavigator()
                     Spacer()
                 }
+                if firstRun { WelcomeCard(cloud: store.cloud) }
                 dayCards(o, hasCosts: hasCosts, trend: Array(trend30.suffix(14)))
                 MonthCards(date: date)
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(spacing: 16) {
-                        trackerCard(trend30)
-                        trendCard(Array(trend30.suffix(14)), hasCosts: hasCosts)
+                if !firstRun {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(spacing: 16) {
+                            trackerCard(trend30)
+                            trendCard(Array(trend30.suffix(14)), hasCosts: hasCosts)
+                        }
+                        .frame(maxWidth: .infinity)
+                        actions(o).frame(width: 290)
                     }
-                    .frame(maxWidth: .infinity)
-                    actions(o).frame(width: 290)
+                    attention(rows: rows, analysis: analysis, overview: o)
                 }
-                attention(rows: rows, analysis: analysis, overview: o)
             }
             .padding(22)
         }
@@ -140,12 +145,21 @@ struct OverviewView: View {
     @ViewBuilder
     private func quick(_ title: String, _ icon: String, primary: Bool = false, _ action: @escaping () -> Void) -> some View {
         if primary {
-            Button(action: action) { Label(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }
+            Button(action: action) { quickLabel(title, icon) }
                 .buttonStyle(PrimaryButtonStyle())
         } else {
-            Button(action: action) { Label(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }
+            Button(action: action) { quickLabel(title, icon) }
                 .buttonStyle(SoftButtonStyle())
         }
+    }
+
+    /// Simgeler sabit genişlikte: düğme yazıları alt alta hizalı başlar
+    private func quickLabel(_ title: String, _ icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).frame(width: 20)
+            Text(title)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Dikkat gerektirenler
@@ -176,7 +190,7 @@ struct OverviewView: View {
                 VStack(spacing: 16) {
                     if !problems.isEmpty {
                         ListCard(title: "Tolerans dışı farklar", icon: "exclamationmark.triangle.fill", color: Brand.negative, term: .diff,
-                                 linkTitle: "Günlük envantere git", link: { store.section = .daily }) {
+                                 linkTitle: "Günlük sayıma git", link: { store.section = .daily }) {
                             ForEach(problems.prefix(8), id: \.itemID) { c in
                                 if let item = engine.itemsByID[c.itemID], let d = c.diff {
                                     HStack {
@@ -322,5 +336,123 @@ private struct MonthCards: View {
     private func tone(_ v: Double?, _ t: Double?) -> Color {
         guard let v, let t else { return Brand.accent }
         return v <= t ? Brand.ok : Brand.negative
+    }
+}
+
+// MARK: - İlk kullanım
+
+/// Bu Mac'te henüz günlük kayıt yokken Genel Bakış'ın başındaki başlangıç kartı (web panelindeki "Bu şubede henüz veri
+/// yok" kartının karşılığı): verisi başka yerde olan için web paneline bağlanma ve yedekten geri yükleme, sıfırdan
+/// başlayan için tanımlar ve ilk satış / sayım. İlk günlük kayıt girilince kendiliğinden kaybolur (`Onboarding.isEmpty`).
+private struct WelcomeCard: View {
+    @EnvironmentObject var store: AppStore
+    @ObservedObject var cloud: CloudSyncController
+
+    var body: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hoş geldiniz").font(.title2.weight(.semibold))
+                    Text("Bu Mac'te henüz sayım, satış ya da vardiya kaydı yok. Verileriniz web panelinde ya da bir yedek dosyasındaysa önce onları getirin; sıfırdan başlıyorsanız tanımları gözden geçirip ilk satış raporunu aktarın.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(alignment: .top, spacing: 12) {
+                    connectTile
+                    backupTile
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 12) {
+                    catalogTile
+                    salesTile
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    Text("Bu kart ilk günlük kayıt girilince kendiliğinden kaybolur.")
+                    Button("Adım adım anlatım: Nasıl Kullanılır?") { store.section = .help }
+                        .buttonStyle(.link)
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var connectTile: some View {
+        let connected = cloud.isConnected
+        let name = cloud.state.config?.workspaceName ?? ""
+        let text: String = connected
+            ? "Bu Mac \"\(name)\" şubesiyle eşitleniyor (\(CloudRole.title(cloud.role))). Web panelindeki veriler kendiliğinden buraya gelir."
+            : "Şubenin verisi web panelindeyse en kolay yol: Ayarlar ve Veri → Web paneli ile eşitleme kartında web paneli e-postanız ve şifrenizle bağlanın; veriler kendiliğinden gelir. Hesabınızı patron web panelinde Yönetim → Kullanıcılar ekranında açar."
+        return StartTile(icon: "arrow.triangle.2.circlepath.icloud", title: "Web paneline bağlanın", text: text, done: connected) {
+            Button { store.section = .backup } label: {
+                Label(connected ? "Eşitleme Durumu" : "Web Paneline Bağlan", systemImage: "link")
+            }
+            .buttonStyle(SoftButtonStyle())
+        }
+    }
+
+    private var backupTile: some View {
+        StartTile(icon: "arrow.counterclockwise", title: "Yedekten geri yükleyin",
+                  text: "Başka bir Mac'te Ayarlar ve Veri → Yedek Oluştur… ile alınmış bir yedek dosyası (.json) varsa tüm veriyi tek seferde yükleyin. Eski Excel envanter dosyanızdaki (.xlsm) geçmiş günler de aktarılabilir.") {
+            Button { store.restoreBackup() } label: { Label("Yedek Dosyası Seç…", systemImage: "doc") }
+                .buttonStyle(SoftButtonStyle())
+                .disabled(!store.canEditCatalog)
+                .help(store.canEditCatalog ? "Bir yedek dosyasındaki veriyi geri yükler" : CloudPermission.catalogReadOnlyNote)
+            Button { store.pickAndImportWorkbook() } label: { Label("Excel'den…", systemImage: "tablecells") }
+                .buttonStyle(SoftButtonStyle())
+                .help("Eski Excel envanter dosyasındaki (ör. 01.08.xlsm) geçmiş günleri aktarır")
+        }
+    }
+
+    private var catalogTile: some View {
+        let active = store.engine.activeItems
+        let costed = active.filter { $0.unitCost != nil }.count
+        let costNote = costed == 0 ? "henüz birim maliyet girilmedi" : "\(costed) kalemde birim maliyet var"
+        var text = "\(store.data.products.count) hazır reçete ve \(active.count) stok kalemi yüklü (\(costNote)). Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı girin; Reçeteler'de ürünlerin hammaddelerini kontrol edin."
+        if !store.canEditCatalog { text += " Personel hesabıyla bu ekranlar salt okunurdur." }
+        return StartTile(icon: "shippingbox", title: "Stok kalemlerini ve reçeteleri hazırlayın", text: text) {
+            Button { store.section = .items } label: { Label("Stok Kalemleri", systemImage: "shippingbox") }
+                .buttonStyle(SoftButtonStyle())
+            Button { store.section = .recipes } label: { Label("Reçeteler", systemImage: "fork.knife") }
+                .buttonStyle(SoftButtonStyle())
+        }
+    }
+
+    private var salesTile: some View {
+        StartTile(icon: "doc.badge.plus", title: "Satış raporunu aktarıp sayıma başlayın",
+                  text: "Gün sonunda ModPos satış raporunu aktarın (dosyayı pencereye sürükleyip bırakabilirsiniz), sonra Günlük Sayım ekranında kapanış sayımını girin. Satılan miktarlar, fark ve kayıp kendiliğinden hesaplanır.") {
+            // ⌘O gibi: aktarımdan sonra sayımın girileceği Günlük Sayım açık olsun
+            Button { store.section = .daily; store.pickAndImportFile() } label: { Label("Satış Raporu Aktar…", systemImage: "doc.badge.plus") }
+                .buttonStyle(PrimaryButtonStyle())
+            Button { store.section = .daily } label: { Label("Sayıma Başla", systemImage: "checklist") }
+                .buttonStyle(SoftButtonStyle())
+        }
+    }
+}
+
+/// Başlangıç kartındaki seçenek: simge, başlık, açıklama ve düğmeler (yapıldıysa yeşil onay)
+private struct StartTile<Actions: View>: View {
+    var icon: String
+    var title: String
+    var text: String
+    var done = false
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        let tint = done ? Brand.ok : Brand.accent
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: done ? "checkmark.circle.fill" : icon)
+                    .font(.callout.weight(.semibold)).foregroundStyle(tint)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(tint.opacity(0.13)))
+                Text(title).font(.headline)
+            }
+            Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            HStack(spacing: 8) { actions }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
     }
 }

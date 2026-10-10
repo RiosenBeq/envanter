@@ -23,7 +23,7 @@ struct ContentView: View {
         }
         .background(AmbientBackground())
         .onAppear { store.undoManager = undoManager }
-        // Satış raporu / Excel dosyası her ekranda pencereye bırakılabilir (Günlük Envanter'e geçilir)
+        // Satış raporu / Excel dosyası her ekranda pencereye bırakılabilir (Günlük Sayım'a geçilir)
         .overlay { if dropTargeted { dropOverlay } }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard let p = providers.first else { return false }
@@ -46,14 +46,15 @@ struct ContentView: View {
                presenting: store.alert) { _ in
             Button("Tamam", role: .cancel) {}
         } message: { a in Text(a.message) }
-        // Personel hesabıyla gün kapatma onayı (Gün menüsü ⌘L ve Günlük Envanter düğmesi)
+        // Personel hesabıyla gün kapatma onayı (Gün menüsü ⌘L ve Günlük Sayım düğmesi): günün sayım ve satış durumu
+        // da yazılır, eksik sayımla kapatmadan önce görülsün (kilidi personel açamaz)
         .confirmationDialog(store.pendingDayClose.map { DayLockAction.confirmTitle(date: $0) } ?? "",
                             isPresented: Binding(get: { store.pendingDayClose != nil }, set: { if !$0 { store.pendingDayClose = nil } }),
                             titleVisibility: .visible, presenting: store.pendingDayClose) { date in
             Button("Günü Kapat") { store.confirmDayClose(date) }
             Button("Vazgeç", role: .cancel) { store.pendingDayClose = nil }
-        } message: { _ in
-            Text(DayLockAction.confirmMessage)
+        } message: { date in
+            Text(store.dayCloseConfirmMessage(date))
         }
     }
 
@@ -124,7 +125,8 @@ struct ContentView: View {
 
     private func group(_ title: String, _ items: [AppSection], overview: DayOverview) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title.uppercased())
+            // Türkçe büyük harf: "DİĞER" (uppercased() "DIĞER" yazardı)
+            Text(Fmt.upper(title))
                 .font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.tertiary)
                 .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 4)
             ForEach(items) { s in

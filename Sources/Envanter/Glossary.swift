@@ -129,7 +129,7 @@ enum Term: String, CaseIterable, Identifiable {
         case .purchaseOrder:
             return "Önerilerden oluşturulan sipariş. Mal gelince \"Teslim al\" ile gelen miktarlar seçili günün Gelen sütununa işlenir; fatura birim fiyatı (₺ / adet veya kg) girilirse fiyat geçmişine yazılır ve birim maliyet güncellenir."
         case .lock:
-            return "Sayım bitince günü kapatın: sayım, satış, vardiya ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Gerekirse kilit açılabilir; web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açar."
+            return "Sayım bitince günü kapatın: sayım, satış, vardiya ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Hiç sayım girilmemiş gün kapatılamaz. Gerekirse kilit açılabilir; web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açar, bu yüzden kapatmadan önce günün sayım ve satış durumu gösterilip onay istenir."
         case .recipeCost:
             return "1 adet ürünün reçetesindeki hammaddelerin birim maliyetle toplamı (₺ / porsiyon). Hammaddelerden birinin maliyeti eksikse hesaplanmaz."
         }
@@ -149,6 +149,7 @@ struct InfoTip: View {
         }
         .buttonStyle(.plain)
         .help(term.text)
+        .accessibilityLabel("\(term.title) açıklaması")
         .popover(isPresented: $shown, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(term.title).font(.headline)

@@ -85,12 +85,6 @@ private func percent(_ v: Double?) -> String {
 
 private func day(_ key: String) -> Date { DateKey.date(from: key) ?? Date() }
 
-/// Önceki döneme göre değişim oranı (önceki 0 ise nil)
-private func change(_ now: Double, _ before: Double) -> Double? {
-    guard before > 0 else { return nil }
-    return (now - before) / before
-}
-
 /// Hedefe göre renk (maliyet oranlarında düşük iyi)
 private func tone(_ v: Double?, _ t: Double?) -> Color {
     guard let v, let t else { return Brand.accent }
@@ -142,11 +136,11 @@ private struct GeneralStatsView: View {
         let stats = engine.periodStats(from: from, to: to)
         let summary = engine.summary(from: from, to: to)
         let stock = engine.stockValue(asOf: min(to, DateKey.today()))
-        // Önceki eşit uzunluktaki dönem (değişim rozetleri için)
-        let span = DateKey.distance(from: from, to: to) ?? 0
-        let prevTo = DateKey.addDays(-1, to: from)
-        let prev = engine.periodStats(from: DateKey.addDays(-span, to: prevTo), to: prevTo)
-        let hasPrev = !prev.days.isEmpty
+        // Önceki eşit uzunluktaki dönem (değişim rozetleri için). Önceki dönemde en az bu dönemin yarısı kadar kayıtlı gün
+        // yoksa (ör. verinin ilk ayı) oran yanıltır ("+%556"): rozet gösterilmez (web paneliyle aynı kural)
+        let prevRange = PeriodComparison.previousRange(from: from, to: to)
+        let prev = engine.periodStats(from: prevRange.from, to: prevRange.to)
+        let hasPrev = PeriodComparison.isComparable(previousDays: prev.days.count, days: stats.days.count)
         let s = store.settings
         VStack(alignment: .leading, spacing: 16) {
             if !stats.hasCosts {
@@ -156,7 +150,7 @@ private struct GeneralStatsView: View {
                 StatCard(title: "Satış tutarı", value: stats.revenueDays > 0 ? Fmt.money(stats.revenue) : "—",
                          detail: stats.revenueDays > 0 ? "\(stats.revenueDays) günlük raporda tutar var" : "Raporlarda tutar sütunu yok",
                          icon: "banknote", color: Brand.ok,
-                         delta: hasPrev ? change(stats.revenue, prev.revenue) : nil,
+                         delta: hasPrev ? PeriodComparison.change(stats.revenue, prev.revenue) : nil,
                          spark: stats.days.count > 1 ? stats.days.map { $0.revenue } : nil)
                 StatCard(title: "Teorik maliyet", value: stats.hasCosts ? Fmt.money(stats.theoreticalCost) : "—",
                          detail: "Reçeteye göre · satışın " + percent(stats.theoreticalCostPct), icon: "function", color: Brand.positive,
@@ -164,11 +158,12 @@ private struct GeneralStatsView: View {
                 StatCard(title: "Fiili maliyet", value: stats.hasCosts ? Fmt.money(stats.actualCost) : "—",
                          detail: "Sayıma göre · satışın " + percent(stats.actualCostPct) + (s.targetFoodCostPct.map { " · hedef " + percent($0) } ?? ""),
                          icon: "scalemass", color: tone(stats.actualCostPct, s.targetFoodCostPct), info: .actualCost,
+                         delta: hasPrev ? PeriodComparison.change(stats.actualCost, prev.actualCost) : nil, higherIsBetter: false,
                          targetValue: stats.actualCostPct, target: s.targetFoodCostPct)
                 StatCard(title: "Kayıp (fazla çıkış)", value: stats.hasCosts ? Fmt.money(stats.lossValue) : "—",
                          detail: "Net fark: \(Fmt.money(stats.netValue))", icon: "arrow.down.right.circle",
                          color: stats.lossValue > 0 ? Brand.negative : Brand.ok, info: .loss,
-                         delta: hasPrev ? change(stats.lossValue, prev.lossValue) : nil, higherIsBetter: false,
+                         delta: hasPrev ? PeriodComparison.change(stats.lossValue, prev.lossValue) : nil, higherIsBetter: false,
                          spark: stats.days.count > 1 ? stats.days.map { $0.lossValue } : nil)
             }
             StatRow {
@@ -182,10 +177,14 @@ private struct GeneralStatsView: View {
                          targetValue: stats.primeCostPct, target: s.targetPrimeCostPct)
                 StatCard(title: "Zayi", value: stats.hasCosts ? Fmt.money(stats.wasteCost) : "—",
                          detail: "Satışa oranı " + percent(stats.wastePct), icon: "trash", color: Brand.warn, info: .wasteCost,
-                         delta: hasPrev ? change(stats.wasteCost, prev.wasteCost) : nil, higherIsBetter: false)
+                         delta: hasPrev ? PeriodComparison.change(stats.wasteCost, prev.wasteCost) : nil, higherIsBetter: false)
                 StatCard(title: "Stok değeri", value: stock.costedItems > 0 ? Fmt.money(stock.value) : "—",
                          detail: "Alım: \(Fmt.money(stats.incomingValue)) · \(stats.countedDays) sayılmış gün", icon: "archivebox",
                          color: Brand.accent, info: .stockValue)
+            }
+            if !stats.days.isEmpty {
+                Text(comparisonNote(hasPrev, from: prevRange.from, to: prevRange.to))
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if stats.days.isEmpty {
                 EmptyStateView(icon: "chart.xyaxis.line", title: "Bu dönemde veri yok", message: "Tarih aralığını değiştirin.")
@@ -200,6 +199,14 @@ private struct GeneralStatsView: View {
                 CountQualityChart(days: stats.days)
             }
         }
+    }
+
+    /// Değişim rozetlerinin neyle karşılaştırdığı (ya da neden gösterilmediği)
+    private func comparisonNote(_ hasPrev: Bool, from: String, to: String) -> String {
+        let range = "\(DateKey.short(from)) – \(DateKey.short(to))"
+        return hasPrev
+            ? "Değişim rozetleri önceki eşit uzunluktaki dönemle (\(range)) karşılaştırır."
+            : "Önceki eşit dönemde (\(range)) yeterli kayıt olmadığı için değişim gösterilmiyor."
     }
 
     private func notice(_ title: String, _ text: String) -> some View {
@@ -492,7 +499,7 @@ private struct PriceHistoryChart: View {
         }
         let change = item.lastPriceChange
         ChartCard(title: "Birim maliyet geçmişi (₺ / \(item.unit.lowercased()))",
-                  subtitle: change.map { "Son değişim: \(Fmt.money($0.from)) → \(Fmt.money($0.to)) (\($0.ratio >= 0 ? "+" : "")\(Fmt.number($0.ratio * 100, maxFraction: 1))%)" } ?? "",
+                  subtitle: change.map { changeText(from: $0.from, to: $0.to, ratio: $0.ratio, date: $0.date) } ?? "",
                   info: .priceAlert) {
             Chart {
                 ForEach(Array(points.enumerated()), id: \.offset) { _, p in
@@ -509,6 +516,12 @@ private struct PriceHistoryChart: View {
             .chartYScale(domain: .automatic(includesZero: false))
             .frame(height: 170)
         }
+    }
+
+    /// "Son değişim (09.10.2026): 60,00 ₺ → 68,00 ₺ (+%13,3)" (web paneliyle aynı biçim)
+    private func changeText(from: Double, to: Double, ratio: Double, date: String?) -> String {
+        let when = date.map { " (\(DateKey.short($0)))" } ?? ""
+        return "Son değişim\(when): \(Fmt.money(from, fraction: 2)) → \(Fmt.money(to, fraction: 2)) (\(Fmt.signedPercent(ratio)))"
     }
 }
 
@@ -695,39 +708,60 @@ private struct MenuMatrixChart: View {
     let color: (MenuClass) -> Color
 
     var body: some View {
+        ChartCard(title: "Popülerlik × kârlılık matrisi",
+                  subtitle: "Yatay: satış payı (%) · Dikey: birim kâr (₺) · Kesikli çizgiler sınıf eşikleri · Her ürün aşağıdaki tabloda", info: .menuEngineering) {
+            // Etiketlerin üst üste binmemesi için grafiğin genişliği gerekir
+            GeometryReader { geo in
+                matrix(width: Double(geo.size.width))
+            }
+            .frame(height: 340)
+        }
+    }
+
+    private func matrix(width: Double) -> some View {
         let threshold = 70.0 / Double(max(productCount, 1))
         let totalQty = stats.reduce(0) { $0 + $1.qty }
         let avgMargin = totalQty > 0 ? stats.reduce(0) { $0 + ($1.totalMargin ?? 0) } / totalQty : 0
         let maxX = (stats.map { $0.popularity * 100 }.max() ?? 1) * 1.08
-        // Kalabalığı önlemek için yalnızca ciroya göre ilk 8 ürün ile en kârlı ve en popüler ürün etiketlenir
-        let labelled: Set<String> = {
-            var codes = Set(stats.sorted { $0.revenue > $1.revenue }.prefix(8).map { $0.product.code })
-            if let m = stats.max(by: { ($0.unitMargin ?? 0) < ($1.unitMargin ?? 0) }) { codes.insert(m.product.code) }
-            if let p = stats.max(by: { $0.popularity < $1.popularity }) { codes.insert(p.product.code) }
-            return codes
-        }()
-        ChartCard(title: "Popülerlik × kârlılık matrisi",
-                  subtitle: "Yatay: satış payı (%) · Dikey: birim kâr (₺) · Kesikli çizgiler sınıf eşikleri", info: .menuEngineering) {
-            Chart {
-                ForEach(stats) { s in
-                    PointMark(x: .value("Popülerlik", s.popularity * 100), y: .value("Birim kâr", s.unitMargin ?? 0))
-                        .foregroundStyle(color(s.klass ?? .dog))
-                        .symbolSize(labelled.contains(s.product.code) ? 70 : 34)
-                        .annotation(position: .top, spacing: 2) {
-                            if labelled.contains(s.product.code) {
-                                Text(s.product.name).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-                            }
+        let margins = stats.map { $0.unitMargin ?? 0 }
+        // Dikey eksen yuvarlak sınırlarla verilir (etiket yerleşimi grafikle aynı ölçeği kullansın); en üstteki
+        // noktaların etiketi sığsın diye üstte pay bırakılır
+        let yDomain = ChartLabelLayout.niceDomain(min: margins.min() ?? 0, max: (margins.max() ?? 1) * 1.12)
+        let labelled = labels(maxX: maxX, yDomain: yDomain, width: width)
+        return Chart {
+            ForEach(stats) { s in
+                PointMark(x: .value("Popülerlik", s.popularity * 100), y: .value("Birim kâr", s.unitMargin ?? 0))
+                    .foregroundStyle(color(s.klass ?? .dog))
+                    .symbolSize(labelled.contains(s.product.code) ? 70 : 34)
+                    .annotation(position: .top, spacing: 2) {
+                        if labelled.contains(s.product.code) {
+                            Text(ChartLabelLayout.shortText(s.product.name))
+                                .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                         }
-                }
-                RuleMark(x: .value("Eşik", threshold)).foregroundStyle(.secondary)
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                RuleMark(y: .value("Ort. kâr", avgMargin)).foregroundStyle(.secondary)
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
             }
-            .chartXScale(domain: 0...maxX)
-            .chartXAxisLabel("Satış payı (%)")
-            .chartYAxisLabel("Birim kâr (₺)")
-            .frame(height: 340)
+            RuleMark(x: .value("Eşik", threshold)).foregroundStyle(.secondary)
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            RuleMark(y: .value("Ort. kâr", avgMargin)).foregroundStyle(.secondary)
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
+        .chartXScale(domain: 0...maxX)
+        .chartYScale(domain: yDomain)
+        .chartXAxisLabel("Satış payı (%)")
+        .chartYAxisLabel("Birim kâr (₺)")
+    }
+
+    /// Etiketlenecek ürünler: ciroya göre ilk 8 ürün, en kârlı ve en popüler ürün (bu sırayla); daha önce yerleşmiş bir
+    /// etiketle üst üste binenler atlanır (web paneliyle aynı yaklaşım)
+    private func labels(maxX: Double, yDomain: ClosedRange<Double>, width: Double) -> Set<String> {
+        var order = Array(stats.sorted { $0.revenue > $1.revenue }.prefix(8))
+        if let m = stats.max(by: { ($0.unitMargin ?? 0) < ($1.unitMargin ?? 0) }) { order.append(m) }
+        if let p = stats.max(by: { $0.popularity < $1.popularity }) { order.append(p) }
+        let candidates = order.map { s in
+            ChartLabelLayout.Candidate(id: s.product.code, text: s.product.name, x: s.popularity * 100, y: s.unitMargin ?? 0)
+        }
+        // Çizim alanı yaklaşık: sağdaki eksen değerleri ve eksen başlıkları düşülür
+        return ChartLabelLayout.visible(candidates, xDomain: 0...maxX, yDomain: yDomain,
+                                        width: max(width - 70, 120), height: 280)
     }
 }

@@ -13,7 +13,7 @@ concurrency:
 jobs:
   linux-core:
     name: Çekirdek testleri (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: swift:6.0-noble
     steps:
       - uses: actions/checkout@v4

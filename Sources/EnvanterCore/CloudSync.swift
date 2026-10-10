@@ -6,8 +6,11 @@ import Foundation
 /// Uygulamaya gömülü Supabase projesi. Publishable key tasarım gereği herkese açıktır (yetkiyi veritabanındaki
 /// RLS kuralları uygular); personel yalnızca e-posta ve şifresini girer. "Gelişmiş" ayarlarla değiştirilebilir.
 public enum CloudDefaults {
-    public static let url = "https://eteyphpvpxmgokyfndsh.supabase.co"
-    public static let publishableKey = "sb_publishable_GLfkJE9kN6OimifCDAbBFw_CO9r23Lg"
+    public static let url = "https://mnpzjbpwsrscjrjnkkav.supabase.co"
+    public static let publishableKey = "sb_publishable_A-8hw-s1MgL9FqR8DV4jEw_IRnl7pd_"
+    /// Artık kullanılmayan eski varsayılan projeler (Tokyo; Ekim 2026'da Frankfurt'a taşındı). esitleme.json'da biri
+    /// kayıtlıysa açılışta yeni varsayılana geçilir (`SyncState.movingOffRetiredDefault()`).
+    public static let retiredURLs = ["https://eteyphpvpxmgokyfndsh.supabase.co"]
     /// envanter_activity.client değeri
     public static let client = "mac"
     /// Yerel değişiklikten sonra eşitlemeye kadar beklenen süre (saniye)
@@ -20,6 +23,17 @@ public enum CloudDefaults {
     public static let maxConflictRetries = 3
     /// Okumada sayfa boyutu
     public static let pageSize = 500
+
+    /// Adres eski varsayılan projelerden biri mi (baştaki/sondaki boşluk, sondaki "/" ve büyük-küçük harf yok sayılır)
+    public static func isRetired(_ url: String) -> Bool {
+        func norm(_ s: String) -> String {
+            var u = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            while u.hasSuffix("/") { u.removeLast() }
+            return u
+        }
+        let u = norm(url)
+        return retiredURLs.contains { norm($0) == u }
+    }
 }
 
 /// Bağlantı ayarları
@@ -284,6 +298,16 @@ public struct SyncState: Codable, Equatable, Sendable {
         s.config?.email = email
         s.signedOut = c.workspaceID != nil
         return s
+    }
+
+    /// Kayıtlı sunucu eski varsayılan projeyse (`CloudDefaults.retiredURLs`) yeni varsayılana geçilmiş durum; değilse nil.
+    /// Oturum, şube, taban ve bekleyen değişiklikler eski veritabanına aittir ve yeni sunucuda geçersizdir: farklı sunucuya
+    /// girişteki gibi (`forSignIn`) yeni durum başlar, yalnızca e-posta korunur. Yerel veri dosyası etkilenmez; yeniden
+    /// bağlanınca şube seçilir ve ilk bağlantı kararı (yükle / indir) sorulur. "Gelişmiş" bölümünden girilmiş başka bir
+    /// sunucuya dokunulmaz.
+    public func movingOffRetiredDefault() -> SyncState? {
+        guard let c = config, CloudDefaults.isRetired(c.url) else { return nil }
+        return SyncState(config: CloudConfig(email: c.email))
     }
 }
 

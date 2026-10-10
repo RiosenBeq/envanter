@@ -356,6 +356,60 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertFalse(minimal.initialized)
     }
 
+    func testRetiredDefaultServerMovesToNewDefault() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("envanter-sync-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SyncStore(directory: dir)
+        let tokyo = "https://eteyphpvpxmgokyfndsh.supabase.co"
+        XCTAssertEqual(CloudDefaults.retiredURLs, [tokyo])
+        XCTAssertNotEqual(CloudDefaults.url, tokyo)
+
+        // Önceki sürümün eski varsayılanla yazdığı, şubeye bağlı ve oturumu açık durum
+        let old = SyncState(config: CloudConfig(url: tokyo, publishableKey: "sb_publishable_eski",
+                                                workspaceID: ws, workspaceName: "Tuzla", email: "patron@ornek.com", role: CloudRole.owner),
+                            lastRev: 42, base: ["items": BaseDoc(rev: 40, body: j("[]"))], dirty: ["settings"],
+                            accessToken: "eski-erisim", refreshToken: "eski-yenileme", lastSyncAt: Date(timeIntervalSince1970: 1_799_000_000),
+                            userEmail: "patron@ornek.com", initialized: true)
+        XCTAssertTrue(old.isActive)
+        try store.save(old)
+        let moved = try XCTUnwrap(store.load().movingOffRetiredDefault())
+        // Yeni varsayılan sunucu ve anahtar; e-posta korunur
+        XCTAssertEqual(moved.config?.url, CloudDefaults.url)
+        XCTAssertEqual(moved.config?.publishableKey, CloudDefaults.publishableKey)
+        XCTAssertEqual(moved.config?.email, "patron@ornek.com")
+        // Eski veritabanına ait şube, rol, taban, bekleyen değişiklikler ve oturum taşınmaz
+        XCTAssertNil(moved.config?.workspaceID)
+        XCTAssertNil(moved.config?.role)
+        XCTAssertEqual(moved.lastRev, 0)
+        XCTAssertEqual(moved.base, [:])
+        XCTAssertEqual(moved.dirty, [])
+        XCTAssertFalse(moved.isSignedIn)
+        XCTAssertFalse(moved.initialized)
+        XCTAssertFalse(moved.signedOut)
+        XCTAssertNil(moved.enforcedRole)
+        // Bir kez geçince yeniden geçmez
+        try store.save(moved)
+        XCTAssertEqual(store.load(), moved)
+        XCTAssertNil(moved.movingOffRetiredDefault())
+
+        // Elle yazılmış biçim farkları (boşluk, sondaki "/", büyük harf) da eski varsayılan sayılır
+        for variant in [" \(tokyo)/ ", "https://ETEYPHPVPXMGOKYFNDSH.supabase.co//"] {
+            let s = SyncState(config: CloudConfig(url: variant, workspaceID: ws, email: "a@b.c"), initialized: true)
+            XCTAssertEqual(s.movingOffRetiredDefault()?.config?.url, CloudDefaults.url, variant)
+        }
+
+        // Gelişmiş bölümünden girilmiş başka proje ve yeni varsayılan olduğu gibi kalır; hiç bağlanılmamışsa da bir şey yapılmaz
+        let custom = SyncState(config: CloudConfig(url: "https://ozelproje.supabase.co", publishableKey: "sb_publishable_ozel",
+                                                   workspaceID: ws, email: "a@b.c", role: CloudRole.manager),
+                               lastRev: 7, accessToken: "a", refreshToken: "r", initialized: true)
+        XCTAssertNil(custom.movingOffRetiredDefault())
+        XCTAssertNil(SyncState(config: CloudConfig(workspaceID: ws, email: "a@b.c"), initialized: true).movingOffRetiredDefault())
+        XCTAssertNil(SyncState().movingOffRetiredDefault())
+        try store.save(custom)
+        XCTAssertNil(store.load().movingOffRetiredDefault())
+        XCTAssertEqual(store.load(), custom)
+    }
+
     // MARK: - İki istemci (bellek içi sunucu)
 
     private func makeServer(staff: Bool = false) -> (FakeServer, FakeAPI, FakeAPI) {
@@ -756,7 +810,7 @@ final class CloudSyncTests: XCTestCase {
             XCTAssertTrue(e.localizedDescription.hasPrefix("Bağlantı ayarı geçersiz"))
         }
         XCTAssertThrowsError(try SupabaseAPI(url: "https://x.supabase.co", publishableKey: " "))
-        XCTAssertThrowsError(try SupabaseAPI(url: "eteyphpvpxmgokyfndsh.supabase.co", publishableKey: "k"))
+        XCTAssertThrowsError(try SupabaseAPI(url: "mnpzjbpwsrscjrjnkkav.supabase.co", publishableKey: "k"))
         XCTAssertNoThrow(try SupabaseAPI(url: CloudDefaults.url, publishableKey: CloudDefaults.publishableKey))
     }
 

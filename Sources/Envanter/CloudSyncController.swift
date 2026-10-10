@@ -83,12 +83,20 @@ final class CloudSyncController: ObservableObject {
     private var lastRoleCheck: Date?
     /// Bir sonraki eşitleme turunda rol de denetlensin (uygulama öne geldi)
     private var roleCheckRequested = false
+    /// Kayıtlı sunucu eski varsayılan projeydi; açılışta yeni varsayılana geçildi (`SyncState.movingOffRetiredDefault`)
+    private var movedOffRetiredDefault = false
 
     init(directory: URL, enabled: Bool, diskQueue: DiskWriteQueue) {
         self.enabled = enabled
         self.diskQueue = diskQueue
         syncStore = SyncStore(directory: directory)
-        state = enabled ? syncStore.load() : SyncState()
+        let loaded = enabled ? syncStore.load() : SyncState()
+        if let moved = loaded.movingOffRetiredDefault() {
+            state = moved
+            movedOffRetiredDefault = true
+        } else {
+            state = loaded
+        }
     }
 
     // MARK: - Durum
@@ -131,6 +139,11 @@ final class CloudSyncController: ObservableObject {
             status = .error(CloudSyncError.sessionExpired.localizedDescription)
         } else {
             status = .off
+        }
+        if movedOffRetiredDefault {
+            // Eski projenin oturum anahtarları ve şube eşleşmesi dosyadan da silinsin
+            saveState()
+            notice = "Eşitleme sunucusu değişti (yeni Supabase projesi). Bu Mac'teki veriler yerinde duruyor; web paneli e-postanız ve şifrenizle yeniden bağlanıp şubeyi seçin."
         }
 
         let nc = NotificationCenter.default

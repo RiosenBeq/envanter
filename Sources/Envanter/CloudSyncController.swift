@@ -31,7 +31,17 @@ struct InitialDecision: Identifiable {
 /// ve ekran görüntüsü (ENVANTER_SNAPSHOT_DIR) modlarında kapalıdır.
 @MainActor
 final class CloudSyncController: ObservableObject {
-    @Published private(set) var status: CloudStatus = .off
+    @Published private(set) var status: CloudStatus = .off {
+        // Başarılı eşitlemede ya da kapanınca son hata unutulur; yeniden denenirken (syncing) gösterilmeye devam eder
+        didSet {
+            switch status {
+            case .idle, .off: if lastError != nil { lastError = nil }
+            case .syncing, .error: break
+            }
+        }
+    }
+    /// Son eşitleme / bağlanma hatası: ne olduğu ve ne yapılacağı `issue` ile gösterilir
+    @Published private(set) var lastError: CloudSyncError?
     @Published private(set) var state: SyncState {
         didSet { publishRole() }
     }
@@ -98,13 +108,30 @@ final class CloudSyncController: ObservableObject {
     var role: String? { state.config?.role }
     var pendingChanges: Int { state.dirty.count }
 
+    /// Güncel sorun (yoksa nil): kısa ad, açıklama ve ne yapılacağı. Bağlıyken oluşan hatada değişikliklerin bu Mac'te
+    /// beklediği ve kendiliğinden gönderileceği; bağlanırken oluşan hatada yeniden "Bağlan"a basılacağı söylenir.
+    var issue: CloudIssue? {
+        guard let e = lastError else { return nil }
+        switch status {
+        case .error, .syncing: return e.issue(connected: state.isActive)
+        case .idle, .off: return nil
+        }
+    }
+
     // MARK: - Başlatma
 
     func attach(_ app: AppStore) {
         self.app = app
         publishRole()
         guard enabled else { status = .off; startupCheckDone = true; return }
-        status = state.isActive ? .idle(state.lastSyncAt) : (needsSignIn ? .error(CloudSyncError.sessionExpired.localizedDescription) : .off)
+        if state.isActive {
+            status = .idle(state.lastSyncAt)
+        } else if needsSignIn {
+            lastError = .sessionExpired
+            status = .error(CloudSyncError.sessionExpired.localizedDescription)
+        } else {
+            status = .off
+        }
 
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -179,6 +206,8 @@ final class CloudSyncController: ObservableObject {
         }
         busy = true
         notice = nil
+        // Yeni deneme: önceki denemenin hatası "Bağlanıyor…" sırasında gösterilmesin
+        if case .error = status { status = .off }
         defer { busy = false }
         do {
             let api = try SupabaseAPI(url: url, publishableKey: key)
@@ -542,9 +571,10 @@ final class CloudSyncController: ObservableObject {
             state = s
             saveState()
         }
-        let message = e.localizedDescription
-        status = .error(message)
-        notice = message
+        // Hata kartın üstündeki kutuda (issue) bir kez gösterilir; önceki bilgi notu (ör. "yükleniyor…") silinir
+        lastError = e
+        status = .error(e.localizedDescription)
+        notice = nil
     }
 
     /// Sunucunun reddettiği (ve sunucudaki haline döndürülen) anahtarlar: kapatılmış günler ve tanım belgeleri için

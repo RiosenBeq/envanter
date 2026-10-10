@@ -52,7 +52,8 @@ public enum CloudSyncError: Error, Equatable, LocalizedError, Sendable {
         case .rateLimited:
             return "Çok fazla deneme yapıldı. Birkaç dakika bekleyip tekrar deneyin."
         case .notProvisioned:
-            return "Supabase projesinde envanter tabloları kurulu değil. Web panelinin veritabanı kurulumu (migration) tamamlanmalı."
+            // Ne yapılacağı: issue(connected:) (CloudSyncGuide.swift)
+            return "Web panelinin veritabanı hazır değil: Supabase projesinde envanter tabloları kurulu değil."
         case .invalidRequest(let m):
             return "Sunucu isteği reddetti: \(m)"
         case .server(let status, let m):
@@ -62,7 +63,7 @@ public enum CloudSyncError: Error, Equatable, LocalizedError, Sendable {
         case .notConfigured:
             return "Web paneli eşitlemesi ayarlanmamış."
         case .noWorkspace:
-            return "Hesabınız henüz bir şubeye eklenmemiş. Patronunuz web panelinde Kullanıcılar bölümünden e-posta adresinizi davet etmeli."
+            return "Hesabınız henüz bir şubeye eklenmemiş."
         case .invalidConfiguration(let m):
             return "Bağlantı ayarı geçersiz: \(m)"
         }

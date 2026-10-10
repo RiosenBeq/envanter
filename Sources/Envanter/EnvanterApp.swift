@@ -67,7 +67,7 @@ struct EnvanterApp: App {
                     store.requestLockToggle(store.selectedDate)
                 }
                 .keyboardShortcut("l")
-                // Günlük Envanter düğmesiyle aynı kural: sayım yapılmamış gün kapatılmaz; personel hesabıyla kapatmadan
+                // Günlük Sayım düğmesiyle aynı kural: sayım yapılmamış gün kapatılmaz; personel hesabıyla kapatmadan
                 // önce onay istenir ve kapatılmış günün kilidini yalnızca patron / müdür açar
                 .disabled(!store.lockAction(store.selectedDate).isAvailable)
             }

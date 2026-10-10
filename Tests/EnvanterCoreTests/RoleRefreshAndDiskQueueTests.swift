@@ -176,7 +176,7 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         XCTAssertFalse(CloudPermission.lockedDayPickAnotherNote.contains("kilidini açın"))
     }
 
-    /// Gün menüsü (⌘L) Günlük Envanter düğmesiyle aynı sayım kuralını kullanır: boş ya da ileri tarihli gün kapatılmaz
+    /// Gün menüsü (⌘L) Günlük Sayım düğmesiyle aynı sayım kuralını kullanır: boş ya da ileri tarihli gün kapatılmaz
     func testHasCountMatchesDailyViewRuleAndBlocksClosingEmptyDays() {
         var demo = DemoData.make(endingAt: today, days: 6)
         let future = DateKey.addDays(1, to: today)
@@ -190,7 +190,7 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         XCTAssertEqual(DayLockAction.resolve(locked: false, counted: engine.hasCount(date: future), role: CloudRole.staff), .nothingCounted)
         XCTAssertEqual(DayLockAction.resolve(locked: false, counted: engine.hasCount(date: "2026-09-15"), role: CloudRole.staff), .nothingCounted)
         XCTAssertEqual(DayLockAction.resolve(locked: false, counted: engine.hasCount(date: today), role: CloudRole.staff), .confirmClose)
-        // Pasif kalemin kapanışı sayılmaz (Günlük Envanter yalnızca aktif kalemleri gösterir)
+        // Pasif kalemin kapanışı sayılmaz (Günlük Sayım yalnızca aktif kalemleri gösterir)
         var onlyInactive = demo
         let first = onlyInactive.items[0].id
         onlyInactive.items[0].active = false

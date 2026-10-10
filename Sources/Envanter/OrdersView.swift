@@ -97,10 +97,12 @@ struct OrdersView: View {
                         }
                     }
                     TableColumn("Mevcut stok") { s in
+                        // Dar sütun: "≈ 4,2" (son sayıma sonraki hareketler eklenmiş tahmin) ve "09.10 sayımı";
+                        // ayrıntı ipucunda
                         VStack(alignment: .trailing, spacing: 1) {
-                            Text(s.stock.map { num($0, s.item) } ?? "—").monospacedDigit()
+                            Text(stockText(s)).monospacedDigit()
                             if let d = s.stockDate, d != store.selectedDate {
-                                Text("sayım \(DateKey.short(d))" + (s.stock != s.countedStock ? " + hareket" : ""))
+                                Text("\(DateKey.dayMonth(d)) sayımı").lineLimit(1)
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
@@ -167,6 +169,12 @@ struct OrdersView: View {
     }
 
     private func num(_ v: Double, _ item: Item) -> String { Fmt.number(v, maxFraction: item.maxFraction) }
+
+    /// Mevcut stok: son sayımdan sonra gelen/transfer/satış eklenmişse tahmindir ("≈")
+    private func stockText(_ s: OrderSuggestion) -> String {
+        guard let v = s.stock else { return "—" }
+        return (s.stock != s.countedStock ? "≈ " : "") + num(v, s.item)
+    }
 
     private func stockHelp(_ s: OrderSuggestion) -> String {
         guard let counted = s.countedStock, let d = s.stockDate else { return "Henüz sayım yok" }
@@ -242,6 +250,8 @@ private struct OrderRow: View {
                 Button("Sil", role: .destructive) { store.deleteOrder(order.id) }.disabled(!store.canEditCatalog)
             } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
+                .help("Metni kopyala, iptal et ya da sil")
+                .accessibilityLabel("Sipariş işlemleri")
         }
         .padding(.horizontal, 20).padding(.vertical, 6)
     }

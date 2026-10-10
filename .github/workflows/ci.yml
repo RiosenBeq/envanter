@@ -82,8 +82,12 @@ jobs:
           export ENVANTER_QUIT_AFTER_SNAPSHOT=1
           # exec { $ARGV[0] } liste biçimi: yol içindeki boşluk ("NextGen Envanter.app") kelimelere bölünmesin
           perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
+          # İlk kullanım (boş veri klasörü): Genel Bakış'taki başlangıç kartı → 15-welcome.png
+          ENVANTER_DATA_DIR="$RUNNER_TEMP/empty" ENVANTER_SECTIONS="welcome" ENVANTER_SNAPSHOT_START=15 \
+            perl -e 'alarm 120; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
           ls -la "$RUNNER_TEMP/shots"
           test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 14
+          test -f "$RUNNER_TEMP/shots/15-welcome.png" || echo "::warning::İlk kullanım ekran görüntüsü (15-welcome.png) alınamadı"
       - name: Ekran görüntülerini yükle
         uses: actions/upload-artifact@v4
         with:

@@ -67,7 +67,7 @@ struct DailyView: View {
             Divider()
             legend(rows: allRows)
         }
-        .navigationTitle("Günlük Envanter")
+        .navigationTitle("Günlük Sayım")
         .overlay { if dropTargeted { dropOverlay } }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard let p = providers.first else { return false }
@@ -123,8 +123,7 @@ struct DailyView: View {
             .pickerStyle(.segmented).labelsHidden().frame(width: 270)
 
             Button { showNote = true } label: {
-                Label(note.isEmpty && countedBy.isEmpty ? "Not / Sayan" : (countedBy.isEmpty ? "Not var" : countedBy),
-                      systemImage: note.isEmpty ? "note.text" : "note.text.badge.plus")
+                Label(noteButtonTitle(note: note, countedBy: countedBy), systemImage: note.isEmpty ? "note.text" : "note.text.badge.plus")
             }
             .buttonStyle(SoftButtonStyle(tint: note.isEmpty ? .primary : Brand.accent))
             .help(note.isEmpty ? "Güne not ekleyin, sayımı yapanı seçin" : note)
@@ -146,16 +145,28 @@ struct DailyView: View {
                     .font(.callout).foregroundStyle(Brand.warn)
                     .help("Düzeltme gerekiyorsa patron ya da müdür web panelinden veya kendi hesabıyla günün kilidini açabilir.")
             } else {
+                let nothingCounted = !locked && allRows.allSatisfy { !$0.isCounted }
+                if nothingCounted {
+                    // Düğme kapalıyken nedeni görünsün (ipucu kapalı düğmede çıkmayabilir)
+                    Text(DayLockAction.nothingCountedNote).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 // Personel hesabıyla önce onay istenir (kapatılan günün kilidini yalnızca patron / müdür açar)
                 Button { store.requestLockToggle(date) } label: {
-                    Label(locked ? "Kilidi Aç" : "Günü Kapat", systemImage: locked ? "lock.open" : "lock")
+                    Label(locked ? "Kilidi Aç" : (store.canChangeLockedDays ? "Günü Kapat" : "Günü Kapat…"),
+                          systemImage: locked ? "lock.open" : "lock")
                 }
                 .buttonStyle(SoftButtonStyle(tint: locked ? Brand.warn : .primary))
                 .help(locked ? "Girişleri tekrar düzenlenebilir yapar" : Term.lock.text)
-                .disabled(!locked && allRows.allSatisfy { !$0.isCounted })
+                .disabled(nothingCounted)
             }
         }
         .padding(.horizontal, 20).padding(.bottom, 8)
+    }
+
+    /// "Not / Sayan" düğmesinin adı: sayımı yapan kişi yazılmışsa "Sayan: Selin K." (not da varsa "· not")
+    private func noteButtonTitle(note: String, countedBy: String) -> String {
+        if countedBy.isEmpty { return note.isEmpty ? "Not / Sayan" : "Not var" }
+        return "Sayan: \(countedBy)" + (note.isEmpty ? "" : " · not")
     }
 
     private var gridHeader: some View {
@@ -306,6 +317,7 @@ private struct DailyRow: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .frame(width: W.info)
                 .help("Hesabın dökümü")
+                .accessibilityLabel("\(item.name) hesabının dökümü")
                 .popover(isPresented: Binding(get: { detail == item.id }, set: { if !$0 { detail = nil } }), arrowEdge: .leading) {
                     ItemDetailView(itemID: item.id, date: date)
                 }
@@ -317,9 +329,13 @@ private struct DailyRow: View {
     private func cell(_ col: Int, _ kp: WritableKeyPath<DayEntry, Double?>, placeholder: String = "") -> some View {
         NumberCell(id: CellID(item: item.id, col: col), order: order,
                    value: store.entryBinding(item: item.id, date: date, kp),
-                   placeholder: placeholder, maxFraction: item.maxFraction, focus: $focus)
+                   placeholder: placeholder, maxFraction: item.maxFraction,
+                   label: "\(item.name) \(Self.columnNames[min(col, Self.columnNames.count - 1)])", focus: $focus)
             .frame(width: W.input + 8)
     }
+
+    /// Giriş sütunlarının ekran okuyucudaki adları (sütun sırasıyla)
+    private static let columnNames = ["açılış", "gelen", "gelen transfer", "giden transfer", "kapanış"]
 
     private func calcText(_ v: Double, bold: Bool = false) -> some View {
         Text(v == 0 ? "0" : Fmt.number(v, maxFraction: item.maxFraction))
@@ -441,6 +457,8 @@ private struct SalesStatusBar: View {
             } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
                 .disabled(store.isLocked(date))
+                .help("Başka rapor aktar, panodan yapıştır ya da bu günün satışlarını sil")
+                .accessibilityLabel("Satış raporu işlemleri")
         }
     }
 

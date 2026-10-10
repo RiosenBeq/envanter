@@ -332,3 +332,109 @@ extension Engine {
         return (Self.clean(value), costed, counted)
     }
 }
+
+// MARK: - Dönem karşılaştırması
+
+/// İstatistikler'deki değişim rozetleri: seçili dönem, hemen önceki eşit uzunluktaki dönemle karşılaştırılır
+/// (web: reports/logic.ts `comparable`, shared/range.ts `previousPeriod`).
+public enum PeriodComparison {
+    /// `from`–`to` aralığından hemen önceki, aynı uzunluktaki aralık
+    public static func previousRange(from: String, to: String) -> (from: String, to: String) {
+        let span = max(DateKey.distance(from: from, to: to) ?? 0, 0)
+        let prevTo = DateKey.addDays(-1, to: from)
+        return (DateKey.addDays(-span, to: prevTo), prevTo)
+    }
+
+    /// İki dönemin kayıtlı gün sayısı birbirinin en az yarısı değilse değişim oranı yanıltır: verinin ilk ayında 30 günü
+    /// 5 günle karşılaştırmak "+%556", ayın 10'unda "Bu ay"ı (10 gün) önceki 31 günle karşılaştırmak "-%66" gibi anlamsız
+    /// değişimler gösterir. Bu durumda rozet gösterilmez (web: reports/logic.ts `comparable`).
+    public static func isComparable(previousDays: Int, days: Int) -> Bool {
+        previousDays > 0 && days > 0 && min(previousDays, days) * 2 >= max(previousDays, days)
+    }
+
+    /// Değişim rozetlerinin altındaki açıklama (web: reports/logic.ts `comparisonNote`)
+    public static func note(previousFrom: String, previousTo: String, previousDays: Int, days: Int) -> String {
+        let range = "\(DateKey.short(previousFrom)) – \(DateKey.short(previousTo))"
+        if isComparable(previousDays: previousDays, days: days) {
+            return "Değişim rozetleri önceki eşit uzunluktaki dönemle (\(range)) karşılaştırır."
+        }
+        if days > 0 && days < previousDays {
+            return "Bu dönemde henüz \(days) kayıtlı gün var, önceki eşit dönemde (\(range)) \(previousDays) gün; "
+                + "dönemler karşılaştırılabilir olunca değişim gösterilir."
+        }
+        return "Önceki eşit dönemde (\(range)) yeterli kayıt olmadığı için değişim gösterilmiyor."
+    }
+
+    /// Değişim oranı (önceki değer 0 ya da negatifse nil)
+    public static func change(_ now: Double, _ before: Double) -> Double? {
+        guard before > 0 else { return nil }
+        return (now - before) / before
+    }
+}
+
+// MARK: - Grafik etiketleri
+
+/// Grafikteki nokta etiketlerinin üst üste binmesini önler (menü mühendisliği matrisi). Etiketler öncelik sırasıyla
+/// yerleştirilir; daha önce yerleşmiş bir etiketle çakışan etiket çizilmez (web: MenuTab `renderMatrixLabel`).
+public enum ChartLabelLayout {
+    public struct Candidate: Equatable, Sendable {
+        public var id: String
+        public var text: String
+        /// Noktanın veri değeri (yatay / dikey eksen)
+        public var x: Double
+        public var y: Double
+
+        public init(id: String, text: String, x: Double, y: Double) {
+            self.id = id; self.text = text; self.x = x; self.y = y
+        }
+    }
+
+    /// Etikette gösterilecek metin: uzun adlar kısaltılır ("AVANTAJLI DOYURAN K…")
+    public static func shortText(_ text: String, maxChars: Int = 18) -> String {
+        guard text.count > maxChars, maxChars > 1 else { return text }
+        return String(text.prefix(maxChars - 1)) + "…"
+    }
+
+    /// Çizilecek etiketlerin kimlikleri.
+    /// - Parameters:
+    ///   - candidates: öncelik sırasıyla (önce gelen önce yerleşir)
+    ///   - xDomain, yDomain: eksenlerin veri aralığı
+    ///   - width, height: çizim alanının yaklaşık boyutu (nokta)
+    ///   - charWidth: bir karakterin yaklaşık genişliği; lineHeight: etiket yüksekliği (nokta)
+    /// Etiket noktanın üstüne, yatayda ortalanarak yazılır (Swift Charts `annotation(position: .top)`).
+    public static func visible(_ candidates: [Candidate], xDomain: ClosedRange<Double>, yDomain: ClosedRange<Double>,
+                               width: Double, height: Double, charWidth: Double = 6, lineHeight: Double = 12,
+                               maxChars: Int = 18) -> Set<String> {
+        let xSpan = max(xDomain.upperBound - xDomain.lowerBound, .leastNonzeroMagnitude)
+        let ySpan = max(yDomain.upperBound - yDomain.lowerBound, .leastNonzeroMagnitude)
+        var placed: [(cx: Double, cy: Double, w: Double)] = []
+        var out = Set<String>()
+        for c in candidates where !out.contains(c.id) {
+            guard c.x.isFinite, c.y.isFinite else { continue }
+            let px = (c.x - xDomain.lowerBound) / xSpan * width
+            let py = (1 - (c.y - yDomain.lowerBound) / ySpan) * height
+            let w = Double(shortText(c.text, maxChars: maxChars).count) * charWidth + 6
+            let cy = py - 4 - lineHeight / 2
+            let collides = placed.contains { abs($0.cx - px) < ($0.w + w) / 2 && abs($0.cy - cy) < lineHeight + 1 }
+            if collides { continue }
+            placed.append((px, cy, w))
+            out.insert(c.id)
+        }
+        return out
+    }
+
+    /// Eksen için yuvarlak aralık: alt sınır 0 (ya da en küçük değerin altındaki yuvarlak sayı), üst sınır en büyük
+    /// değerin üstündeki yuvarlak sayı (adım 1 / 2 / 2,5 / 5 × 10ⁿ). Etiket yerleşimi grafiğin çizdiği aralıkla aynı
+    /// ölçeği kullansın diye grafiğe de verilir.
+    public static func niceDomain(min lo: Double, max hi: Double, ticks: Int = 4) -> ClosedRange<Double> {
+        let a = Swift.min(lo.isFinite ? lo : 0, 0)
+        var b = hi.isFinite ? hi : 1
+        if b <= a { b = a + 1 }
+        let raw = (b - a) / Double(Swift.max(ticks, 1))
+        let magnitude = pow(10, (log10(raw)).rounded(.down))
+        let step = [1.0, 2, 2.5, 5, 10].map { $0 * magnitude }.first { $0 >= raw - 1e-12 } ?? 10 * magnitude
+        let lower = (a / step).rounded(.down) * step
+        let upper = (b / step - 1e-9).rounded(.up) * step
+        return lower...Swift.max(upper, lower + step)
+    }
+}

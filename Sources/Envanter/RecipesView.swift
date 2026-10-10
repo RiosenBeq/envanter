@@ -207,11 +207,19 @@ private struct RecipeEditor: View {
                          detail: price.map { "\(DateKey.short($0.date)) satış raporundan" } ?? "Raporda tutar sütunu yok",
                          icon: "tag", color: Brand.positive)
                 let pct: Double? = (rc.isComplete && (price?.price ?? 0) > 0) ? rc.cost / price!.price : nil
-                StatCard(title: "Oran", value: pct.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—",
-                         detail: pct.map { $0 > limit ? "Hedefin (%\(Fmt.number(limit * 100, maxFraction: 1))) üzerinde: fiyatı veya porsiyonu gözden geçirin" : "Kâr payı: \(Fmt.money(price!.price - rc.cost, fraction: 2))" } ?? "Maliyet ve fiyat gerekli",
-                         icon: "percent", color: (pct ?? 0) > limit ? Brand.negative : Brand.ok)
+                StatCard(title: "Maliyet oranı", value: pct.map { Fmt.percent($0) } ?? "—",
+                         detail: ratioDetail(pct, price: price?.price, cost: rc.cost, limit: limit),
+                         icon: "percent", color: (pct ?? 0) > limit ? Brand.negative : Brand.ok, info: .foodCostPct)
             }
         }
+    }
+
+    /// Maliyet oranı kartının açıklaması. Ayarlar'da hedef yoksa %35 sınırı kullanılır; "hedef" denmez.
+    private func ratioDetail(_ pct: Double?, price: Double?, cost: Double, limit: Double) -> String {
+        guard let pct, let price else { return "Maliyet ve fiyat gerekli" }
+        guard pct > limit else { return "Kâr payı: \(Fmt.money(price - cost, fraction: 2))" }
+        let bound = store.settings.targetFoodCostPct == nil ? "\(Fmt.percent(limit)) sınırının" : "Hedefin (\(Fmt.percent(limit)))"
+        return "\(bound) üzerinde: fiyatı veya porsiyonu gözden geçirin"
     }
 
     private func categories(including current: String) -> [String] {

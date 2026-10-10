@@ -35,6 +35,26 @@ public enum Fmt {
         return (negative ? "-" : "") + grouped + frac + " ₺"
     }
 
+    /// Türkçe büyük harf: "Diğer" → "DİĞER", "ipuçları" → "İPUÇLARI" (`uppercased()` "DIĞER" yazar)
+    public static func upper(_ text: String) -> String {
+        text.uppercased(with: Locale(identifier: "tr_TR"))
+    }
+
+    /// Oran → Türkçe yüzde (yüzde işareti başta): 0,133 → "%13,3" (web: format.ts `percent`)
+    public static func percent(_ ratio: Double, maxFraction: Int = 1) -> String {
+        guard ratio.isFinite else { return "—" }
+        return "%" + number(ratio * 100, maxFraction: maxFraction)
+    }
+
+    /// İşaretli yüzde değişim: 0,133 → "+%13,3", −0,05 → "-%5"; gösterim basamağında sıfırsa "%0"
+    /// (web: İstatistikler > Kalem Analizi "Son değişim" ile aynı biçim)
+    public static func signedPercent(_ ratio: Double, maxFraction: Int = 1) -> String {
+        guard ratio.isFinite else { return "—" }
+        let body = number(abs(ratio) * 100, maxFraction: maxFraction)
+        if body == "0" { return "%0" }
+        return (ratio > 0 ? "+%" : "-%") + body
+    }
+
     /// Elle girilen sayı: hem "7,5" hem "7.5" kabul eder. Boş / geçersiz ise nil.
     /// Yalnızca rakam, ayırıcı ve işaret kabul edilir ("1e300", "inf", "0x10" gibi girişler reddedilir).
     public static func parse(_ raw: String) -> Double? {
@@ -216,6 +236,12 @@ public enum DateKey {
     public static func short(_ key: String) -> String {
         guard let v = ymd(key) else { return key }
         return String(format: "%02ld.%02ld.%04ld", v.d, v.m, v.y)
+    }
+
+    /// 01.08 (yılsız; dar tablo sütunları için)
+    public static func dayMonth(_ key: String) -> String {
+        guard let v = ymd(key) else { return key }
+        return String(format: "%02ld.%02ld", v.d, v.m)
     }
 
     private static let excelEpoch = days(YMD(y: 1899, m: 12, d: 30))

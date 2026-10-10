@@ -5,7 +5,8 @@ import EnvanterCore
 /// Geliştirme aracı: ENVANTER_SNAPSHOT_DIR tanımlıysa pencere içeriğini PNG olarak kaydeder (CI'da ekran görüntüleri için).
 ///   ENVANTER_SECTIONS="overview,daily,analytics:abc,recipes:11101"  ekranlar sırayla gezilir
 ///     (iki noktadan sonrası: İstatistikler sekmesi — general/item/abc/menu, "item:patates" ile kalem seçimi —
-///      ya da Reçeteler'de seçilecek ürün kodu)
+///      ya da Reçeteler'de seçilecek ürün kodu; "welcome": Genel Bakış, boş veri klasörüyle ilk kullanım kartı için)
+///   ENVANTER_SNAPSHOT_START=15                                        ilk dosyanın sıra numarası (varsayılan 1)
 ///   ENVANTER_DATE=2026-08-15                                          seçili gün
 ///   ENVANTER_SNAPSHOT_SIZE=1440x1000                                  pencere boyutu (ekrandan büyük olabilir)
 ///   ENVANTER_QUIT_AFTER_SNAPSHOT=1                                    bitince çık
@@ -21,6 +22,8 @@ enum DebugSnapshot {
         guard let dir = env["ENVANTER_SNAPSHOT_DIR"], !dir.isEmpty, !started else { return }
         started = true
         let sections = (env["ENVANTER_SECTIONS"] ?? "daily").split(separator: ",").map(String.init)
+        // İkinci bir çalıştırmanın görüntüleri (ör. boş veriyle ilk kullanım) öncekilerin üzerine yazılmasın
+        let firstIndex = Int(env["ENVANTER_SNAPSHOT_START"] ?? "") ?? 1
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         if let d = env["ENVANTER_DATE"], DateKey.isValid(d) { store.selectedDate = d }
         Task { @MainActor in
@@ -43,9 +46,10 @@ enum DebugSnapshot {
                     if sub.count > 1 { store.analyticsItem = sub[1] }
                 }
                 if name == "recipes", let arg { store.recipeSelection = arg }
+                if name == "welcome" { store.section = .overview }
                 if let s = AppSection(rawValue: name) { store.section = s }
                 try? await Task.sleep(nanoseconds: 1_800_000_000)
-                let file = "\(dir)/\(String(format: "%02ld", i + 1))-\(spec.replacingOccurrences(of: ":", with: "-")).png"
+                let file = "\(dir)/\(String(format: "%02ld", i + firstIndex))-\(spec.replacingOccurrences(of: ":", with: "-")).png"
                 snapshot(to: file)
                 if env["ENVANTER_DUMP"] == "1" { print("=== \(spec)"); dump() }
             }

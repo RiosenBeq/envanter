@@ -66,6 +66,8 @@ enum SelfTest {
         check(store.data.items.count >= 20, "varsayılan stok kalemleri yüklendi")
         check(store.data.products.count >= 300, "varsayılan reçeteler yüklendi")
         check(store.section == .overview, "uygulama Genel Bakış ile açılıyor")
+        check(store.isFirstRun, "ilk açılışta Genel Bakış başlangıç seçeneklerini gösteriyor (henüz günlük kayıt yok)")
+        check(AppSection.daily.title == "Günlük Sayım", "günlük ekranın adı web paneliyle aynı (Günlük Sayım)")
 
         let d1 = "2026-08-01", d2 = "2026-08-02"
         store.selectedDate = d1
@@ -78,6 +80,7 @@ enum SelfTest {
         }
         var calc = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
         check(near(calc?.actual, 30), "fiili tüketim = 100 + 50 − 120 = 30")
+        check(!store.isFirstRun, "ilk sayım girilince başlangıç kartı kayboluyor")
         check(near(calc?.diff, -30), "satış yokken fark −30")
 
         print("3) Satış raporu aktarımı (metin + tutar)")
@@ -241,6 +244,9 @@ enum SelfTest {
         check(store.lockMenuTitle(d2) == "Günü Kapat…", "Gün menüsünde \"Günü Kapat…\"")
         store.requestLockToggle(d2)
         check(store.pendingDayClose == d2 && !store.isLocked(d2), "onay verilmeden gün kapatılmadı")
+        let confirmText = store.dayCloseConfirmMessage(d2)
+        check(confirmText.contains("kalem sayıldı") && confirmText.hasSuffix(DayLockAction.confirmMessage),
+              "onay penceresi günün sayım durumunu ve kuralı gösteriyor")
         store.pendingDayClose = nil                                            // Vazgeç
         check(!store.isLocked(d2), "vazgeçince gün açık kaldı")
         store.requestLockToggle(d2)

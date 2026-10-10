@@ -28,7 +28,7 @@ struct ItemsView: View {
                     Spacer()
                     Pill(text: "\(costed) / \(activeCount) kalemde maliyet var", color: costed == activeCount ? Brand.ok : Brand.warn)
                 }
-                Text("Günlük Envanter ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Maliyet farkların ₺ karşılığını, kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
+                Text("Günlük Sayım ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Maliyet farkların ₺ karşılığını, kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !store.canEditCatalog { ReadOnlyNote() }
             }
@@ -124,24 +124,27 @@ private struct ItemRow: View {
                 .help("Bu kadarlık fark normal sayılır (± \(item.unit.lowercased()))")
             Button(action: onDelete) { Image(systemName: "trash") }
                 .buttonStyle(.plain).foregroundStyle(Brand.negative.opacity(0.85)).frame(width: IW.delete)
+                .help("Stok kalemini sil")
+                .accessibilityLabel("\(item.name) kalemini sil")
         }
         .padding(.vertical, 3)
         .opacity(item.active ? 1 : 0.55)
     }
 
-    /// Son fiyat değişimi (▲ %13 gibi); ipucunda fiyat geçmişi
+    /// Son fiyat değişimi (▲%13 gibi; Türkçe yüzde biçimi); ipucunda değişim tarihi ve fiyat geçmişi
     @ViewBuilder private var priceBadge: some View {
         if let c = item.lastPriceChange, abs(c.ratio) >= 0.001 {
             let history = (item.costHistory ?? []).suffix(6).map { p in
                 (p.date.map { DateKey.short($0) } ?? "önceki") + ": " + Fmt.money(p.cost, fraction: 2)
             }.joined(separator: "\n")
-            Text((c.ratio > 0 ? "▲" : "▼") + Fmt.number(abs(c.ratio) * 100, maxFraction: 0) + "%")
+            let when = c.date.map { " (\(DateKey.short($0)))" } ?? ""
+            Text((c.ratio > 0 ? "▲" : "▼") + Fmt.percent(abs(c.ratio), maxFraction: 0))
                 .font(.system(size: 9, weight: .bold)).monospacedDigit()
                 .padding(.horizontal, 4).padding(.vertical, 1)
                 .foregroundStyle(.white)
                 .background(Capsule().fill(c.ratio > 0 ? Brand.negative : Brand.ok))
                 .offset(x: 2, y: -7)
-                .help("Fiyat geçmişi:\n" + history)
+                .help("Son değişim\(when): \(Fmt.signedPercent(c.ratio))\nFiyat geçmişi:\n" + history)
         }
     }
 }

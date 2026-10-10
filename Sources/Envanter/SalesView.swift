@@ -48,6 +48,12 @@ struct SalesView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
                 }
                 .padding(.horizontal, 20).padding(.bottom, 8)
+                if !store.canEditCatalog && !analysis.unknownLines.isEmpty {
+                    // Personel: "Reçete tanımla" kapalı; nedeni ve kimin yapacağı burada görünsün
+                    ReadOnlyNote(text: CloudPermission.recipeStaffNote)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20).padding(.bottom, 8)
+                }
 
                 Table(lines) {
                     TableColumn("Kod") { l in Text(l.code).monospacedDigit().foregroundStyle(.secondary) }.width(70)

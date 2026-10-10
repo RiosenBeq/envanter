@@ -112,7 +112,12 @@ private struct ShiftTable: View {
                     Text("Günün vardiyası").font(.headline)
                     InfoTip(term: .payType)
                     Spacer()
-                    if locked { Label("Gün kapatıldı", systemImage: "lock.fill").font(.callout).foregroundStyle(Brand.warn) }
+                    if locked {
+                        // Vardiya da kilitli: kimin, nereden açacağı yazılır
+                        Label(store.canChangeLockedDays ? "Gün kapatıldı · kilidi Günlük Sayım'dan açılır" : CloudPermission.lockedDayStaffNote,
+                              systemImage: "lock.fill")
+                            .font(.callout).foregroundStyle(Brand.warn)
+                    }
                 }
                 .padding(14)
                 Divider()
@@ -375,6 +380,8 @@ private struct EmployeeRow: View {
                 .help("Kapalıysa günlük vardiya listesinde görünmez (maliyet için giriş/çıkış tarihleri esas alınır)")
             Button(action: onDelete) { Image(systemName: "trash") }
                 .buttonStyle(.plain).foregroundStyle(Brand.negative.opacity(0.85)).frame(width: 28)
+                .help("Personeli sil ya da ayrıldı olarak işaretle")
+                .accessibilityLabel("\(e.name) kaydını sil")
         }
         .padding(.horizontal, 14).padding(.vertical, 6)
         .opacity(e.active ? 1 : 0.6)

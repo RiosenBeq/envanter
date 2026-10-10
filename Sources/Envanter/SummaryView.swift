@@ -65,7 +65,7 @@ struct SummaryView: View {
             Divider()
             if all.allSatisfy({ $0.daysCounted == 0 }) {
                 EmptyStateView(icon: "chart.bar.xaxis", title: "Bu dönemde sayılmış gün yok",
-                               message: "Özet, kapanış sayımı girilmiş günlerden hesaplanır. Günlük Envanter ekranında sayımları girin ya da tarih aralığını değiştirin.")
+                               message: "Özet, kapanış sayımı girilmiş günlerden hesaplanır. Günlük Sayım ekranında sayımları girin ya da tarih aralığını değiştirin.")
             } else {
                 kpis(all)
                 header

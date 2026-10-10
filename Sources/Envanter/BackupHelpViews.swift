@@ -187,7 +187,7 @@ struct HelpView: View {
                 }
 
                 section("Günlük akış")
-                step(1, "Sayımı girin", "Günlük Sayım ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Genel Bakış'tan sayım formu alabilirsiniz.")
+                step(1, "Sayımı girin", "Günlük Sayım ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Genel Bakış'taki hızlı işlemlerden ya da menü çubuğundaki \"Sayım Formu (Excel)…\" komutuyla sayım formu alabilirsiniz.")
                 step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) uygulama penceresine sürükleyip bırakın (hangi ekranda olursanız olun) ya da \"Dosyadan Aktar\"a (⌘O) tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa maliyet oranları ve menü analizi hesaplanır.")
                 step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
                 step(4, "Vardiyaları girin", "Personel ekranında saatlik çalışanların saatini, yevmiyelilerin \"çalıştı\" işaretini (saat girilirse de çalıştı sayılır), varsa fazla mesai/prim tutarını girin. \"Vardiyaları Doldur\" boş vardiyalara varsayılanları yazar. Aylık maaşlar ayrıca girilmeden günlere dağıtılır. Zam yapınca ücrete tıklayıp \"bir tarihten itibaren\" seçin: önceki günler eski ücretle kalır.")
@@ -266,7 +266,7 @@ struct HelpView: View {
         ("shippingbox",
          "Tanımları hazırlayın: hazır reçeteler ve stok kalemleri uygulamayla gelir. Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı girin; Reçeteler'de ürünlerin hammadde miktarlarını kontrol edin."),
         ("doc.badge.plus",
-         "İlk günü girin: ModPos satış raporunu aktarın, Günlük Sayım'da kapanış sayımını yazın. Genel Bakış'taki başlangıç kartı ilk günlük kayıt girilince kendiliğinden kaybolur."),
+         "İlk günü girin: ModPos satış raporunu aktarın, Günlük Sayım'da kapanış sayımını yazın. Genel Bakış'taki başlangıç kartı ilk kayıt (sayım, satış, vardiya, personel ya da sipariş) girilince kendiliğinden kaybolur."),
     ]
 
     /// Web paneli ipucu (hesap ve şifre yolları web panelindeki adlarla aynı)

@@ -345,10 +345,24 @@ public enum PeriodComparison {
         return (DateKey.addDays(-span, to: prevTo), prevTo)
     }
 
-    /// Önceki dönemde en az bu dönemin yarısı kadar kayıtlı gün yoksa (ör. verinin ilk ayı) değişim oranı yanıltır:
-    /// 30 günü 5 günle karşılaştırmak "+%556" gibi anlamsız artışlar gösterir. Bu durumda rozet gösterilmez.
+    /// İki dönemin kayıtlı gün sayısı birbirinin en az yarısı değilse değişim oranı yanıltır: verinin ilk ayında 30 günü
+    /// 5 günle karşılaştırmak "+%556", ayın 10'unda "Bu ay"ı (10 gün) önceki 31 günle karşılaştırmak "-%66" gibi anlamsız
+    /// değişimler gösterir. Bu durumda rozet gösterilmez (web: reports/logic.ts `comparable`).
     public static func isComparable(previousDays: Int, days: Int) -> Bool {
-        previousDays > 0 && days > 0 && previousDays * 2 >= days
+        previousDays > 0 && days > 0 && min(previousDays, days) * 2 >= max(previousDays, days)
+    }
+
+    /// Değişim rozetlerinin altındaki açıklama (web: reports/logic.ts `comparisonNote`)
+    public static func note(previousFrom: String, previousTo: String, previousDays: Int, days: Int) -> String {
+        let range = "\(DateKey.short(previousFrom)) – \(DateKey.short(previousTo))"
+        if isComparable(previousDays: previousDays, days: days) {
+            return "Değişim rozetleri önceki eşit uzunluktaki dönemle (\(range)) karşılaştırır."
+        }
+        if days > 0 && days < previousDays {
+            return "Bu dönemde henüz \(days) kayıtlı gün var, önceki eşit dönemde (\(range)) \(previousDays) gün; "
+                + "dönemler karşılaştırılabilir olunca değişim gösterilir."
+        }
+        return "Önceki eşit dönemde (\(range)) yeterli kayıt olmadığı için değişim gösterilmiyor."
     }
 
     /// Değişim oranı (önceki değer 0 ya da negatifse nil)

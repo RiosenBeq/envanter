@@ -48,8 +48,37 @@ final class UXGuidanceTests: XCTestCase {
         XCTAssertTrue(PeriodComparison.isComparable(previousDays: 30, days: 30))
         XCTAssertFalse(PeriodComparison.isComparable(previousDays: 0, days: 10))
         XCTAssertFalse(PeriodComparison.isComparable(previousDays: 3, days: 0))
+        // Kural iki yönlüdür: ayın 10'unda "Bu ay" (10 kayıtlı gün) önceki 31 günle karşılaştırılmaz ("-%66" gibi)
+        XCTAssertFalse(PeriodComparison.isComparable(previousDays: 31, days: 10))
+        XCTAssertFalse(PeriodComparison.isComparable(previousDays: 31, days: 15))
+        XCTAssertTrue(PeriodComparison.isComparable(previousDays: 31, days: 16))
         XCTAssertEqual(PeriodComparison.change(110, 100) ?? .nan, 0.1, accuracy: 1e-12)
         XCTAssertNil(PeriodComparison.change(10, 0))
+    }
+
+    func testComparisonNoteExplainsWhichSideIsShort() {
+        XCTAssertEqual(PeriodComparison.note(previousFrom: "2026-09-01", previousTo: "2026-09-30", previousDays: 30, days: 28),
+                       "Değişim rozetleri önceki eşit uzunluktaki dönemle (01.09.2026 – 30.09.2026) karşılaştırır.")
+        XCTAssertEqual(PeriodComparison.note(previousFrom: "2026-08-12", previousTo: "2026-09-10", previousDays: 5, days: 30),
+                       "Önceki eşit dönemde (12.08.2026 – 10.09.2026) yeterli kayıt olmadığı için değişim gösterilmiyor.")
+        XCTAssertEqual(PeriodComparison.note(previousFrom: "2026-08-31", previousTo: "2026-09-30", previousDays: 31, days: 10),
+                       "Bu dönemde henüz 10 kayıtlı gün var, önceki eşit dönemde (31.08.2026 – 30.09.2026) 31 gün; dönemler karşılaştırılabilir olunca değişim gösterilir.")
+        XCTAssertEqual(PeriodComparison.note(previousFrom: "2026-08-31", previousTo: "2026-09-30", previousDays: 0, days: 10),
+                       "Önceki eşit dönemde (31.08.2026 – 30.09.2026) yeterli kayıt olmadığı için değişim gösterilmiyor.")
+    }
+
+    /// "Bu ay" ayın 10'unda: dönem ayın sonuna kadar uzanır ama yalnızca 10 kayıtlı gün vardır; önceki eşit dönem dolu
+    /// olduğu için eski tek yönlü kural "-%66" gibi rozetler gösteriyordu
+    func testThisMonthOnTheTenthIsNotComparable() {
+        let today = "2026-10-10"
+        let engine = Engine(data: DemoData.make(endingAt: today, days: 90))
+        let from = "2026-10-01", to = "2026-10-31"
+        let now = engine.periodStats(from: from, to: to)
+        let prevRange = PeriodComparison.previousRange(from: from, to: to)
+        let prev = engine.periodStats(from: prevRange.from, to: prevRange.to)
+        XCTAssertEqual(now.days.count, 10)
+        XCTAssertGreaterThanOrEqual(prev.days.count, 30)
+        XCTAssertFalse(PeriodComparison.isComparable(previousDays: prev.days.count, days: now.days.count))
     }
 
     /// Demo verisi (35 gün): son 30 günün önceki dönemi yalnızca 5 gün içerir, değişim gösterilmemeli
@@ -185,9 +214,15 @@ final class UXGuidanceTests: XCTestCase {
     }
 
     func testPendingAndLastSyncTexts() throws {
-        XCTAssertEqual(CloudSyncGuide.pendingText(0, failing: false), "Yok, tüm değişiklikler gönderildi")
-        XCTAssertEqual(CloudSyncGuide.pendingText(3, failing: false), "3 değişiklik gönderilmeyi bekliyor")
-        XCTAssertEqual(CloudSyncGuide.pendingText(2, failing: true), "2 değişiklik bu Mac'te saklanıyor; bağlantı gelince gönderilir")
+        XCTAssertEqual(CloudSyncGuide.pendingText(0, issue: nil), "Yok, tüm değişiklikler gönderildi")
+        XCTAssertEqual(CloudSyncGuide.pendingText(3, issue: nil), "3 değişiklik gönderilmeyi bekliyor")
+        // Bağlantı sorunu geçicidir; giriş / kurulum / yetki sorunu biri bir şey yapınca çözülür
+        XCTAssertEqual(CloudSyncGuide.pendingText(2, issue: CloudSyncError.network("").issue(connected: true)),
+                       "2 değişiklik bu Mac'te saklanıyor; bağlantı gelince gönderilir")
+        XCTAssertEqual(CloudSyncGuide.pendingText(2, issue: CloudSyncError.sessionExpired.issue(connected: true)),
+                       "2 değişiklik bu Mac'te saklanıyor; sorun giderilince gönderilir")
+        XCTAssertEqual(CloudSyncGuide.pendingText(2, issue: CloudSyncError.notProvisioned.issue(connected: true)),
+                       "2 değişiklik bu Mac'te saklanıyor; sorun giderilince gönderilir")
 
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Istanbul"))

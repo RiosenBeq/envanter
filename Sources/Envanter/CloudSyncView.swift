@@ -229,7 +229,7 @@ struct CloudSyncCard: View {
                 }
                 GridRow {
                     Text("Bekleyen").foregroundStyle(.secondary)
-                    Text(CloudSyncGuide.pendingText(cloud.pendingChanges, failing: cloud.issue != nil))
+                    Text(CloudSyncGuide.pendingText(cloud.pendingChanges, issue: cloud.issue))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -431,7 +431,7 @@ struct CloudStatusLine: View {
         if case .error = cloud.status { lines.append(cloud.issue?.text ?? "Eşitleme hatası") }
         if let branch = cloud.state.config?.workspaceName { lines.append("Şube: \(branch)") }
         if cloud.pendingChanges > 0 {
-            lines.append(CloudSyncGuide.pendingText(cloud.pendingChanges, failing: cloud.issue != nil))
+            lines.append(CloudSyncGuide.pendingText(cloud.pendingChanges, issue: cloud.issue))
         }
         lines.append("Ayrıntı: Ayarlar ve Veri → Web paneli ile eşitleme")
         return lines.joined(separator: "\n")

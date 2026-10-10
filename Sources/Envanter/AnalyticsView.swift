@@ -183,7 +183,8 @@ private struct GeneralStatsView: View {
                          color: Brand.accent, info: .stockValue)
             }
             if !stats.days.isEmpty {
-                Text(comparisonNote(hasPrev, from: prevRange.from, to: prevRange.to))
+                Text(PeriodComparison.note(previousFrom: prevRange.from, previousTo: prevRange.to,
+                                           previousDays: prev.days.count, days: stats.days.count))
                     .font(.caption).foregroundStyle(.secondary)
             }
             if stats.days.isEmpty {
@@ -202,13 +203,6 @@ private struct GeneralStatsView: View {
     }
 
     /// Değişim rozetlerinin neyle karşılaştırdığı (ya da neden gösterilmediği)
-    private func comparisonNote(_ hasPrev: Bool, from: String, to: String) -> String {
-        let range = "\(DateKey.short(from)) – \(DateKey.short(to))"
-        return hasPrev
-            ? "Değişim rozetleri önceki eşit uzunluktaki dönemle (\(range)) karşılaştırır."
-            : "Önceki eşit dönemde (\(range)) yeterli kayıt olmadığı için değişim gösterilmiyor."
-    }
-
     private func notice(_ title: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle.fill").foregroundStyle(Brand.positive)

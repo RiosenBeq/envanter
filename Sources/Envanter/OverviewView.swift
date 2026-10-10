@@ -343,7 +343,8 @@ private struct MonthCards: View {
 
 /// Bu Mac'te henüz günlük kayıt yokken Genel Bakış'ın başındaki başlangıç kartı (web panelindeki "Bu şubede henüz veri
 /// yok" kartının karşılığı): verisi başka yerde olan için web paneline bağlanma ve yedekten geri yükleme, sıfırdan
-/// başlayan için tanımlar ve ilk satış / sayım. İlk günlük kayıt girilince kendiliğinden kaybolur (`Onboarding.isEmpty`).
+/// başlayan için tanımlar ve ilk satış / sayım. İlk kayıt (günlük kayıt, personel ya da sipariş) girilince kendiliğinden
+/// kaybolur (`Onboarding.isEmpty`).
 private struct WelcomeCard: View {
     @EnvironmentObject var store: AppStore
     @ObservedObject var cloud: CloudSyncController
@@ -367,7 +368,7 @@ private struct WelcomeCard: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
-                    Text("Bu kart ilk günlük kayıt girilince kendiliğinden kaybolur.")
+                    Text("Bu kart ilk kayıt (sayım, satış, vardiya, personel ya da sipariş) girilince kendiliğinden kaybolur.")
                     Button("Adım adım anlatım: Nasıl Kullanılır?") { store.section = .help }
                         .buttonStyle(.link)
                 }

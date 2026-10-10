@@ -37,7 +37,7 @@ public enum CloudSyncGuide {
     public static let accountHelp = "Hesabınızı patron web panelinde Yönetim → Kullanıcılar ekranında \"Hesap oluştur\" ile açar ve giriş e-postanızı ve geçici şifrenizi size (WhatsApp/SMS ile) iletir; e-posta gelmesini beklemeyin."
 
     /// Şifre unutulunca / değiştirilirken (web paneli: "Şifre belirle", Ayarlar → Hesap → "Şifremi değiştir")
-    public static let forgotPassword = "Şifrenizi unuttuysanız patronunuz web panelinde Yönetim → Kullanıcılar ekranında \"Şifre belirle\" ile yeni bir geçici şifre verir. Kendi şifrenizi web panelinde Ayarlar → Hesap → \"Şifremi değiştir\" bölümünden değiştirirsiniz."
+    public static let forgotPassword = "Şifrenizi unuttuysanız patronunuz web panelinde Yönetim → Kullanıcılar ekranında \"Şifre belirle\" ile yeni bir geçici şifre verir. Patron hesaplarında (ve başka bir patronun şubesinde de çalışanlarda) bu yol kapalıdır: web panelinin giriş ekranındaki \"Şifremi unuttum\" bağlantısını kullanın. Kendi şifrenizi web panelinde Ayarlar → Hesap → \"Şifremi değiştir\" bölümünden değiştirirsiniz."
 
     /// İlk kurulum: web panelinde hiç şube yoksa
     public static let firstBranchNote = "İlk kurulum: web panelinde hiç şube yoksa bu hesapla, işletme adıyla yeni bir şube açılır ve hesap patron olur."
@@ -53,12 +53,18 @@ public enum CloudSyncGuide {
                 : "Kurulum bitince yeniden \"Bağlan\"a basın; bu sırada uygulamayı kullanmaya devam edebilirsiniz, veriler bu Mac'e kaydedilir.")
     }
 
-    /// Bekleyen (henüz gönderilmemiş) değişiklikler. `failing`: eşitleme şu an hata veriyor
-    public static func pendingText(_ count: Int, failing: Bool) -> String {
+    /// Bekleyen (henüz gönderilmemiş) değişiklikler. `issue`: eşitlemedeki güncel sorun (yoksa nil). Geçici sorunda
+    /// (bağlantı) değişiklikler bağlantı gelince, birinin bir şey yapması gereken sorunda (giriş, kurulum, yetki)
+    /// sorun giderilince gönderilir.
+    public static func pendingText(_ count: Int, issue: CloudIssue?) -> String {
         guard count > 0 else { return "Yok, tüm değişiklikler gönderildi" }
-        return failing
-            ? "\(count) değişiklik bu Mac'te saklanıyor; bağlantı gelince gönderilir"
-            : "\(count) değişiklik gönderilmeyi bekliyor"
+        guard let issue else { return "\(count) değişiklik gönderilmeyi bekliyor" }
+        switch issue.severity {
+        case .temporary:
+            return "\(count) değişiklik bu Mac'te saklanıyor; bağlantı gelince gönderilir"
+        case .actionNeeded:
+            return "\(count) değişiklik bu Mac'te saklanıyor; sorun giderilince gönderilir"
+        }
     }
 
     /// Son başarılı eşitleme: "Bugün 14:05", "Dün 18:20", "9 Ekim 14:05"; hiç yoksa "Henüz yok"
@@ -84,11 +90,11 @@ extension CloudRole {
     public static func summary(_ role: String?) -> String {
         switch role {
         case owner:
-            return "Patron: tüm verileri değiştirebilirsiniz. Kullanıcı hesapları, yetkiler ve şube adı web panelinde Yönetim → Kullanıcılar ekranındadır."
+            return "Patron: tüm verileri değiştirebilirsiniz. Kullanıcı hesapları ve yetkiler web panelinde Yönetim → Kullanıcılar ekranında, şube adı Ayarlar → İşletme bölümündedir."
         case manager:
-            return "Müdür: tüm verileri (stok kalemleri, reçeteler, personel, siparişler, ayarlar, günlük kayıtlar) değiştirebilir, kapatılmış günün kilidini açabilirsiniz. Kullanıcı hesaplarını patron yönetir."
+            return "Müdür: tüm verileri (stok kalemleri, reçeteler, personel, siparişler, ayarlar, günlük kayıtlar) değiştirebilirsiniz ve kapatılmış günün kilidini açabilirsiniz. Kullanıcı hesaplarını patron yönetir."
         case staff:
-            return "Personel: sayım, satış, vardiya ve notları girebilir, günü kapatabilirsiniz. Stok kalemleri, reçeteler, personel, siparişler ve ayarlar bu Mac'te salt okunurdur; kapatılmış günün kilidini patron veya müdür açar."
+            return "Personel: sayım, satış, vardiya ve notları girebilirsiniz ve günü kapatabilirsiniz. Stok kalemleri, reçeteler, personel, siparişler ve ayarlar bu Mac'te salt okunurdur; kapatılmış günün kilidini patron veya müdür açar."
         default:
             return "Rol bilinmiyor; şube listesi bir sonraki eşitlemede yeniden okunur."
         }

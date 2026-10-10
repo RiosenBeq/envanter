@@ -32,8 +32,10 @@ struct BackupView: View {
                                     .frame(width: 320)
                             }
                         }
+                        .disabled(!store.canEditCatalog)
                         Text("Şube adı yan menüde, dışa aktarılan dosya adlarında ve sipariş listesinde görünür. Her şubede ayrı bir Mac kullanılıyorsa farklı ad verin.")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if !store.canEditCatalog { ReadOnlyNote() }
                     }
                 }
 
@@ -57,6 +59,7 @@ struct BackupView: View {
                                 }
                             }
                         }
+                        .disabled(!store.canEditCatalog)
                         Text("Hedefler Genel Bakış, Personel ve İstatistikler ekranlarında çubukla gösterilir; aşıldığında kırmızıya döner. Boş bırakılan hedef gösterilmez.")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -90,6 +93,9 @@ struct BackupView: View {
                                 .buttonStyle(PrimaryButtonStyle())
                             Button { store.restoreBackup() } label: { Label("Yedekten Geri Yükle…", systemImage: "arrow.counterclockwise") }
                                 .buttonStyle(SoftButtonStyle())
+                                // Personel hesabıyla tanımlar ve kapatılmış günler değiştirilemez
+                                .disabled(!store.canEditCatalog)
+                                .help(store.canEditCatalog ? "Bir yedek dosyasındaki veriyi geri yükler" : CloudPermission.catalogReadOnlyNote)
                         }
                         if let last = backups.first {
                             Text("Son otomatik yedek: \(last.lastPathComponent)").font(.caption).foregroundStyle(.secondary)
@@ -131,6 +137,7 @@ struct BackupView: View {
                                     : "\(r.products) ürün reçetesi ve \(r.items) stok kalemi geri eklendi."
                             } label: { Label("Eksik Varsayılanları Geri Ekle", systemImage: "arrow.uturn.backward.circle") }
                                 .buttonStyle(SoftButtonStyle())
+                                .disabled(!store.canEditCatalog)
                             if let m = restoreMessage { Text(m).foregroundStyle(.secondary) }
                         }
                     }
@@ -172,10 +179,10 @@ struct HelpView: View {
                 step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) uygulama penceresine sürükleyip bırakın (hangi ekranda olursanız olun) ya da \"Dosyadan Aktar\"a (⌘O) tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa maliyet oranları ve menü analizi hesaplanır.")
                 step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
                 step(4, "Vardiyaları girin", "Personel ekranında saatlik çalışanların saatini, yevmiyelilerin \"çalıştı\" işaretini (saat girilirse de çalıştı sayılır), varsa fazla mesai/prim tutarını girin. \"Vardiyaları Doldur\" boş vardiyalara varsayılanları yazar. Aylık maaşlar ayrıca girilmeden günlere dağıtılır. Zam yapınca ücrete tıklayıp \"bir tarihten itibaren\" seçin: önceki günler eski ücretle kalır.")
-                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin. Kilitli günün sayımı, satışı ve vardiyası değiştirilemez; gerekirse kilit açılır. Güne not ve sayımı yapan kişiyi ekleyebilirsiniz.")
+                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin. Kilitli günün sayımı, satışı ve vardiyası değiştirilemez; gerekirse kilit açılır. Web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açabilir (web paneli de kabul etmez). Güne not ve sayımı yapan kişiyi ekleyebilirsiniz.")
 
                 section("Haftalık / aylık")
-                step(6, "Sipariş verin ve teslim alın", "Sipariş Önerisi son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir; teslim alınmamış siparişlerdeki miktarlar öneriden düşülür (\"Siparişte\" sütunu), böylece aynı mal iki kez sipariş edilmez. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince, teslimatın geldiği güne geçip siparişte \"Teslim al\" deyin: gelen miktarlar o günün Gelen sütununa işlenir, fatura birim fiyatı (1 adet/kg fiyatı) girerseniz birim maliyet güncellenir.")
+                step(6, "Sipariş verin ve teslim alın", "Sipariş Önerisi son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir; teslim alınmamış siparişlerdeki miktarlar öneriden düşülür (\"Siparişte\" sütunu), böylece aynı mal iki kez sipariş edilmez. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince, teslimatın geldiği güne geçip siparişte \"Teslim al\" deyin: gelen miktarlar o günün Gelen sütununa işlenir, fatura birim fiyatı (1 adet/kg fiyatı) girerseniz birim maliyet güncellenir. Sipariş oluşturma ve teslim alma patron / müdür işidir: web paneline personel hesabıyla bağlı Mac'te bu düğmeler kapalıdır, teslimatı patron ya da müdür işler.")
                 step(7, "Raporları okuyun", "Genel Bakış ayın hammadde, personel ve prime cost oranlarını hedeflerle; Özet dönem toplamlarını; İstatistikler maliyet eğilimini, en çok kayıp veren kalemleri, zayi dağılımını, kalem grafiklerini, ABC analizini ve menü mühendisliğini gösterir. Her şey Excel'e aktarılabilir.")
                 step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Maliyet değişiklikleri tarihli olarak fiyat geçmişine yazılır: geçmiş günler o günkü fiyatla değerlenir, kapanmış ayların oranları sonradan değişmez. Artışlar Genel Bakış'ta uyarılır.")
 
@@ -192,7 +199,7 @@ struct HelpView: View {
                         tip("percent", "ModPos tutarları genelde KDV dahildir; sektördeki %25–35 hammadde hedefleri ise KDV hariç satışa göredir. Hedefinizi buna göre belirleyin.")
                         tip("target", "Hedefleri (hammadde %, personel %, prime cost %) Ayarlar'dan girin; kartlardaki çubukta dikey çizgi hedefi gösterir, aşılınca kırmızıya döner.")
                         tip("arrow.uturn.backward", "Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alın. Veriler otomatik kaydedilir, her gün yedek alınır (Ayarlar ve Veri).")
-                        tip("arrow.triangle.2.circlepath.icloud", "Web paneli: Ayarlar ve Veri > Web paneli ile eşitleme bölümünden web paneli hesabınızla bağlanın. Sayım, satış ve vardiyalar birkaç saniye içinde patron ve müdürlerin web paneline gider; web panelinde yapılan düzeltmeler (sayım, maliyet, sipariş, hedef) en geç bir dakika içinde buraya gelir. Aynı güne iki yerden farklı kalemler girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son kaydedilen geçerli olur. Personel hesabıyla yalnızca günlük kayıtlar değiştirilebilir.")
+                        tip("arrow.triangle.2.circlepath.icloud", "Web paneli: Ayarlar ve Veri > Web paneli ile eşitleme bölümünden web paneli hesabınızla bağlanın. Sayım, satış ve vardiyalar birkaç saniye içinde patron ve müdürlerin web paneline gider; web panelinde yapılan düzeltmeler (sayım, maliyet, sipariş, hedef) en geç bir dakika içinde buraya gelir. Aynı güne iki yerden farklı kalemler girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son kaydedilen geçerli olur. Personel hesabıyla yalnızca günlük kayıtlar değiştirilebilir: stok kalemleri, reçeteler, personel, siparişler ve ayarlar salt okunurdur, kapatılmış günün kilidini yalnızca patron veya müdür açar. Çıkış yapınca şube eşleşmesi korunur; yeniden giriş yaptığınızda kaldığınız yerden devam edilir. Boş bir şubeye geçerken bu şubenin günleri kendiliğinden yüklenmez, ne kopyalanacağı sorulur. Tutar alanlarında (birim maliyet, fatura fiyatı, ücret) \"35.000\" otuz beş bin okunur.")
                         tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Maliyet, Personel, Notlar.")
                     }
                 }

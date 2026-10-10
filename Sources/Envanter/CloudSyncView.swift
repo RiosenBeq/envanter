@@ -30,10 +30,11 @@ struct CloudSyncCard: View {
                     signInForm.disabled(true)
                     Text("Bu çalışma modunda (otomatik test / ekran görüntüsü) web eşitlemesi kapalıdır.")
                         .font(.caption).foregroundStyle(.tertiary)
+                } else if !cloud.workspaces.isEmpty {
+                    // Bağlıyken de ("Şube Değiştir…") seçim listesi önce gösterilir
+                    workspacePicker
                 } else if cloud.isConnected {
                     connectedSection
-                } else if !cloud.workspaces.isEmpty {
-                    workspacePicker
                 } else {
                     signInForm
                 }
@@ -50,7 +51,7 @@ struct CloudSyncCard: View {
                     VStack(alignment: .leading, spacing: 6) {
                         roleRow("Patron", "Tüm veriler, kullanıcı daveti ve yetkileri, şube adı. Birden çok şubeyi tek hesaptan karşılaştırır.")
                         roleRow("Müdür", "Tüm verileri görür ve değiştirir: stok kalemleri, reçeteler, personel, siparişler, ayarlar ve günlük kayıtlar.")
-                        roleRow("Personel", "Tüm verileri görür; yalnızca günlük kayıtları (sayım, satış, vardiya, not) değiştirebilir. Stok kalemi, reçete, personel, sipariş ve ayar değişiklikleri için müdür yetkisi gerekir.")
+                        roleRow("Personel", "Tüm verileri görür; yalnızca günlük kayıtları (sayım, satış, vardiya, not) değiştirebilir ve günü kapatabilir. Kapatılmış günü yalnızca patron veya müdür değiştirebilir ya da kilidini açabilir. Stok kalemi, reçete, personel, sipariş (teslim alma dahil) ve ayar değişiklikleri için müdür yetkisi gerekir.")
                         Text("Kullanıcılar web panelinde Kullanıcılar bölümünden e-posta adresiyle davet edilir. Davet edilen kişi aynı e-postayla hesap açınca şubeye otomatik eklenir.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -66,21 +67,29 @@ struct CloudSyncCard: View {
                 serverKey = c.publishableKey
             }
         }
-        .alert("Bu Mac'te de web panelinde de veri var", isPresented: Binding(get: { cloud.decision != nil }, set: { _ in }),
-               presenting: cloud.decision) { _ in
-            Button("Buluttakini İndir") { cloud.resolveDecision(.download) }
-            Button("Bu Mac'tekini Yükle") { cloud.resolveDecision(.upload) }
-            Button("Vazgeç", role: .cancel) { cloud.cancelDecision() }
+        .alert(decisionTitle, isPresented: Binding(get: { cloud.decision != nil }, set: { _ in }),
+               presenting: cloud.decision) { d in
+            if d.switchingFrom != nil {
+                // Başka şubeden boş şubeye geçiş: kendiliğinden yüklenmez, ne kopyalanacağı sorulur
+                Button("Yalnızca Tanımları Kopyala") { cloud.resolveDecision(.copyCatalog) }
+                Button("Her Şeyi Kopyala") { cloud.resolveDecision(.upload) }
+                Button("Vazgeç", role: .cancel) { cloud.cancelDecision() }
+            } else {
+                Button("Buluttakini İndir") { cloud.resolveDecision(.download) }
+                Button("Bu Mac'tekini Yükle") { cloud.resolveDecision(.upload) }
+                Button("Vazgeç", role: .cancel) { cloud.cancelDecision() }
+            }
         } message: { d in
             Text(decisionMessage(d))
         }
         .confirmationDialog("Web panelinden çıkış yapılsın mı?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-            Button("Çıkış Yap", role: .destructive) { cloud.signOut(); password = "" }
+            Button("Çıkış Yap") { cloud.signOut(); password = "" }
+            Button("Çıkış Yap ve Bu Mac'i Şubeden Ayır", role: .destructive) { cloud.signOut(detach: true); password = "" }
             Button("Vazgeç", role: .cancel) {}
         } message: {
             Text(cloud.pendingChanges > 0
-                 ? "Henüz gönderilmemiş \(cloud.pendingChanges) değişiklik var; çıkış yaparsanız gönderilmez. Bu Mac'teki veriler silinmez."
-                 : "Eşitleme durur; bu Mac'teki veriler silinmez. Yeniden bağlandığınızda kaldığınız yerden devam edilir.")
+                 ? "Henüz gönderilmemiş \(cloud.pendingChanges) değişiklik var; yeniden giriş yaptığınızda gönderilir. Bu Mac'teki veriler silinmez. Bu Mac'i şubeden ayırırsanız bekleyen değişiklikler gönderilmez."
+                 : "Eşitleme durur; bu Mac'teki veriler silinmez. Yeniden giriş yaptığınızda kaldığınız yerden devam edilir. Bu Mac'i şubeden ayırırsanız yeniden bağlanırken ilk bağlantıdaki gibi sorulur.")
         }
     }
 
@@ -92,6 +101,9 @@ struct CloudSyncCard: View {
                 Label("Oturumun süresi doldu. Eşitlemeye devam etmek için yeniden giriş yapın; bekleyen değişiklikler korunuyor.",
                       systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(Brand.warn).fixedSize(horizontal: false, vertical: true)
+            } else if cloud.isSignedOutWithLink {
+                Label(signedOutText, systemImage: "building.2")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Web paneli hesabınızın e-posta adresi ve şifresiyle bağlanın. Hesabınız yoksa patronunuz web panelinden sizi davet etmelidir. Hiç şube yoksa bu hesapla, işletme adıyla yeni bir şube açılır ve hesap patron olur.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -149,7 +161,8 @@ struct CloudSyncCard: View {
     }
 
     private var workspacePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let current = cloud.state.initialized ? cloud.state.config?.workspaceID : nil
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Hangi şubeyle eşitlensin?").font(.callout.weight(.semibold))
             ForEach(cloud.workspaces) { w in
                 Button {
@@ -159,12 +172,22 @@ struct CloudSyncCard: View {
                         Image(systemName: "building.2")
                         Text(w.name).fontWeight(.medium)
                         Pill(text: CloudRole.title(w.role), color: roleColor(w.role))
+                        if w.id == current { Text("bu Mac").font(.caption).foregroundStyle(.secondary) }
                     }
                 }
                 .buttonStyle(SoftButtonStyle())
                 .disabled(cloud.busy)
             }
-            if cloud.busy { ProgressView().controlSize(.small) }
+            if current != nil {
+                Text(switchHelpText)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 10) {
+                Button("Vazgeç") { cloud.dismissWorkspacePicker() }
+                    .buttonStyle(SoftButtonStyle())
+                    .disabled(cloud.busy)
+                if cloud.busy { ProgressView().controlSize(.small) }
+            }
         }
     }
 
@@ -194,7 +217,7 @@ struct CloudSyncCard: View {
                 }
             }
             if cloud.role == CloudRole.staff {
-                Label("Personel hesabı: stok kalemleri, reçeteler, personel, siparişler ve ayarlardaki değişiklikler web paneline gönderilmez ve web panelindeki halleriyle değiştirilir.",
+                Label("Personel hesabı: stok kalemleri, reçeteler, personel, siparişler ve ayarlar bu Mac'te salt okunurdur ve web panelindeki halleriyle güncel tutulur. Kapatılmış günü yalnızca patron veya müdür değiştirebilir ya da kilidini açabilir.",
                       systemImage: "person.badge.shield.checkmark")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -265,11 +288,40 @@ struct CloudSyncCard: View {
         }
     }
 
+    /// Çıkış yapılmış ama şube eşleşmesi korunan durumda giriş formunun üstündeki açıklama
+    private var signedOutText: String {
+        let name = cloud.state.config?.workspaceName ?? ""
+        var text = "Bu Mac \"\(name)\" şubesiyle eşleşmiş durumda. Yeniden giriş yaptığınızda kaldığınız yerden devam edilir"
+        text += cloud.pendingChanges > 0 ? "; \(cloud.pendingChanges) değişiklik gönderilmeyi bekliyor." : "."
+        return text
+    }
+
+    /// Şube listesinde, bu Mac bir şubeyle eşleşmişken gösterilen açıklama
+    private var switchHelpText: String {
+        var text = "Başka bir şube seçerseniz: şubede veri varsa o şubenin verisi bu Mac'e indirilir (bu Mac'in hali önce Yedekler klasörüne kaydedilir); şube boşsa ne kopyalanacağı sorulur."
+        if cloud.pendingChanges > 0 {
+            text += " \"\(cloud.state.config?.workspaceName ?? "")\" şubesine gönderilmemiş \(cloud.pendingChanges) değişiklik o şubeye gönderilmez."
+        }
+        return text
+    }
+
+    private var decisionTitle: String {
+        guard let d = cloud.decision else { return "" }
+        return d.switchingFrom != nil ? "\"\(d.workspace.name)\" şubesi boş" : "Bu Mac'te de web panelinde de veri var"
+    }
+
     private func decisionMessage(_ d: InitialDecision) -> String {
-        "\"\(d.workspace.name)\" şubesinde \(d.remoteDays) günlük kayıt var; bu Mac'te \(d.localDays) günlük kayıt var.\n\n"
+        if let from = d.switchingFrom {
+            return "Bu Mac'teki veri \"\(from)\" şubesine ait (\(d.localDays) günlük kayıt). \"\(d.workspace.name)\" şubesi web panelinde henüz boş.\n\n"
+                + "Yalnızca Tanımları Kopyala: stok kalemleri, reçeteler ve ayarlar yeni şubeye kopyalanır. Günlük kayıtlar, personel ve siparişler \"\(from)\" şubesinde kalır; bu Mac'te boşalır (önceki hali Yedekler klasörüne kaydedilir).\n\n"
+                + "Her Şeyi Kopyala: günlük kayıtlar dahil bu Mac'teki her şey yeni şubeye yüklenir; iki şubenin raporları aynı günleri gösterir.\n\n"
+                + "Vazgeç: \"\(from)\" şubesiyle eşitleme sürer."
+                + (d.workspace.role == CloudRole.staff ? " Personel hesabıyla tanımlar yüklenemez; yeni şubenin tanımlarını patron ya da müdür girer." : "")
+        }
+        return "\"\(d.workspace.name)\" şubesinde \(d.remoteDays) günlük kayıt var; bu Mac'te \(d.localDays) günlük kayıt var.\n\n"
             + "Buluttakini İndir: bu Mac'teki veri önce Yedekler klasörüne kaydedilir, sonra web panelindeki veriyle değiştirilir.\n\n"
             + "Bu Mac'tekini Yükle: aynı kayıtlarda bu Mac'teki geçerli olur; yalnızca web panelinde olan günler korunur ve bu Mac'e de gelir. Web panelindeki önceki hal Yedekler klasörüne kaydedilir."
-            + (d.workspace.role == CloudRole.staff ? " Personel hesabıyla yalnızca günlük kayıtlar yüklenir." : "")
+            + (d.workspace.role == CloudRole.staff ? " Personel hesabıyla yalnızca günlük kayıtlar yüklenir; stok kalemleri, reçeteler, personel, siparişler ve ayarlarda web panelindeki hal geçerli olur. Web panelinde kapatılmış günler değiştirilmez." : "")
     }
 
     private func connect() {

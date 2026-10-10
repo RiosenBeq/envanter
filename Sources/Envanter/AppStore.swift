@@ -93,6 +93,9 @@ final class AppStore: ObservableObject {
     @Published var analyticsTab: AnalyticsTab = .general
     @Published private(set) var saveState: SaveState = .saved
     @Published private(set) var lastSavedAt: Date?
+    /// Web eşitlemesinde bu Mac'in şubedeki rolü (CloudSyncController günceller; eşleşme yoksa nil). Personel ise
+    /// tanım belgeleri ve kapatılmış günler bu Mac'te de salt okunurdur (docs/SYNC.md §2).
+    @Published var enforcedRole: String?
 
     let persistence: Persistence
     /// Web paneliyle (Supabase) arka planda eşitleme
@@ -114,6 +117,13 @@ final class AppStore: ObservableObject {
     }
 
     var settings: AppSettings { data.settings }
+
+    /// Stok kalemleri, reçeteler, ayarlar, personel ve siparişler değiştirilebilir mi (personel hesabıyla hayır)
+    var canEditCatalog: Bool { CloudRole.canWriteCatalog(enforcedRole) }
+    /// Kapatılmış günü değiştirme / kilidini açma yetkisi (personel hesabıyla yok)
+    var canChangeLockedDays: Bool { CloudRole.canChangeLockedDay(enforcedRole) }
+    /// Gün bu kullanıcı için salt okunur mu: kapatılmış ve kilidi açılamıyor
+    func isReadOnlyDay(_ date: String) -> Bool { isLocked(date) && !canChangeLockedDays }
 
     init(persistence: Persistence = Persistence(directory: Persistence.defaultDirectory())) {
         self.persistence = persistence
@@ -206,6 +216,27 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Veri dosyasını hemen (eşzamanlı) yazar; günlük yedek alınmaz. Web eşitlemesi, tabanı ilerlemiş eşitleme
+    /// durumunu kaydetmeden önce çağırır (SyncCheckpoint): durum hiçbir zaman diskteki veriden ileride kalmaz.
+    /// - Returns: yazıldı mı
+    @discardableResult
+    func writeDataNow() -> Bool {
+        saveTask?.cancel()
+        saveGeneration += 1
+        let generation = saveGeneration
+        let p = persistence
+        var failure: String?
+        do {
+            let encoded = try p.encode(data)
+            try saveQueue.sync { try p.write(encoded) }
+        } catch {
+            failure = error.localizedDescription
+            NSLog("Kayıt hatası: \(error)")
+        }
+        finishSave(failure: failure, generation: generation)
+        return failure == nil
+    }
+
     /// Bekleyen değişiklikleri hemen (eşzamanlı) diske yazar.
     func flush() {
         saveTask?.cancel()
@@ -219,27 +250,40 @@ final class AppStore: ObservableObject {
     // MARK: - Değişiklik + geri alma
 
     /// Veriyi değiştirir ve işlemi pencerenin geri alma geçmişine ekler.
-    func mutateData(_ actionName: String? = nil, _ f: (inout AppData) -> Void) {
+    /// - Returns: uygulandı mı (personel hesabıyla yetkisiz işlem bütünüyle reddedilir)
+    @discardableResult
+    func mutateData(_ actionName: String? = nil, _ f: (inout AppData) -> Void) -> Bool {
         var d = data
         f(&d)
-        setData(d, actionName: actionName)
+        return setData(d, actionName: actionName)
     }
 
-    private func setData(_ new: AppData, actionName: String?) {
+    @discardableResult
+    private func setData(_ new: AppData, actionName: String?) -> Bool {
         let old = data
         // Değişen belgeler (items, products, settings, employees, orders, day:YYYY-MM-DD)
         let keys = DocCodec.changedKeys(old, new)
+        // Personel hesabıyla: tanım belgelerine ya da kapatılmış güne dokunan işlem bütünüyle reddedilir. Sunucu da
+        // reddeder; yarısı gönderilip yarısı geri alınan işlem (ör. teslim alma: Gelen gider, sipariş açık kalır;
+        // kalem silme: günlerden sayımlar silinir, kalem geri gelir) veriyi bozardı.
+        if let refusal = CloudPermission.refusal(role: enforcedRole, old: old, keys: keys) {
+            NSSound.beep()
+            alert = AppAlert(title: refusal.title, message: refusal.message)
+            return false
+        }
         data = new
         cloud.noteLocalChange(keys)
-        guard let um = undoManager else { return }
-        // Geri alma yalnızca bu işlemin değiştirdiği belgeleri eski haline getirir: arada web panelinden gelen
-        // başka değişiklikler (ör. patronun değiştirdiği maliyet) geri alınmaz.
+        guard let um = undoManager else { return true }
+        // Geri alma yalnızca bu işlemin değiştirdiği belgelere ve onlarda yalnızca bu işlemin değiştirdiği alanlara
+        // dokunur: arada web panelinden gelen değişiklikler (ör. aynı günde müdürün düzelttiği başka kalem, not ya da
+        // patronun değiştirdiği maliyet) geri alınmaz.
         um.registerUndo(withTarget: self) { store in
             MainActor.assumeIsolated {
-                store.setData(DocCodec.replacing(keys, in: store.data, from: old), actionName: actionName)
+                store.setData(DocCodec.undoing(keys: keys, old: old, new: new, current: store.data), actionName: actionName)
             }
         }
         if let actionName { um.setActionName(actionName) }
+        return true
     }
 
     /// Web panelinden (buluttan) gelen veriyi uygular: geri alma geçmişine eklenmez ve yeniden gönderilmek üzere
@@ -282,7 +326,8 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func updateDay(_ date: String, actionName: String, _ mutate: (inout DayRecord) -> Void) {
+    @discardableResult
+    func updateDay(_ date: String, actionName: String, _ mutate: (inout DayRecord) -> Void) -> Bool {
         mutateData(actionName) { d in
             var day = d.days[date] ?? DayRecord(date: date)
             mutate(&day)
@@ -307,10 +352,10 @@ final class AppStore: ObservableObject {
         rememberStaff(v)
     }
 
+    /// Personel hesabıyla ayarlar yazılamadığından ad listeye eklenmez (her yeni ad reddedilen bir yazma olurdu)
     private func rememberStaff(_ name: String) {
-        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !n.isEmpty, !settings.staff.contains(n) else { return }
-        mutateData { $0.settings.staff.append(n) }
+        guard let updated = settings.rememberingStaff(name, role: enforcedRole) else { return }
+        mutateData { $0.settings = updated }
     }
 
     /// Sayımı yapılmamış kalemlere önceki günün kapanışını aynen yazar (hareket olmayan kalemler için hızlı doldurma).
@@ -318,12 +363,12 @@ final class AppStore: ObservableObject {
         guard !isLocked(date) else { return 0 }
         let rows = engine.calc(date: date).rows.filter { !$0.isCounted && $0.incoming == 0 && $0.transferIn == 0 && $0.transferOut == 0 && $0.sold == 0 && $0.waste == 0 && $0.opening > 0 }
         guard !rows.isEmpty else { return 0 }
-        mutateData("Hareketsiz Kalemleri Doldur") { d in
+        let applied = mutateData("Hareketsiz Kalemleri Doldur") { d in
             var day = d.days[date] ?? DayRecord(date: date)
             for r in rows { day.entries[r.itemID, default: DayEntry()].closing = r.opening }
             d.days[date] = day
         }
-        return rows.count
+        return applied ? rows.count : 0
     }
 
     // MARK: - Ayarlar
@@ -398,8 +443,9 @@ final class AppStore: ObservableObject {
     func confirmWorkbookImport(_ imp: WorkbookImport, overwrite: Bool) {
         if let current = try? persistence.encode(data) { persistence.snapshot(current, label: "aktarim-oncesi") }
         var report = WorkbookImportReport()
-        mutateData("Excel'den Aktarım") { report = WorkbookImporter.apply(imp, to: &$0, overwrite: overwrite) }
+        let applied = mutateData("Excel'den Aktarım") { report = WorkbookImporter.apply(imp, to: &$0, overwrite: overwrite) }
         workbookPreview = nil
+        guard applied else { return }
         if let d = imp.currentDate ?? imp.historyDates.last { selectedDate = d }
         section = .daily
         alert = AppAlert(title: "Excel verileri aktarıldı",
@@ -415,7 +461,7 @@ final class AppStore: ObservableObject {
             alert = AppAlert(title: "Gün kapatılmış", message: "\(DateKey.short(date)) günü kilitli. Satış aktarmak için önce günün kilidini açın.")
             return
         }
-        mutateData("Satış Raporu Aktarımı") { d in
+        let applied = mutateData("Satış Raporu Aktarımı") { d in
             var day = d.days[date] ?? DayRecord(date: date)
             day.sales = report.lines
             day.salesSource = report.sourceName
@@ -423,6 +469,7 @@ final class AppStore: ObservableObject {
             day.salesImportedAt = Date()
             d.days[date] = day
         }
+        guard applied else { return }
         selectedDate = date
         importPreview = nil
     }
@@ -450,12 +497,11 @@ final class AppStore: ObservableObject {
     @discardableResult
     func addProduct(_ p: Product) -> Bool {
         guard engine.productsByCode[p.code] == nil else { return false }
-        mutateData("Ürün Ekle") { $0.products.append(p) }
-        return true
+        return mutateData("Ürün Ekle") { $0.products.append(p) }
     }
 
     func deleteProduct(_ code: String) {
-        mutateData("Ürün Sil") { $0.products.removeAll { $0.code == code } }
+        guard mutateData("Ürün Sil", { $0.products.removeAll { $0.code == code } }) else { return }
         if recipeSelection == code { recipeSelection = nil }
     }
 
@@ -504,12 +550,12 @@ final class AppStore: ObservableObject {
     func restoreMissingDefaults() -> (items: Int, products: Int) {
         let seed = AppData.seeded()
         var addedItems = 0, addedProducts = 0
-        mutateData("Varsayılanları Geri Ekle") { d in
+        let applied = mutateData("Varsayılanları Geri Ekle") { d in
             let ids = Set(d.items.map { $0.id }), codes = Set(d.products.map { $0.code })
             for i in seed.items where !ids.contains(i.id) { d.items.append(i); addedItems += 1 }
             for p in seed.products where !codes.contains(p.code) { d.products.append(p); addedProducts += 1 }
         }
-        return (addedItems, addedProducts)
+        return applied ? (addedItems, addedProducts) : (0, 0)
     }
 
     // MARK: - İstatistikler
@@ -629,12 +675,12 @@ final class AppStore: ObservableObject {
         }
         // Doldurulacak bir şey yoksa geri alma geçmişine boş adım eklenmez
         guard !fills.isEmpty else { return 0 }
-        updateDay(date, actionName: "Vardiyaları Doldur") { day in
+        let applied = updateDay(date, actionName: "Vardiyaları Doldur") { day in
             var shifts = day.shifts ?? [:]
             for (id, s) in fills { shifts[id] = s }
             day.shifts = shifts
         }
-        return fills.count
+        return applied ? fills.count : 0
     }
 
     // MARK: - Fiyat geçmişi
@@ -656,15 +702,14 @@ final class AppStore: ObservableObject {
             alert = AppAlert(title: "Sipariş oluşturulamadı", message: "Bu gün için önerilen sipariş yok.")
             return false
         }
-        mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
-        return true
+        return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
     }
 
     func receiveOrder(_ id: String, on date: String, quantities: [String: Double], prices: [String: Double]) -> Bool {
         var copy = data
         do {
             let r = try Purchasing.receive(orderID: id, on: date, quantities: quantities, prices: prices, data: &copy)
-            mutateData("Teslim Al") { $0 = copy }
+            guard mutateData("Teslim Al", { $0 = copy }) else { return false }
             alert = AppAlert(title: "Teslim alındı",
                              message: "\(r.lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi" + (r.priceUpdates > 0 ? "; \(r.priceUpdates) kalemin birim maliyeti fatura fiyatıyla güncellendi." : "."))
             return true
@@ -752,7 +797,7 @@ final class AppStore: ObservableObject {
             let restored = try Persistence.decode(Data(contentsOf: url))
             // Mevcut hali güvenlik için ayrıca yedekle
             if let current = try? persistence.encode(data) { persistence.snapshot(current, label: "geri-yukleme-oncesi") }
-            mutateData("Yedekten Geri Yükleme") { $0 = restored }
+            guard mutateData("Yedekten Geri Yükleme", { $0 = restored }) else { return }
             alert = AppAlert(title: "Yedek geri yüklendi",
                              message: "\(Engine(data: restored).datesWithData.count) günlük kayıt ve \(restored.products.count) ürün reçetesi yüklendi. Önceki hal \"Yedekler\" klasörüne kaydedildi; Düzen > Geri Al ile de dönebilirsiniz.")
         } catch {

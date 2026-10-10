@@ -12,7 +12,7 @@ enum CloudStatus: Equatable {
     case error(String)
 }
 
-/// İlk bağlantıda iki tarafta da veri varsa kullanıcıya sorulan karar
+/// İlk bağlantıda iki tarafta da veri varsa (ya da başka şubeden boş şubeye geçilirken) kullanıcıya sorulan karar
 struct InitialDecision: Identifiable {
     let id = UUID()
     let workspace: CloudWorkspace
@@ -20,6 +20,10 @@ struct InitialDecision: Identifiable {
     /// Bu Mac'te ve bulutta kayıtlı gün sayısı
     let localDays: Int
     let remoteDays: Int
+    /// Başka şubeden geçiş: bu Mac'in eşleştiği önceki şubenin adı (veri o şubenindir)
+    var switchingFrom: String? = nil
+    /// Geçişten vazgeçilirse geri dönülecek eşitleme durumu (önceki şube)
+    var previous: SyncState? = nil
 }
 
 /// Mac uygulamasının web paneliyle (Supabase) arka planda eşitlenmesi (docs/SYNC.md).
@@ -28,7 +32,9 @@ struct InitialDecision: Identifiable {
 @MainActor
 final class CloudSyncController: ObservableObject {
     @Published private(set) var status: CloudStatus = .off
-    @Published private(set) var state: SyncState
+    @Published private(set) var state: SyncState {
+        didSet { publishRole() }
+    }
     /// Birden fazla şube varsa seçim listesi
     @Published private(set) var workspaces: [CloudWorkspace] = []
     /// İlk bağlantı kararı bekleniyor
@@ -39,6 +45,8 @@ final class CloudSyncController: ObservableObject {
     @Published var notice: String?
     /// Gönderim ilerlemesi (çok sayıda belge yüklenirken)
     @Published private(set) var progress: (done: Int, total: Int)?
+    /// Kapatılmış gün uyarısı bu oturumda gösterildi mi (bir kez)
+    private var lockedDayNoticeShown = false
 
     /// Otomatik test / ekran görüntüsü modunda false
     let enabled: Bool
@@ -71,11 +79,14 @@ final class CloudSyncController: ObservableObject {
     /// Şube seçilmiş, oturum açık, ilk karar verilmiş
     var isConnected: Bool { enabled && state.isActive }
 
-    /// Kenar çubuğunda eşitleme satırı gösterilsin mi (oturum süresi dolduysa da hata gösterilir)
-    var showsStatus: Bool { enabled && state.config?.workspaceID != nil && state.initialized }
+    /// Kenar çubuğunda eşitleme satırı gösterilsin mi (oturum süresi dolduysa da hata gösterilir; çıkış yapıldıysa değil)
+    var showsStatus: Bool { enabled && state.config?.workspaceID != nil && state.initialized && !state.signedOut }
 
     /// Oturumun süresi dolmuş, yeniden giriş gerekiyor (şube eşleşmesi korunuyor)
-    var needsSignIn: Bool { enabled && state.config?.workspaceID != nil && state.initialized && !state.isSignedIn }
+    var needsSignIn: Bool { enabled && state.config?.workspaceID != nil && state.initialized && !state.isSignedIn && !state.signedOut }
+
+    /// Çıkış yapıldı ama şube eşleşmesi korunuyor: yeniden girişte kaldığı yerden devam edilir
+    var isSignedOutWithLink: Bool { enabled && state.signedOut && state.config?.workspaceID != nil && state.initialized }
 
     var role: String? { state.config?.role }
     var pendingChanges: Int { state.dirty.count }
@@ -84,6 +95,7 @@ final class CloudSyncController: ObservableObject {
 
     func attach(_ app: AppStore) {
         self.app = app
+        publishRole()
         guard enabled else { status = .off; startupCheckDone = true; return }
         status = state.isActive ? .idle(state.lastSyncAt) : (needsSignIn ? .error(CloudSyncError.sessionExpired.localizedDescription) : .off)
 
@@ -115,6 +127,12 @@ final class CloudSyncController: ObservableObject {
             self.startupCheckDone = true
             self.scheduleSync(after: 1.5)
         }
+    }
+
+    /// Yerel değişikliklerde uygulanacak rolü AppStore'a bildirir (personel: tanımlar ve kapatılmış günler salt okunur)
+    private func publishRole() {
+        let role = enabled ? state.enforcedRole : nil
+        if let app, app.enforcedRole != role { app.enforcedRole = role }
     }
 
     private func appBecameActive() {
@@ -156,13 +174,9 @@ final class CloudSyncController: ObservableObject {
             let session = try await api.signIn(email: email, password: password)
             generation += 1
             self.api = api
-            var s = state
-            let sameAccount = s.config.map { $0.email.lowercased() == email.lowercased() && $0.url == url } ?? false
-            if !sameAccount {
-                s = SyncState(config: CloudConfig(url: url, publishableKey: key, email: email))
-            } else {
-                s.config?.publishableKey = key
-            }
+            // Aynı sunucuda şube eşleşmesi (taban, bekleyen değişiklikler) korunur, hesap farklı olsa da: aynı şube
+            // seçilirse kaldığı yerden 3 yollu birleştirmeyle devam edilir. Şube onaylanana kadar eşitleme bekler.
+            var s = SyncState.forSignIn(existing: state, url: url, publishableKey: key, email: email)
             s.store(session)
             s.userEmail = session.email ?? email
             state = s
@@ -196,8 +210,15 @@ final class CloudSyncController: ObservableObject {
         }
         storeSession(await api.currentSession)
         guard autoSelect else { workspaces = list; return }
-        if let current = state.config?.workspaceID, state.initialized, let w = list.first(where: { $0.id == current }) {
-            await choose(w)            // aynı şubeye yeniden giriş
+        if let current = state.config?.workspaceID, state.initialized {
+            if let w = list.first(where: { $0.id == current }) {
+                await choose(w)        // aynı şubeye yeniden giriş
+            } else {
+                // Bu Mac başka bir şubeyle eşleşmiş (ör. o şubeye üye olmayan başka bir hesap): şube değişimi
+                // kendiliğinden yapılmaz, kullanıcı seçer
+                workspaces = list
+                notice = "Bu Mac \"\(state.config?.workspaceName ?? "önceki şube")\" şubesiyle eşleşmişti; bu hesap o şubeye üye değil. Eşitlenecek şubeyi seçin."
+            }
         } else if list.count == 1 {
             await choose(list[0])
         } else {
@@ -205,46 +226,68 @@ final class CloudSyncController: ObservableObject {
         }
     }
 
-    /// Şube seçimi. Daha önce eşleşmiş şubeyse kaldığı yerden devam eder; değilse ilk bağlantı kararı verilir.
+    /// Şube seçim listesini kapatır (şube değiştirmekten vazgeçildi)
+    func dismissWorkspacePicker() {
+        workspaces = []
+        if isSignedOutWithLink { notice = nil }
+    }
+
+    /// Şube seçimi. Daha önce eşleşmiş şubeyse kaldığı yerden devam eder (çıkış yapıp yeniden girmek dahil); değilse
+    /// ilk bağlantı kararı verilir. Başka şubeden geçişte bu Mac'in verisi o şubenindir: dolu şubeye geçince o şubenin
+    /// verisi indirilir (yerel yedek alınır), boş şubeye geçince ne kopyalanacağı sorulur (kendiliğinden yüklenmez).
     func choose(_ w: CloudWorkspace) async {
         guard let api = currentAPI(), let app else { return }
         workspaces = []
         var s = state
-        if s.config?.workspaceID == w.id && s.initialized {
-            s.config?.workspaceName = w.name
-            s.config?.role = w.role
-            // Oturum kapalıyken yapılan değişiklikler
-            s.dirty.formUnion(CloudSyncEngine.divergentKeys(local: app.data, state: s))
+        switch CloudSyncEngine.workspaceChoice(state: s, workspaceID: w.id) {
+        case .resume:
+            // Personelken eskimiş kalan tanımlar önce web'deki haline döner (rol yükseldiyse yerel değişiklik
+            // sanılmasın); oturum kapalıyken yapılan değişiklikler gönderilmek üzere işaretlenir.
+            let data = CloudSyncEngine.resume(workspace: w, local: app.data, state: &s)
+            let dataChanged = !DocCodec.changedKeys(app.data, data).isEmpty
+            if dataChanged { app.applyRemote(data) }
             state = s
-            saveState()
+            SyncCheckpoint.persist(dataChanged: dataChanged, writeData: { app.writeDataNow() }, writeState: { saveState() })
             status = .idle(s.lastSyncAt)
             syncNow()
             return
-        }
-        busy = true
-        defer { busy = false }
-        generation += 1
-        s.resetWorkspaceData()
-        s.config?.workspaceID = w.id
-        s.config?.workspaceName = w.name
-        s.config?.role = w.role
-        state = s
-        saveState()
-        do {
-            let rows = try await api.pull(workspace: w.id, since: 0)
-            storeSession(await api.currentSession)
-            let mode = CloudSyncEngine.initialMode(localIsSeedOnly: DocCodec.isSeedOnly(app.data),
-                                                   remoteEmpty: CloudSyncEngine.isRemoteEmpty(rows))
-            if mode == .ask {
-                let remoteDays = Set(rows.filter { !$0.deleted && DocKey.isDay($0.key) }.map { $0.key }).count
-                let localDays = app.data.days.values.filter { DocCodec.storedDay($0) != nil }.count
-                decision = InitialDecision(workspace: w, rows: rows, localDays: localDays, remoteDays: remoteDays)
-                status = .off
+        case .initial(let switching):
+            // Gönderilmemiş değişiklikler önceki şubeye gönderilmeden geçilmez (oturum açıkken beklenebilir)
+            if switching && state.isActive && !state.dirty.isEmpty {
+                notice = "Bekleyen \(state.dirty.count) değişiklik gönderildikten sonra şube değiştirilebilir."
+                syncNow()
                 return
             }
-            resolve(mode, rows: rows)
-        } catch {
-            report(error)
+            busy = true
+            defer { busy = false }
+            generation += 1
+            let previous: SyncState? = switching ? s : nil
+            let previousName = switching ? s.config?.workspaceName : nil
+            s.resetWorkspaceData()
+            s.config?.workspaceID = w.id
+            s.config?.workspaceName = w.name
+            s.config?.role = w.role
+            state = s
+            saveState()
+            do {
+                let rows = try await api.pull(workspace: w.id, since: 0)
+                storeSession(await api.currentSession)
+                let mode = CloudSyncEngine.initialMode(localIsSeedOnly: DocCodec.isSeedOnly(app.data),
+                                                       remoteEmpty: CloudSyncEngine.isRemoteEmpty(rows),
+                                                       switchingFromOtherWorkspace: switching)
+                if mode == .ask {
+                    let remoteDays = Set(rows.filter { !$0.deleted && DocKey.isDay($0.key) }.map { $0.key }).count
+                    let localDays = app.data.days.values.filter { DocCodec.storedDay($0) != nil }.count
+                    decision = InitialDecision(workspace: w, rows: rows, localDays: localDays, remoteDays: remoteDays,
+                                               switchingFrom: switching ? (previousName ?? "önceki şube") : nil,
+                                               previous: previous)
+                    status = .off
+                    return
+                }
+                resolve(mode, rows: rows)
+            } catch {
+                report(error)
+            }
         }
     }
 
@@ -255,10 +298,29 @@ final class CloudSyncController: ObservableObject {
         resolve(mode, rows: d.rows)
     }
 
-    /// İlk bağlantıdan vazgeç: şube eşleşmesi kaldırılır (oturum açık kalır)
+    /// İlk bağlantıdan vazgeç: şube eşleşmesi kaldırılır (oturum açık kalır). Başka şubeden geçişten vazgeçilirse
+    /// önceki şubeyle eşitleme kaldığı yerden sürer.
     func cancelDecision() {
+        let previous = decision?.previous
         decision = nil
         generation += 1
+        if var p = previous {
+            p.store(state.session)
+            p.userEmail = state.userEmail ?? p.userEmail
+            state = p
+            saveState()
+            let name = p.config?.workspaceName ?? ""
+            if state.isActive {
+                status = .idle(p.lastSyncAt)
+                notice = "Şube değiştirilmedi; \"\(name)\" şubesiyle eşitleme sürüyor."
+                syncNow()
+            } else {
+                // Önceki şubeye bu hesapla erişilemiyor (ör. farklı hesap): eşleşme korunur, eşitleme bekler
+                status = .off
+                notice = "Şube değiştirilmedi. Bu Mac \"\(name)\" şubesiyle eşleşmiş durumda; o şubeye üye bir hesapla giriş yapın ya da yeniden bağlanıp başka şube seçin."
+            }
+            return
+        }
         var s = state
         s.resetWorkspaceData()
         s.config?.workspaceID = nil
@@ -273,27 +335,35 @@ final class CloudSyncController: ObservableObject {
     private func resolve(_ mode: InitialSyncMode, rows: [RemoteDoc]) {
         guard let app, mode != .ask else { return }
         let p = app.persistence
-        // Riskli adımlardan önce yedek: indirmede bu Mac'teki veri, yüklemede buluttaki veri
-        if mode == .download, let enc = try? p.encode(app.data) {
-            p.snapshot(enc, label: "bulut-indirme-oncesi")
+        // Riskli adımlardan önce yedek: indirmede ve şube değişiminde bu Mac'teki veri, yüklemede buluttaki veri
+        if mode == .download || mode == .copyCatalog, let enc = try? p.encode(app.data) {
+            p.snapshot(enc, label: mode == .download ? "bulut-indirme-oncesi" : "sube-degisimi-oncesi")
         }
         if mode == .upload, !CloudSyncEngine.isRemoteEmpty(rows), let enc = try? p.encode(CloudSyncEngine.assembleRemote(rows)) {
             p.snapshot(enc, label: "bulut-yukleme-oncesi")
         }
         var s = state
+        s.signedOut = false
         let newData = CloudSyncEngine.prepareInitial(mode: mode, local: app.data, rows: rows, state: &s)
-        state = s
-        saveState()
-        if !DocCodec.changedKeys(app.data, newData).isEmpty {
+        let dataChanged = !DocCodec.changedKeys(app.data, newData).isEmpty
+        if dataChanged {
             app.applyRemote(newData)
             // Eski geri alma adımları indirilen verinin üzerine eski hali yazmasın
             app.clearUndoHistory()
         }
+        state = s
+        // Önce veri, sonra durum: yeni taban eski veriyle diskte kalmasın
+        SyncCheckpoint.persist(dataChanged: dataChanged, writeData: { app.writeDataNow() }, writeState: { saveState() })
         startupCheckDone = true
         status = .idle(nil)
-        notice = mode == .download
-            ? "Buluttaki veri indirildi. Bu Mac'in önceki hali Yedekler klasörüne kaydedildi."
-            : "Bu Mac'teki veri web paneline yükleniyor…"
+        switch mode {
+        case .download:
+            notice = "Buluttaki veri indirildi. Bu Mac'in önceki hali Yedekler klasörüne kaydedildi."
+        case .copyCatalog:
+            notice = "Stok kalemleri, reçeteler ve ayarlar \"\(s.config?.workspaceName ?? "")\" şubesine yükleniyor. Bu Mac'in önceki hali Yedekler klasörüne kaydedildi."
+        default:
+            notice = "Bu Mac'teki veri web paneline yükleniyor…"
+        }
         syncNow()
     }
 
@@ -342,9 +412,12 @@ final class CloudSyncController: ObservableObject {
             let (final, changed) = DocCodec.rebase(started: started, current: current, synced: out.data)
             st.dirty.formUnion(changed)
             st.dirty.formUnion(changedDuringSync)
+            let dataChanged = !DocCodec.changedKeys(current, final).isEmpty
+            if dataChanged { app.applyRemote(final) }
             state = st
-            if !DocCodec.changedKeys(current, final).isEmpty { app.applyRemote(final) }
-            saveState()
+            // Önce veri dosyası, sonra durum: tabanı ilerlemiş durum eski veriyle diskte kalırsa (çökme / zorla kapatma)
+            // yeniden açılışta eski belgeler güncel tabanla gönderilip web panelindeki değişikliği ezerdi
+            SyncCheckpoint.persist(dataChanged: dataChanged, writeData: { app.writeDataNow() }, writeState: { saveState() })
             if !out.rejected.isEmpty { reportRejected(out.rejected) }
             if let e = out.error {
                 report(e)
@@ -371,25 +444,34 @@ final class CloudSyncController: ObservableObject {
 
     // MARK: - Çıkış
 
-    /// Oturumu kapatır ve şube eşleşmesini kaldırır. Bu Mac'teki veri silinmez.
-    func signOut() {
+    /// Oturumu kapatır. Şube eşleşmesi (taban, bekleyen değişiklikler) korunur: yeniden girişte aynı şube seçilince
+    /// kaldığı yerden 3 yollu birleştirmeyle devam edilir, arada web panelinde yapılan değişiklikler ezilmez.
+    /// `detach`: bu Mac şubeden de ayrılır (eşleşme ve gönderilmemiş değişiklik kaydı silinir; yeniden bağlanınca
+    /// ilk bağlantı kararı sorulur). Bu Mac'teki veri her iki durumda da silinmez.
+    func signOut(detach: Bool = false) {
         generation += 1
         debounceTask?.cancel()
         if let api { Task { await api.logout() } }
         api = nil
-        var s = state
-        s.store(nil)
-        s.userEmail = nil
-        s.resetWorkspaceData()
-        s.config?.workspaceID = nil
-        s.config?.workspaceName = nil
-        s.config?.role = nil
+        // Şube değişimi kararı bekleniyorsa önceki şubenin eşleşmesi korunur
+        var s = decision?.previous ?? state
+        s.signOut()
+        if detach {
+            s.resetWorkspaceData()
+            s.config?.workspaceID = nil
+            s.config?.workspaceName = nil
+            s.config?.role = nil
+        }
         state = s
         saveState()
         workspaces = []
         decision = nil
         status = .off
-        notice = "Çıkış yapıldı. Bu Mac'teki veriler yerinde duruyor."
+        if s.config?.workspaceID != nil && s.initialized {
+            notice = "Çıkış yapıldı. Bu Mac'teki veriler ve \"\(s.config?.workspaceName ?? "")\" şubesiyle eşleşme korunuyor; yeniden giriş yaptığınızda kaldığınız yerden devam edilir."
+        } else {
+            notice = "Çıkış yapıldı. Bu Mac'teki veriler yerinde duruyor."
+        }
     }
 
     // MARK: - Yardımcılar
@@ -422,15 +504,33 @@ final class CloudSyncController: ObservableObject {
         notice = message
     }
 
+    /// Sunucunun reddettiği (ve sunucudaki haline döndürülen) anahtarlar: kapatılmış günler ve tanım belgeleri için
+    /// ayrı metin; uyarı penceresi her tür için oturumda bir kez gösterilir. Reddedilen anahtar yeniden denenmez.
     private func reportRejected(_ rejected: [String: String]) {
-        let labels = rejected.keys.sorted().map { Self.label(for: $0) }.joined(separator: ", ")
-        notice = "Bu değişiklik için müdür yetkisi gerekir (\(labels)). Web panelindeki hal geri yüklendi."
-        if !permissionNoticeShown {
-            permissionNoticeShown = true
-            app?.alert = AppAlert(
-                title: "Bu değişiklik için müdür yetkisi gerekir",
-                message: "Personel hesabıyla yalnızca günlük veriler (sayım, satış, vardiya, not) web paneline gönderilir. \(labels) bölümündeki değişiklik gönderilmedi ve web panelindeki hal geri yüklendi. Bu değişikliği patron ya da müdür web panelinden yapabilir.")
+        let days = DocKey.sorted(rejected.keys.filter { DocKey.isDay($0) })
+        let catalog = DocKey.sorted(rejected.keys.filter { !DocKey.isDay($0) })
+        var parts: [String] = []
+        if !days.isEmpty {
+            let dates = days.map { Self.label(for: $0) }.joined(separator: ", ")
+            parts.append("\(CloudPermission.lockedDayMessage) \(dates) gününün web panelindeki hali geri yüklendi.")
+            if !lockedDayNoticeShown {
+                lockedDayNoticeShown = true
+                app?.alert = AppAlert(
+                    title: "Gün kapatılmış",
+                    message: "\(dates) günü web panelinde kapatılmış. \(CloudPermission.lockedDayMessage) Bu Mac'teki değişiklik gönderilmedi ve günün web panelindeki hali geri yüklendi. Düzeltme gerekiyorsa patron ya da müdür günün kilidini açabilir.")
+            }
         }
+        if !catalog.isEmpty {
+            let labels = catalog.map { Self.label(for: $0) }.joined(separator: ", ")
+            parts.append("Bu değişiklik için müdür yetkisi gerekir (\(labels)). Web panelindeki hal geri yüklendi.")
+            if !permissionNoticeShown {
+                permissionNoticeShown = true
+                app?.alert = AppAlert(
+                    title: "Bu değişiklik için müdür yetkisi gerekir",
+                    message: "Personel hesabıyla yalnızca günlük veriler (sayım, satış, vardiya, not) web paneline gönderilir. \(labels) bölümündeki değişiklik gönderilmedi ve web panelindeki hal geri yüklendi. Bu değişikliği patron ya da müdür web panelinden yapabilir.")
+            }
+        }
+        notice = parts.joined(separator: " ")
         // Rol değişmiş olabilir (ör. müdürken personele alındı): şube listesinden güncelle
         if let api = currentAPI() {
             let wsID = state.config?.workspaceID
@@ -444,16 +544,7 @@ final class CloudSyncController: ObservableObject {
         }
     }
 
-    nonisolated static func label(for key: String) -> String {
-        switch key {
-        case DocKey.items: return "Stok kalemleri"
-        case DocKey.products: return "Reçeteler"
-        case DocKey.settings: return "Ayarlar"
-        case DocKey.employees: return "Personel"
-        case DocKey.orders: return "Siparişler"
-        default: return DocKey.date(of: key).map { DateKey.short($0) } ?? key
-        }
-    }
+    nonisolated static func label(for key: String) -> String { DocKey.title(key) }
 
     private func scheduleStateSave() {
         stateSaveTask?.cancel()

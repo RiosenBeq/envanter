@@ -72,6 +72,24 @@ public enum Fmt {
         return parse(s)
     }
 
+    /// Para tutarı girişi (birim maliyet, fatura fiyatı, ücret, ek ödeme): ekranda tutarlar binlik ayırıcı noktayla
+    /// gösterildiğinden "35.000" / "1.050" / "1.295.867" binlik ayırıcılı tam sayı okunur (35.000 ₺ maaş 35 ₺ olmasın).
+    /// İlk grup 0 ile başlarsa ("0.125") ya da grup üç haneli değilse ("1.05", "12.5") ondalık sayılır: `parse` ile aynı.
+    /// Web: src/lib/format.ts `parseAmount` (/^-?[1-9][0-9]{0,2}(\.[0-9]{3})+$/).
+    public static func parseAmount(_ raw: String) -> Double? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\u{00A0}", with: "")
+            .replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\u{2212}", with: "-")
+        if s.hasPrefix("+") { s.removeFirst() }
+        if s.range(of: #"^-?[1-9][0-9]{0,2}(\.[0-9]{3})+$"#, options: .regularExpression) != nil {
+            guard let d = Double(s.replacingOccurrences(of: ".", with: "")), d.isFinite, abs(d) < 1e12 else { return nil }
+            return d
+        }
+        return parse(s)
+    }
+
     /// Excel'in sayısal hücrelerindeki makine biçimi ("1234.5", "4.4408920985006262E-16").
     public static func machine(_ raw: String) -> Double? {
         guard let d = Double(raw.trimmingCharacters(in: .whitespaces)), d.isFinite else { return nil }

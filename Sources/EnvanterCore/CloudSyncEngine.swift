@@ -10,7 +10,8 @@ public struct SyncOutcome: Sendable {
     public var pushed: [String] = []
     /// Çakışma yaşanan (merge3 ile birleştirilen) anahtarlar
     public var conflicts: Set<String> = []
-    /// Yetki yüzünden reddedilen anahtarlar → sunucunun mesajı (yerel değişiklik bırakıldı, sunucu sürümü geçerli)
+    /// Yetki yüzünden reddedilen anahtarlar → sunucunun mesajı (yerel değişiklik bırakıldı, sunucu sürümü geçerli).
+    /// Personelin tanım belgeleri ve kapatılmış günleri (docs/SYNC.md §2 "Kapatılmış gün") burada döner; yeniden denenmez.
     public var rejected: [String: String] = [:]
     /// Sunucudaki gövdesi çözülemeyen (bozuk) belgeler: yerel değer korundu
     public var undecodable: Set<String> = []
@@ -29,17 +30,38 @@ public enum InitialSyncMode: String, Sendable, Equatable {
     case upload
     /// Buluttakini indir (önce yerel yedek alınır)
     case download
+    /// Başka şubeden boş şubeye geçiş: yalnızca tanımlar (stok kalemleri, reçeteler, ayarlar) kopyalanır; günler,
+    /// personel ve siparişler eski şubede kalır
+    case copyCatalog
     /// İkisi de dolu: kullanıcıya sor
     case ask
+}
+
+/// Şube seçildiğinde: kaldığı yerden devam mı, ilk bağlantı mı
+public enum WorkspaceChoice: Equatable, Sendable {
+    /// Bu Mac zaten bu şubeyle eşleşmiş (çıkış yapıp yeniden girmek dahil): bekleyen ve tabandan ayrışan
+    /// değişiklikler 3 yollu birleştirmeyle gönderilir
+    case resume
+    /// İlk bağlantı. `switching`: bu Mac başka bir şubeyle eşleşmişti; yereldeki veri o şubenindir.
+    case initial(switching: Bool)
 }
 
 /// Eşitleme algoritması (docs/SYNC.md §3): önce çek (pull), sonra gönder (push).
 public enum CloudSyncEngine {
     /// Bulut boşsa her şey yüklenir; yerel veri yalnızca varsayılan haldeyse buluttan indirilir; ikisi de doluysa sorulur.
-    public static func initialMode(localIsSeedOnly: Bool, remoteEmpty: Bool) -> InitialSyncMode {
+    /// Başka şubeden geçişte (`switchingFromOtherWorkspace`) yereldeki veri eski şubenindir: dolu şubeye geçince o
+    /// şubenin verisi indirilir (yerel yedek alınır); boş şubeye geçince ne kopyalanacağı sorulur (kendiliğinden yüklenmez).
+    public static func initialMode(localIsSeedOnly: Bool, remoteEmpty: Bool, switchingFromOtherWorkspace: Bool = false) -> InitialSyncMode {
+        if switchingFromOtherWorkspace && !localIsSeedOnly { return remoteEmpty ? .ask : .download }
         if remoteEmpty { return .upload }
         if localIsSeedOnly { return .download }
         return .ask
+    }
+
+    /// Şube seçimi kaldığı yerden devam mı, ilk bağlantı mı (başka şubeden geçiş dahil)
+    public static func workspaceChoice(state: SyncState, workspaceID: String) -> WorkspaceChoice {
+        guard let current = state.config?.workspaceID, state.initialized else { return .initial(switching: false) }
+        return current == workspaceID ? .resume : .initial(switching: true)
     }
 
     /// Sunucudaki (silinmemiş) belge yok mu
@@ -63,6 +85,9 @@ public enum CloudSyncEngine {
 
     /// İlk bağlantı: tam okumanın (`rows`, since = 0) ardından yerel veriyi ve durumu hazırlar.
     /// - upload: bulutta olup yerelde olmayan günler yerele alınır; yerel her belge "dirty" olur (yerel kazanır).
+    ///   Personel tanım belgelerini yazamadığından onlarda buluttaki hal geçerlidir (bulutta yoksa yereldeki kalır).
+    /// - copyCatalog: upload gibi, ama önce yereldeki günler, personel ve siparişler boşaltılır (başka şubenindir);
+    ///   şube adı ayarı yeni şubenin adı olur.
     /// - download: yerel veri buluttakiyle değiştirilir (bulutta olmayan günler silinir); bulutta hiç olmayan
     ///   tanım belgeleri yerelden korunur ve (yetki varsa) yüklenmek üzere "dirty" işaretlenir.
     /// `.ask` geçersizdir (önce kullanıcıya sorulmalı).
@@ -77,9 +102,19 @@ public enum CloudSyncEngine {
 
         var data = local
         switch mode {
-        case .upload:
+        case .upload, .copyCatalog:
+            if mode == .copyCatalog {
+                data.days = [:]
+                data.employees = []
+                data.purchaseOrders = []
+                if let name = state.config?.workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                    data.settings.branchName = name
+                }
+            }
+            // Personel: tanım belgelerinde buluttaki hal geçerli (yüklenemezler; eski hal kalırsa web'le ayrışırdı)
+            if !canWriteCatalog { data = restoreReadOnlyDocs(local: data, state: state).data }
             // Yalnızca bulutta olan günler yerele gelir; diğer her şeyde yerel kazanır
-            for (k, r) in remote where DocKey.isDay(k) && !r.deleted && DocCodec.body(for: k, in: local) == nil {
+            for (k, r) in remote where DocKey.isDay(k) && !r.deleted && DocCodec.body(for: k, in: data) == nil {
                 DocCodec.apply(key: k, body: r.body, to: &data)
             }
             for k in DocCodec.split(data).keys where needsPush(key: k, data: data, base: state.base[k]) {
@@ -101,6 +136,44 @@ public enum CloudSyncEngine {
         }
         state.initialized = true
         return data
+    }
+
+    /// Aynı şubeye yeniden bağlanma (çıkış yapıp yeniden giriş — başka hesapla da —, oturum yenileme, rol değişimi):
+    /// personelken yazılamayan tanım belgeleri önce sunucudaki haline döner (rol müdüre yükseldiyse eskimiş tanımlar
+    /// "yerel değişiklik" sanılıp sunucudakinin üzerine yazılmasın), sonra şube adı ve rol güncellenir, eşitleme
+    /// yeniden başlar ve tabandan ayrışan belgeler (oturum kapalıyken yapılanlar) gönderilmek üzere "dirty" işaretlenir.
+    /// Gönderim 3 yollu birleştirmeyle yapılır: arada web panelinde yapılan değişiklikler korunur.
+    public static func resume(workspace: CloudWorkspace, local: AppData, state: inout SyncState) -> AppData {
+        let healed = restoreReadOnlyDocs(local: local, state: state)
+        state.config?.workspaceName = workspace.name
+        state.config?.role = workspace.role
+        state.signedOut = false
+        state.dirty.formUnion(divergentKeys(local: healed.data, state: state))
+        return healed.data
+    }
+
+    /// Rolün yazamadığı (personel: tanım belgeleri) ve sunucudaki halinden (taban) ayrışmış belgeleri sunucudaki
+    /// haliyle değiştirir ("sunucu kazanır"). "dirty" anahtarlara (gönderimde reddedilip geri yüklenir), tabanı olmayan,
+    /// silinmiş ya da çözülemeyen belgelere dokunulmaz. Personelken eskimiş kalan tanımlar böylece hem web'le aynı olur
+    /// hem de rol müdüre yükselince "yerel değişiklik" sanılıp sunucudakinin üzerine yazılmaz.
+    public static func restoreReadOnlyDocs(local: AppData, state: SyncState) -> (data: AppData, restored: Set<String>) {
+        let role = state.config?.role
+        var data = local
+        var restored = Set<String>()
+        for k in DocKey.catalog where !CloudRole.canWrite(role, key: k) && !state.dirty.contains(k) {
+            guard let b = state.base[k], !b.deleted, let serverN = DocCodec.normalize(key: k, body: b.body) else { continue }
+            if DocCodec.body(for: k, in: data) != serverN, DocCodec.apply(key: k, body: serverN, to: &data) {
+                restored.insert(k)
+            }
+        }
+        return (data, restored)
+    }
+
+    /// Sunucudaki hali kapatılmış (kilitli) gün mü: sunucunun D1 denetimiyle aynı (`body -> 'locked' = true`, silinmemiş;
+    /// boolean olmayan değer kilit sayılmaz)
+    public static func isLockedDay(_ base: BaseDoc?) -> Bool {
+        guard let base, !base.deleted else { return false }
+        return base.body?["locked"]?.boolValue == true
     }
 
     /// Yerel değer sunucudakinden (taban) farklı mı: gönderilmesi gerekiyor mu
@@ -166,6 +239,15 @@ public enum CloudSyncEngine {
             state.base[key] = BaseDoc(rev: row.rev, body: remoteRaw, deleted: row.deleted)
         }
 
+        // Personel: tanım belgelerinde sunucudaki hal geçerli (ör. ilk bağlantıda "Bu Mac'tekini Yükle" seçilmişse)
+        if !(state.config?.canWriteCatalog ?? true) {
+            let healed = restoreReadOnlyDocs(local: out.data, state: state)
+            if !healed.restored.isEmpty {
+                out.data = healed.data
+                out.appliedRemote.formUnion(healed.restored)
+            }
+        }
+
         // 2. Gönder
         let keys = DocKey.sorted(state.dirty)
         var done = 0
@@ -209,10 +291,13 @@ public enum CloudSyncEngine {
             do {
                 r = try await api.put(workspace: workspace, key: key, body: body, baseRev: base?.rev ?? 0,
                                       deleted: deleted, client: client, summary: summary)
-            } catch CloudSyncError.forbidden(let message) where !DocKey.isDay(key) {
-                // Yetkisiz tanım değişikliği (personel kalem/reçete/ayar değiştirdi): bırakılır, sunucudaki sürüm
-                // geçerli olur. Gün belgelerinde yetki hatası (ör. şubeden çıkarılma) yerel veriyi geri almaz:
-                // hata yukarı iletilir ve anahtar "dirty" kalır.
+            } catch CloudSyncError.forbidden(let message) where !DocKey.isDay(key) || isLockedDay(base) {
+                // Yetkisiz tanım değişikliği (personel kalem/reçete/ayar değiştirdi) ya da kapatılmış gün (personel
+                // sunucuda kilitli olan günü değiştirdi, kilidini açtı ya da sildi; docs/SYNC.md §2): bırakılır, sunucudaki
+                // sürüm geçerli olur ve yeniden denenmez; sonraki anahtarların gönderimi sürer. Sunucu kilit denetimini
+                // rev karşılaştırmasından sonra yaptığından 42501 geldiğinde taban sunucudaki kilitli haldir (eski tabanla
+                // yazan önce çakışmayı alıp tabanını günceller). Kilitsiz günde yetki hatası (ör. şubeden çıkarılma) yerel
+                // veriyi geri almaz: hata yukarı iletilir ve anahtar "dirty" kalır.
                 out.rejected[key] = message
                 state.dirty.remove(key)
                 if let base {
@@ -246,8 +331,10 @@ public enum CloudSyncEngine {
                 }
             }
             if attempts > CloudDefaults.maxConflictRetries {
-                // Bir sonraki turda çekilip yeniden birleştirilecek
-                throw CloudSyncError.server(status: 409, message: "\(key) belgesi art arda değişti; bir sonraki eşitlemede yeniden denenecek")
+                // Bir sonraki turda çekilip yeniden birleştirilecek (anahtar "dirty" kalır); diğer anahtarların
+                // gönderimi sürer (ör. bugünün sayımı, sık değişen bir belge yüzünden bekletilmez)
+                out.error = .server(status: 409, message: "\(key) belgesi art arda değişti; bir sonraki eşitlemede yeniden denenecek")
+                return
             }
         }
     }

@@ -419,6 +419,8 @@ struct DecimalField: View {
     var width: CGFloat = 80
     /// Formlarda: geçerli her yazımda değeri hemen günceller (düğmeye basıldığında son yazılan kaybolmasın)
     var live = false
+    /// Para tutarı: "35.000" / "1.050" binlik ayırıcılı okunur (Fmt.parseAmount)
+    var amount = false
     @State private var text = ""
     /// Kullanıcı yazdı mı (yalnızca yazılan metin kaydedilir; gösterim yuvarlaması değeri bozmasın)
     @State private var edited = false
@@ -445,7 +447,7 @@ struct DecimalField: View {
     }
 
     private func parsed(_ t: String) -> Double? {
-        guard let v = Fmt.parse(t), v >= 0 else { return nil }
+        guard let v = amount ? Fmt.parseAmount(t) : Fmt.parse(t), v >= 0 else { return nil }
         return (v * 1_000_000).rounded() / 1_000_000
     }
 
@@ -466,6 +468,9 @@ struct OptionalDecimalField: View {
     var width: CGFloat = 80
     /// Formlarda: geçerli her yazımda değeri hemen günceller (düğmeye basıldığında son yazılan kaybolmasın)
     var live = false
+    /// Para tutarı (birim maliyet, fatura fiyatı, ücret, ek ödeme): ekranda tutarlar binlik ayırıcı noktayla
+    /// gösterildiğinden "35.000" 35000, "1.050" 1050 okunur (Fmt.parseAmount; web paneliyle aynı)
+    var amount = false
     @State private var text = ""
     /// Kullanıcı yazdı mı (yalnızca yazılan metin kaydedilir; gösterim yuvarlaması değeri bozmasın)
     @State private var edited = false
@@ -497,7 +502,7 @@ struct OptionalDecimalField: View {
     private func parsed(_ t: String) -> Double?? {
         let t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.isEmpty { return .some(nil) }
-        guard let v = Fmt.parse(t), v >= 0 else { return nil }
+        guard let v = amount ? Fmt.parseAmount(t) : Fmt.parse(t), v >= 0 else { return nil }
         return .some((v * 1_000_000).rounded() / 1_000_000)
     }
 
@@ -507,6 +512,18 @@ struct OptionalDecimalField: View {
         } else { NSSound.beep() }
         edited = false
         text = display(value)
+    }
+}
+
+/// Personel hesabıyla salt okunur bölümlerde gösterilen açıklama (web panelindeki salt okunur notla aynı kural:
+/// tanımları yalnızca patron ve müdür değiştirir; sunucu da reddeder)
+struct ReadOnlyNote: View {
+    var text: String = CloudPermission.catalogReadOnlyNote
+
+    var body: some View {
+        Label(text, systemImage: "lock.fill")
+            .font(.callout).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

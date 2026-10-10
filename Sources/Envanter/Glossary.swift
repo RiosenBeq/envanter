@@ -129,7 +129,7 @@ enum Term: String, CaseIterable, Identifiable {
         case .purchaseOrder:
             return "Önerilerden oluşturulan sipariş. Mal gelince \"Teslim al\" ile gelen miktarlar seçili günün Gelen sütununa işlenir; fatura birim fiyatı (₺ / adet veya kg) girilirse fiyat geçmişine yazılır ve birim maliyet güncellenir."
         case .lock:
-            return "Sayım bitince günü kapatın: sayım, satış, vardiya ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Gerekirse kilit açılabilir."
+            return "Sayım bitince günü kapatın: sayım, satış, vardiya ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Gerekirse kilit açılabilir; web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açar."
         case .recipeCost:
             return "1 adet ürünün reçetesindeki hammaddelerin birim maliyetle toplamı (₺ / porsiyon). Hammaddelerden birinin maliyeti eksikse hesaplanmaz."
         }

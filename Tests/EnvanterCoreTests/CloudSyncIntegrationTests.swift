@@ -138,6 +138,51 @@ final class CloudSyncIntegrationTests: XCTestCase {
             guard case .forbidden? = error as? CloudSyncError else { return XCTFail("\(error)") }
         }
 
+        // --- Kapatılmış gün (D1): personel değiştiremez, kilidini açamaz, silemez. Sunucu 42501 döner; Mac sunucudaki
+        // hali geri yükler, yeniden denemez ve sonraki günleri göndermeye devam eder.
+        let lockedDay = "2026-08-29", lockedKey = "day:2026-08-29"
+        XCTAssertEqual(b.data.days[lockedDay]?.isLocked, true)
+        let lockedRev = try XCTUnwrap(b.state.base[lockedKey]?.rev)
+        b.edit { d in
+            d.days[lockedDay]?.locked = nil
+            d.days[lockedDay]?.note = "personel kilidi açtı"
+        }
+        b.edit { $0.days[date]?.entries["patates", default: DayEntry()].closing = 21.5 }
+        let ob5 = try await b.sync()
+        XCTAssertNil(ob5.error)
+        XCTAssertEqual(Array(ob5.rejected.keys), [lockedKey])
+        XCTAssertEqual(ob5.rejected[lockedKey], CloudPermission.lockedDayMessage)
+        XCTAssertEqual(ob5.pushed, [dayKey])
+        XCTAssertEqual(b.state.dirty, [])
+        XCTAssertEqual(b.data.days[lockedDay]?.isLocked, true)
+        XCTAssertEqual(DocCodec.body(for: lockedKey, in: b.data), DocCodec.body(for: lockedKey, in: a.data))
+        let ob6 = try await b.sync()
+        XCTAssertEqual(ob6.rejected, [:])
+        XCTAssertEqual(ob6.pushed, [])
+        // Doğrudan çağrılar: silme ve kilit açma 403; aynı gövdeyi yeniden yazmak serbest
+        for (body, deleted) in [(j("{}"), true), (j(#"{"entries":{}}"#), false)] {
+            do {
+                _ = try await staff.put(workspace: wsID, key: lockedKey, body: body, baseRev: lockedRev, deleted: deleted, client: "mac", summary: nil)
+                XCTFail("personel kapatılmış günü değiştirebildi")
+            } catch {
+                XCTAssertEqual(error as? CloudSyncError, .forbidden(CloudPermission.lockedDayMessage))
+            }
+        }
+        let lockedBody = try XCTUnwrap(b.state.base[lockedKey]?.body)
+        let same = try await staff.put(workspace: wsID, key: lockedKey, body: lockedBody, baseRev: lockedRev, deleted: false, client: "mac", summary: nil)
+        XCTAssertTrue(same.ok)
+        // Patron değiştirebilir (kilidi açmadan not ekler)
+        try await a.sync()
+        a.edit { $0.days[lockedDay]?.note = "patron notu" }
+        let oa5 = try await a.sync()
+        XCTAssertNil(oa5.error)
+        XCTAssertEqual(oa5.pushed, [lockedKey])
+        try await b.sync()
+        XCTAssertEqual(b.data.days[lockedDay]?.note, "patron notu")
+        XCTAssertEqual(b.data.days[lockedDay]?.isLocked, true)
+        XCTAssertEqual(b.data.days[date]?.entries["patates"]?.closing, 21.5)
+        XCTAssertEqual(a.data.days[date]?.entries["patates"]?.closing, 21.5)
+
         // --- Silinen gün diğer istemciden de kalkar
         a.edit { $0.days["2026-08-28"] = nil }
         let oa4 = try await a.sync()
@@ -161,6 +206,8 @@ final class CloudSyncIntegrationTests: XCTestCase {
         XCTAssertTrue(activity.contains { $0.key == dayKey && $0.email == staffEmail && $0.summary.contains("Peynir kapanış") })
         XCTAssertTrue(activity.contains { $0.key == "day:2026-08-28" && $0.summary == "28.08.2026 günü silindi" })
         XCTAssertFalse(activity.contains { $0.email == staffEmail && !DocKey.isDay($0.key) })
+        // Personelin kapatılmış güne tek yazması aynı gövdenin yeniden yazılmasıdır
+        XCTAssertEqual(activity.filter { $0.email == staffEmail && $0.key == lockedKey }.count, 1)
 
         // --- Oturum yenileme (gerçek GoTrue): süresi dolmak üzere → önceden; geçersiz anahtar → 401 sonrası
         guard let s0 = await owner.currentSession else { return XCTFail("oturum yok") }

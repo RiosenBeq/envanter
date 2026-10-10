@@ -67,6 +67,8 @@ struct EnvanterApp: App {
                     store.setLocked(store.selectedDate, !store.isLocked(store.selectedDate))
                 }
                 .keyboardShortcut("l")
+                // Personel hesabıyla kapatılmış günün kilidini yalnızca patron / müdür açar
+                .disabled(store.isReadOnlyDay(store.selectedDate))
             }
             CommandMenu("Git") {
                 ForEach(AppSection.allCases.filter { $0 != .backup }) { s in

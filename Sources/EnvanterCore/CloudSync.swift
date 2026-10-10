@@ -39,7 +39,7 @@ public struct CloudConfig: Codable, Equatable, Sendable {
     }
 
     /// Personel yalnızca gün belgelerini yazabilir
-    public var canWriteCatalog: Bool { role != CloudRole.staff }
+    public var canWriteCatalog: Bool { CloudRole.canWriteCatalog(role) }
 }
 
 public enum CloudRole {
@@ -52,6 +52,70 @@ public enum CloudRole {
         case staff: return "Personel"
         default: return role ?? "—"
         }
+    }
+
+    /// Tanım belgelerini (kalem, reçete, ayar, personel, sipariş) yazabilir mi: personel yazamaz.
+    /// Rol bilinmiyorsa (web eşitlemesi yok) her şey serbesttir.
+    public static func canWriteCatalog(_ role: String?) -> Bool { role != staff }
+
+    /// Belgeyi yazabilir mi (docs/SYNC.md §2 "Roller")
+    public static func canWrite(_ role: String?, key: String) -> Bool { canWriteCatalog(role) || DocKey.isDay(key) }
+
+    /// Kapatılmış (kilitli) günü değiştirebilir, kilidini açabilir ya da silebilir mi: personel yapamaz
+    /// (docs/SYNC.md §2 "Kapatılmış gün"; sunucu da 42501 ile reddeder).
+    public static func canChangeLockedDay(_ role: String?) -> Bool { role != staff }
+}
+
+/// Bir yerel değişikliğin rol kurallarına takılması. Uygulama işlemi bütünüyle reddeder: yarısı gönderilip yarısı
+/// sunucuca geri alınan işlem (ör. teslim alma: gün + sipariş) veriyi bozardı.
+public struct LocalChangeRefusal: Equatable, Sendable {
+    /// Personelin yazamadığı tanım belgeleri (sıralı)
+    public var catalogKeys: [String]
+    /// Değiştirilmek istenen kapatılmış günler (yyyy-MM-dd, sıralı)
+    public var lockedDates: [String]
+
+    public var title: String {
+        catalogKeys.isEmpty ? "Gün kapatılmış" : "Bu işlem için müdür yetkisi gerekir"
+    }
+
+    public var message: String {
+        if catalogKeys.contains(DocKey.orders) {
+            return "\(CloudPermission.ordersStaffNote) Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, vardiya, not) değiştirilebilir; işlem uygulanmadı."
+        }
+        if !catalogKeys.isEmpty {
+            let labels = catalogKeys.map { DocKey.title($0) }.joined(separator: ", ")
+            return "Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, vardiya, not) değiştirilebilir. \(labels) bölümündeki değişikliği patron ya da müdür web panelinden yapabilir; işlem uygulanmadı."
+        }
+        let dates = lockedDates.map { DateKey.short($0) }.joined(separator: ", ")
+        let what = lockedDates.count == 1 ? "\(dates) günü kapatılmış." : "\(dates) günleri kapatılmış."
+        return "\(what) \(CloudPermission.lockedDayMessage) Değişiklik uygulanmadı."
+    }
+}
+
+/// Yerel değişikliklerde rol kuralları (web: src/lib/store/docs.ts canEditKey / dayChangeAllowed ile aynı)
+public enum CloudPermission {
+    /// Sunucunun personel için kapatılmış gün hatası (42501) ile aynı metin
+    public static let lockedDayMessage = "Kapatılmış günü yalnızca müdür veya patron değiştirebilir."
+    /// Personel hesabıyla salt okunur bölümlerin açıklaması (stok kalemleri, reçeteler, personel, siparişler, ayarlar)
+    public static let catalogReadOnlyNote = "Personel hesabı: bu bölümü yalnızca patron veya müdür değiştirebilir (web paneli). Burada web panelindeki hal gösterilir."
+    /// Personel hesabıyla kapatılmış günde gösterilen açıklama
+    public static let lockedDayStaffNote = "Gün kapatıldı. Kilidi yalnızca patron veya müdür açabilir."
+    /// Personel hesabıyla sipariş ve teslimat işlemleri kapalıdır (yarım kalan teslim alma Gelen'i iki kez yazdırırdı)
+    public static let ordersStaffNote = "Teslimatı ve siparişleri patron / müdür işler (web paneli)."
+
+    /// `old` → `new` değişikliği `role` için reddedilir mi (nil: izinli). Personel tanım belgelerini değiştiremez;
+    /// yerelde kapatılmış bir günü de hiçbir şekilde değiştiremez (kilidini açmak ve silmek dahil). Açık günü kapatmak serbesttir.
+    public static func refusal(role: String?, old: AppData, new: AppData) -> LocalChangeRefusal? {
+        refusal(role: role, old: old, keys: DocCodec.changedKeys(old, new))
+    }
+
+    /// `keys`: değişen belge anahtarları (`DocCodec.changedKeys(old, new)`)
+    public static func refusal(role: String?, old: AppData, keys: Set<String>) -> LocalChangeRefusal? {
+        guard role == CloudRole.staff, !keys.isEmpty else { return nil }
+        let catalog = DocKey.sorted(keys.filter { !CloudRole.canWrite(role, key: $0) })
+        let locked = keys.compactMap { DocKey.date(of: $0) }.filter { old.days[$0]?.isLocked == true }.sorted()
+        if catalog.isEmpty && locked.isEmpty { return nil }
+        return LocalChangeRefusal(catalogKeys: catalog, lockedDates: locked)
     }
 }
 
@@ -83,17 +147,21 @@ public struct SyncState: Codable, Equatable, Sendable {
     public var userEmail: String?
     /// İlk bağlantı kararı (yükle / indir) verildi; düzenli eşitleme yalnızca bundan sonra çalışır
     public var initialized: Bool
+    /// Kullanıcı çıkış yaptı ya da yeniden girişte şube henüz onaylanmadı: şube eşleşmesi (taban, bekleyen
+    /// değişiklikler) korunur ama eşitleme, şube yeniden seçilene (rol güncellenene) kadar çalışmaz.
+    public var signedOut: Bool
 
     public init(config: CloudConfig? = nil, lastRev: Int64 = 0, base: [String: BaseDoc] = [:], dirty: Set<String> = [],
                 accessToken: String? = nil, refreshToken: String? = nil, expiresAt: Date? = nil, lastSyncAt: Date? = nil,
-                userEmail: String? = nil, initialized: Bool = false) {
+                userEmail: String? = nil, initialized: Bool = false, signedOut: Bool = false) {
         self.config = config; self.lastRev = lastRev; self.base = base; self.dirty = dirty
         self.accessToken = accessToken; self.refreshToken = refreshToken; self.expiresAt = expiresAt
         self.lastSyncAt = lastSyncAt; self.userEmail = userEmail; self.initialized = initialized
+        self.signedOut = signedOut
     }
 
     enum CodingKeys: String, CodingKey {
-        case config, lastRev, base, dirty, accessToken, refreshToken, expiresAt, lastSyncAt, userEmail, initialized
+        case config, lastRev, base, dirty, accessToken, refreshToken, expiresAt, lastSyncAt, userEmail, initialized, signedOut
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,12 +176,17 @@ public struct SyncState: Codable, Equatable, Sendable {
         lastSyncAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncAt)
         userEmail = try c.decodeIfPresent(String.self, forKey: .userEmail)
         initialized = try c.decodeIfPresent(Bool.self, forKey: .initialized) ?? false
+        signedOut = try c.decodeIfPresent(Bool.self, forKey: .signedOut) ?? false
     }
 
     /// Oturum var mı (erişim ya da yenileme anahtarı)
     public var isSignedIn: Bool { refreshToken != nil || accessToken != nil }
     /// Şube seçilmiş, oturum açık ve ilk karar verilmiş: düzenli eşitleme çalışabilir
-    public var isActive: Bool { config?.workspaceID != nil && isSignedIn && initialized }
+    public var isActive: Bool { config?.workspaceID != nil && isSignedIn && initialized && !signedOut }
+
+    /// Yerel değişikliklerde uygulanan rol: bu Mac bir şubeyle eşleşmişse (oturum kapalı olsa da) o şubedeki rol.
+    /// Eşleşme yoksa nil (her şey serbest).
+    public var enforcedRole: String? { config?.workspaceID != nil && initialized ? config?.role : nil }
 
     public var session: AuthSession? {
         guard let accessToken else { return nil }
@@ -127,9 +200,31 @@ public struct SyncState: Codable, Equatable, Sendable {
         if let e = s?.email { userEmail = e }
     }
 
-    /// Şube eşleşmesini sıfırlar (şube değişince / çıkışta); bağlantı ayarları kalır
+    /// Şube eşleşmesini sıfırlar (şube değişince); bağlantı ayarları kalır
     public mutating func resetWorkspaceData() {
-        lastRev = 0; base = [:]; dirty = []; initialized = false; lastSyncAt = nil
+        lastRev = 0; base = [:]; dirty = []; initialized = false; lastSyncAt = nil; signedOut = false
+    }
+
+    /// Çıkış: oturum anahtarları silinir; şube eşleşmesi (şube, rol, taban, bekleyen değişiklikler) korunur. Yeniden
+    /// girişte aynı şube seçilirse kaldığı yerden (3 yollu birleştirmeyle) devam edilir; web panelinde arada yapılan
+    /// değişiklikler bu Mac'in eski haliyle ezilmez.
+    public mutating func signOut() {
+        store(nil)
+        userEmail = nil
+        signedOut = true
+    }
+
+    /// Girişte kullanılacak durum. Aynı sunucudaysa şube eşleşmesi korunur (hesap farklı olsa da): şube listesi
+    /// gelip şube yeniden seçilene kadar eşitleme bekler (`signedOut`). Farklı sunucuda yeni durum başlar.
+    public static func forSignIn(existing: SyncState, url: String, publishableKey: String, email: String) -> SyncState {
+        guard let c = existing.config, c.url == url else {
+            return SyncState(config: CloudConfig(url: url, publishableKey: publishableKey, email: email))
+        }
+        var s = existing
+        s.config?.publishableKey = publishableKey
+        s.config?.email = email
+        s.signedOut = c.workspaceID != nil
+        return s
     }
 }
 
@@ -187,6 +282,33 @@ public struct SyncStore: Sendable {
     static func decoder() -> JSONDecoder { JSONCoding.decoder() }
 }
 
+extension AppSettings {
+    /// "Sayımı yapan" adını hızlı seçim listesine (Ayarlar > Sayım yapanlar) ekler. Personel hesabıyla ayarlar
+    /// yazılamadığından eklenmez (web: saveDayNote ile aynı); yoksa her yeni ad reddedilen bir ayar yazması olurdu.
+    /// - Returns: güncellenmiş ayarlar; değişiklik yoksa nil
+    public func rememberingStaff(_ name: String, role: String?) -> AppSettings? {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard CloudRole.canWriteCatalog(role), !n.isEmpty, !staff.contains(n) else { return nil }
+        var s = self
+        s.staff.append(n)
+        return s
+    }
+}
+
+/// Eşitlemenin diske yazılma sırası: yerel veri değiştiyse önce veri dosyası, sonra eşitleme durumu (esitleme.json).
+/// Ters sırada bir çökme / zorla kapatma, tabanı ilerlemiş durumu eski veriyle bırakırdı: yeniden açılışta eski belgeler
+/// "değişmiş" sanılıp güncel tabanla (çakışmasız) gönderilir, web panelindeki değişiklik ezilirdi. Veri yazılamazsa
+/// durum da yazılmaz (yeni veri + eski taban güvenlidir: gönderim çakışır ve merge3 ile birleşir).
+public enum SyncCheckpoint {
+    /// - Returns: durum yazıldı mı
+    @discardableResult
+    public static func persist(dataChanged: Bool, writeData: () -> Bool, writeState: () -> Void) -> Bool {
+        if dataChanged && !writeData() { return false }
+        writeState()
+        return true
+    }
+}
+
 // MARK: - Belge anahtarları
 
 public enum DocKey {
@@ -206,6 +328,18 @@ public enum DocKey {
     }
 
     public static func isDay(_ key: String) -> Bool { date(of: key) != nil }
+
+    /// Kullanıcıya gösterilen ad: "Stok kalemleri", … gün belgesinde tarih (dd.MM.yyyy)
+    public static func title(_ key: String) -> String {
+        switch key {
+        case items: return "Stok kalemleri"
+        case products: return "Reçeteler"
+        case settings: return "Ayarlar"
+        case employees: return "Personel"
+        case orders: return "Siparişler"
+        default: return date(of: key).map { DateKey.short($0) } ?? key
+        }
+    }
 
     /// Sunucunun kabul ettiği anahtar mı
     public static func isValid(_ key: String) -> Bool { catalog.contains(key) || isDay(key) }
@@ -355,6 +489,26 @@ public enum DocCodec {
             }
         }
         return d
+    }
+
+    /// Geri alma: `old` → `new` işlemini, işlemden sonra gelen başka değişiklikleri (`current`; ör. web panelinden
+    /// aynı günde düzeltilen başka bir kalem ya da not) koruyarak geri alır. Her belge için
+    /// merge3(taban = new, yerel = current, uzak = old): işlemin değiştirdiği alanlar eski haline döner, sonradan
+    /// değişen alanlar korunur (ikisi de değiştiyse sonradan gelen kalır). Belge işlemden sonra hiç değişmediyse
+    /// birebir eski hali gelir (sıra dahil). Yineleme de aynı yoldan geçer.
+    public static func undoing(keys: Set<String>, old: AppData, new: AppData, current: AppData) -> AppData {
+        var out = current
+        for k in keys {
+            let n = body(for: k, in: new), c = body(for: k, in: current)
+            if n == c {
+                out = replacing([k], in: out, from: old)
+                continue
+            }
+            let merged = JSONMerge.merge3(base: n, local: c, remote: body(for: k, in: old))
+            if merged == c { continue }
+            if !apply(key: k, body: merged, to: &out) { out = replacing([k], in: out, from: old) }
+        }
+        return out
     }
 
     /// Eşitleme sürerken kullanıcı veriyi değiştirdiyse: eşitlemenin sonucuna (`synced`) kullanıcının değişikliklerini

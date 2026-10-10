@@ -66,6 +66,12 @@ final class FakeServer: @unchecked Sendable {
             }
             if let cur = docs[ws]?[key] {
                 guard cur.rev == baseRev else { return PutResult(ok: false, rev: cur.rev, body: cur.body, deleted: cur.deleted) }
+                // Kapatılmış gün (docs/SYNC.md §2): personel sunucudaki güncel hali kilitli olan günü değiştiremez, kilidini
+                // açamaz, silemez; aynı gövdeyi yeniden yazmak serbest. Denetim rev karşılaştırmasından sonra (SQL ile aynı).
+                if role == CloudRole.staff && DocKey.isDay(key) && !cur.deleted && cur.body["locked"] == .bool(true)
+                    && (deleted || stored != cur.body) {
+                    throw CloudSyncError.forbidden("Kapatılmış günü yalnızca müdür veya patron değiştirebilir.")
+                }
             } else if baseRev != 0 {
                 return PutResult(ok: false, rev: 0, body: nil, deleted: false)
             }

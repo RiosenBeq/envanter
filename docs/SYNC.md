@@ -2,8 +2,10 @@
 
 NextGen Envanter iki istemciden yönetilir:
 
-- **Mac uygulaması** (bu depo): personelin günlük kullandığı uygulama. Sayım, satış aktarımı ve vardiya girişi buradan yapılır. Veri yerelde `envanter-verisi.json` olarak tutulur ve arka planda buluta eşitlenir.
-- **Web paneli** ([RiosenBeq/envantersite](https://github.com/RiosenBeq/envantersite)): patron ve müdürlerin her yerden kontrol ettiği ve gerektiğinde müdahale ettiği panel. Raporlar, sayım düzeltme, sipariş, personel, maliyetler, kullanıcı yetkileri, şube karşılaştırması ve değişiklik geçmişi buradan yönetilir.
+- **Mac uygulaması** ([RiosenBeq/envanter](https://github.com/RiosenBeq/envanter)): şubedeki bilgisayara kurulan, personelin günlük kullandığı uygulama. Sayım, satış aktarımı, sipariş ve ekip buradan yönetilir. Veri yerelde `envanter-verisi.json` olarak tutulur ve buluta anlık eşitlenir.
+- **Web paneli** ([RiosenBeq/envantersite](https://github.com/RiosenBeq/envantersite)): patron ve müdürlerin her yerden, anlık izlediği ve gerektiğinde müdahale ettiği panel. Raporlar, sayım düzeltme, sipariş, ekip, kullanıcılar ve yetkiler, şube karşılaştırması ve değişiklik geçmişi buradan yönetilir; Mac'in o an açık olup olmadığı görünür.
+
+Uygulama yalnızca **envanter** yönetir (miktarlar): stok kalemleri, reçeteler, satış aktarımı, günlük sayım ve fark, sipariş, ekip. Para (birim maliyet, satış tutarı, food cost, personel maliyeti, prime cost, hedefler, fiyat uyarıları) Ekim 2026'da kaldırıldı.
 
 Ortak depolama **Supabase**'dir (Postgres + Auth + Row Level Security). İki istemci de Supabase'e doğrudan, kullanıcının oturumuyla bağlanır. Yetkiyi veritabanındaki RLS kuralları ve `security definer` fonksiyonlar uygular; istemcide gizli anahtar yoktur, yalnızca herkese açık *publishable key* kullanılır.
 
@@ -18,13 +20,26 @@ Bir **çalışma alanı** (workspace) bir şube/işletmedir. Verisi `AppData`'n�
 | `items` | stok kalemleri dizisi | `[Item]` |
 | `products` | reçeteli ürünler dizisi | `[Product]` |
 | `settings` | ayarlar nesnesi | `AppSettings` |
-| `employees` | personel dizisi | `[Employee]` |
+| `employees` | ekip üyeleri dizisi | `[Employee]` |
 | `orders` | satın alma siparişleri dizisi | `[PurchaseOrder]` |
 | `day:YYYY-MM-DD` | o günün kaydı | `DayRecord` |
 
 - JSON biçimi Swift `JSONEncoder` çıktısıyla aynıdır (`Persistence.encoder()`): `nil` alanlar yazılmaz, tarihler (`salesImportedAt`) ISO 8601 (`2026-08-01T10:15:00Z`), sayılar ondalık.
-- Boşalan gün (`DayRecord.isEmpty` ve kilitli değil) silinir: `deleted = true`, `body = {}`. Katalog belgeleri (`items/products/settings/employees/orders`) silinmez.
-- Okurken bilinmeyen alanlar korunmalıdır (ileriki sürüm alanları kaybolmasın). Web istemcisi belgeleri değiştirirken yalnızca bildiği alanlara dokunur.
+- Boşalan gün (`DayRecord.isEmpty` ve kilitli değil) silinir: `deleted = true`, `body = {}`. **İstisna:** gövdede istemcinin bilmediği dolu bir alan varsa (ör. eski sürümlerin `shifts`/`otherLabor` alanları) gün silinmez; bilinen alanları temizlenmiş gövde yazılır. Katalog belgeleri (`items/products/settings/employees/orders`) silinmez. `DayRecord.isEmpty`: sayım, satış, not ve sayan yok.
+- Okurken bilinmeyen alanlar korunmalıdır (ileriki ya da eski sürüm alanları kaybolmasın). İstemci bir belgeyi değiştirirken yalnızca bildiği alanlara dokunur; bilmediği alanlar sunucudaki halinden aynen gider. Mac bunu her gönderimde `merge3(taban = sunucu gövdesinin Mac karşılığı, yerel, uzak = sunucunun ham gövdesi)` ile yapar; dizi elemanları burada `id`, `code` ya da `itemID` ile eşlenir (sipariş satırlarındaki bilinmeyen alanlar da kalır). Web, normalleştirirken bilmediği alanları olduğu gibi taşır.
+- **Kaldırılan alanlar** yeni istemciler için "bilinmeyen" alandır; bulutta durur, okunmaz, silinmez: `Item.unitCost/costHistory`, `OrderLine.unitPrice`, `SaleLine.amount`, `Employee.payType/rate/costFactor/defaultHours/payHistory`, `DayRecord.shifts/otherLabor`, `AppSettings.targetFoodCostPct/targetLaborPct/targetPrimeCostPct/priceAlertPct`. Eski Mac sürümleri yeni belgeleri okumaya devam eder (eksik alanlar varsayılanla dolar). Yeni sürümün aldığı yerel yedek eski sürümde açılmayabilir (ekip üyelerinde ücret alanı yok); bulut yolu geriye dönük uyumludur.
+
+### Ekip (`employees`) ve eski sayım listesi
+
+`Employee = { id, name, role (görev: "Usta", "Kasiyer"…), phone?, active, startDate?, endDate?, note?, account? }`. `account`, üyenin bağlı giriş hesabının e-postasıdır (kullanıcı adıyla açılanlarda `<ad>@envanter.local`). Okurken yalnızca `id` zorunludur; `role` boşsa `""`, `active` yoksa `true`.
+
+- **Sayan seçimi:** önce aktif ekip üyeleri (liste sırasıyla), sonra eşleşmeyen eski `settings.staff` adları (`Team.counterNames` / web `counterNames`). Yeni yazılan bir sayan adı ekibe üye olarak eklenir (`rememberingCounter`; personel rolünde eklenmez, kimlik çakışırsa `-2`, `-3`…). **Hiçbir istemci artık `settings.staff`'a yazmaz.**
+- **Eski listenin taşınması:** `settings.staff` doluysa ve istemci tanım belgelerini yazabiliyorsa (patron/müdür, ya da hiçbir şubeye bağlı olmayan Mac) her ad `Employee(id: "staff-" + slug(ad), name: ad, role: "", active: true)` olarak eklenir ve `settings.staff = []` yapılır. Slug'ı boş olan, aynı slug'lı üyesi ya da aynı kimliği olan ad atlanır. Kimlikler deterministik olduğu için Mac ile web aynı anda taşısa da `merge3` (kimliğe göre) aynı sonuca varır. Bağlı istemcide taşıma yalnızca çekmeden sonra yapılır; önce `employees`, sonra `settings` gönderilir (`employees` gönderilemezse `settings` bekler, ad kaybolmaz). `settings` çakışmasında uzaktaki eski adlar birleştirilip taşıma yeniden yapılır. Sunucudaki `settings` ya da `employees` belgesi çözülemiyorsa taşıma bekler.
+- Test vektörleri (kullanıcı adı, slug, kimlik): Mac `Tests/EnvanterCoreTests/Fixtures/account-vectors.json`, web `test/fixtures/account-vectors.json` (aynı içerik).
+
+### Kullanıcı adıyla giriş
+
+E-postası olmayan çalışan için hesap kullanıcı adıyla açılır. Giriş adı `@` içermiyorsa kullanıcı adıdır ve `<ad>@envanter.local` e-postasına çevrilir: Türkçe harfler (ç ğ ı İ ö ş ü) ASCII'ye, harfler küçüğe, aksanlar atılır; boşluklar `.` olur; `[a-z0-9._-]` dışındaki karakterler atılır; art arda noktalar teke iner, baştaki/sondaki nokta atılır ("Ayşe Yılmaz" → `ayse.yilmaz@envanter.local`). `@` içeren giriş adı küçük harfe çevrilip olduğu gibi kullanılır. Ekranlarda `@envanter.local` hesapları yalnızca kullanıcı adıyla gösterilir. Bu hesaplara e-posta gitmez: kayıt olunamaz, "Şifremi unuttum" yerine patron "Şifre belirle" kullanır; davet yalnızca gerçek e-postaya gönderilir.
 
 ## 2. Supabase şeması
 
@@ -53,7 +68,9 @@ envanter_rev_seq    belge her yazıldığında rev = nextval (çalışma alanlar
 | --- | --- | --- |
 | owner (patron) | hepsi | hepsi + kullanıcı/yetki yönetimi (hesap açma, şifre belirleme, davet) + şube adı |
 | manager (müdür) | hepsi | tüm belgeler |
-| staff (personel) | hepsi | yalnızca `day:*` (sayım, satış, vardiya, not); kapatılmış (kilitli) günü değiştiremez |
+| staff (personel) | hepsi | yalnızca `day:*` (sayım, satış, not); kapatılmış (kilitli) günü değiştiremez |
+
+Sunucunun personel hata metni migration dosyasında sabit olduğundan hâlâ "(sayım, satış, vardiya, not)" der; istemciler bu yazmaları önceden engeller ve kendi metinlerini gösterir.
 
 **Kapatılmış gün.** Kapatılan (kilitlenen, `"locked": true`) gün envanter geçmişini korur. Personel bir günü kapatabilir, ama sunucudaki güncel hali kilitli olan günü değiştiremez, kilidini açamaz ve silemez. Bunları yalnızca patron ve müdür yapabilir. Kural sunucuda `envanter_put` içinde uygulanır. İstemciler de aynı kuralı arayüzde gösterir: personel için kilitli gün salt okunurdur ve "Kilidi Aç" düğmesi yoktur.
 
@@ -105,10 +122,14 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 **Okuma (pull):**
 `GET /rest/v1/envanter_docs?workspace_id=eq.W&rev=gt.N&order=rev.asc&select=key,body,rev,deleted,updated_at,updated_by&limit=500`. Satırlar 500'lük sayfalarla okunur ve `N` her sayfada son `rev`'e ilerletilir.
 
-**Canlı güncelleme:** `envanter_docs` ve `envanter_activity` tabloları `supabase_realtime` yayınına eklenir. Web paneli değişiklikleri anında görür. Mac uygulaması 60 saniyede bir ve her değişiklikten birkaç saniye sonra eşitler.
+**Canlı güncelleme:** `envanter_docs` ve `envanter_activity` tabloları `supabase_realtime` yayınına eklenir. İki istemci de değişiklikleri anında görür:
+
+- **Web:** `postgres_changes` aboneliği (kanal adı web'e özeldir); bildirim gelince artımlı çekme. Realtime bağlanamazsa 15 sn'de bir, bağlıyken güvenlik ağı olarak 60 sn'de bir çeker.
+- **Mac:** Supabase Realtime (Phoenix, `vsn=1.0.0`) soketi: `wss://<proje>/realtime/v1/websocket?apikey=<publishable key>&vsn=1.0.0`, konu `realtime:envanter-canli:<şube kimliği>`. Katılma gövdesi: `{"config":{"broadcast":{"ack":false,"self":false},"presence":{"key":<cihaz anahtarı>,"enabled":true},"postgres_changes":[{"event":"*","schema":"public","table":"envanter_docs","filter":"workspace_id=eq.<şube>"}],"private":false},"access_token":<jwt>}`. Her belge değişikliğinde ≈0,3 sn içinde çeker; 25 sn'de bir kalp atışı; kopunca 1, 2, 5, 10, 30 sn aralıklarla yeniden bağlanır ve bağlanınca kaçırdıklarını çeker; oturum yenilenince `access_token` olayı gönderir. Yerel değişiklik 2 sn sonra gönderilir; 60 sn'de bir eşitleme güvenlik ağı olarak sürer. Otomatik test ve ekran görüntüsü modlarında Realtime açılmaz.
+- **Varlık (presence):** aynı konuda Mac `{client:"mac", branch, app, since}` (cihaz anahtarı kurulum başına sabit, e-posta yok), web `{client:"web"}` izler (anahtar `web-<rastgele>`). Web panelinde en az bir Mac varsa "Mac çevrimiçi", yoksa "Mac çevrimdışı · son veri …" görünür. Kanal herkese açık (private kanal veritabanı değişikliği ister): şube kimliğini ve publishable key'i bilen biri varlık bilgisini okuyabilir ya da sahte "Mac çevrimiçi" gösterebilir; belge değişiklikleri RLS ile korunur.
 
 **Mac uygulaması isteği:**
-- Giriş: `POST {URL}/auth/v1/token?grant_type=password` (başlık `apikey: <publishable key>`). Yanıttaki `access_token` ve `refresh_token` saklanır. Web paneliyle aynı e-posta ve şifre kullanılır (patronun panelden açtığı hesaplar dahil).
+- Giriş: `POST {URL}/auth/v1/token?grant_type=password` (başlık `apikey: <publishable key>`). Yanıttaki `access_token` ve `refresh_token` saklanır; yenilenen anahtarlar hemen `esitleme.json`'a yazılır. Web paneliyle aynı giriş adı (e-posta ya da kullanıcı adı) ve şifre kullanılır.
 - Yenileme reddedilirse (ör. patron şifre belirledi, kullanıcı şifresini başka yerde değiştirdi) oturum düşmüş sayılır: kullanıcıdan yeniden giriş istenir, bekleyen değişiklikler korunur.
 - Sonraki istekler: `apikey` başlığı ve `Authorization: Bearer <access_token>`.
 - RPC: `POST {URL}/rest/v1/rpc/<ad>`. Süre dolunca `grant_type=refresh_token` ile yenilenir.
@@ -126,7 +147,9 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 - `dirty` ise `merged = merge3(base.body, local, remote)` yerele yazılır, anahtar `dirty` kalır.
 - Her iki durumda `base = remote` olur ve `lastRev` ilerletilir.
 
-**Gönder (push).** Her `dirty` anahtar için `envanter_put(key, local, base.rev ?? 0, deleted)` çağrılır:
+**Taşıma.** Çekmeden sonra, gönderimden önce, tanım yazabilen istemci eski sayım listesini ekibe taşır (bkz. §1 Ekip).
+
+**Gönder (push).** Her `dirty` anahtar için (sıra: `items, products, employees, settings, orders`, sonra günler) `envanter_put(key, local, base.rev ?? 0, deleted)` çağrılır:
 - `ok`: `base = { rev, body: local }` olur ve anahtar `dirty`'den çıkar.
 - Çakışma: `local = merge3(base.body, local, server.body)`, `base = server` olur ve en fazla 3 kez yeniden denenir.
 - Kalıcı hata (`42501` yetki, `22023` doğrulama …): anahtar `dirty`'den çıkar, yerel hal `base.body` ile değiştirilir (sunucu kazanır; `base` yoksa yerelden silinir), kullanıcıya bir kez bildirilir. Yeniden denenmez.
@@ -141,6 +164,8 @@ Hepsi `security definer` ve `set search_path = public, pg_temp` ile tanımlıdı
 **Şube değişimi (Mac).** Başka bir şubeyle eşleşmiş Mac'in yerel verisi o şubenindir. Verisi olan şubeye geçişte o şubenin verisi indirilir (yerel yedek alınır). Boş şubeye geçişte hiçbir şey kendiliğinden yüklenmez; sorulur: "Yalnızca tanımları kopyala" (items, products, settings; şube adı yeni şubenin adı olur, günler, personel ve siparişler kopyalanmaz) ya da "Her şeyi kopyala". Vazgeçilirse önceki şubeyle eşitleme sürer.
 
 **Çıkış (Mac).** Çıkış yalnızca oturum anahtarlarını siler; şube eşleşmesi (`base`, `lastRev`, `dirty`, rol) korunur ve eşitleme durur. Aynı sunucuda yeniden girişte (başka hesapla da) aynı şube seçilirse kaldığı yerden devam edilir: `base`'den ayrışan belgeler `dirty` olur ve olağan çek/gönder (merge3) ile gönderilir; arada web panelinde yapılan değişiklikler ezilmez. Eşleşme yalnızca "Bu Mac'i şubeden ayır" ile silinir.
+
+**Ayrışma (Mac).** Açılışta ve yeniden girişte `base`'den ayrışan belgeler aranırken, `base` gövdesi Mac'çe çözülemeyen belge (ileriki sürümün biçimi, bozuk alan) ayrışmış sayılmaz: kullanıcı değiştirmedikçe üzerine yazılmaz.
 
 **Kayıt sırası (Mac).** Eşitleme yerel veriyi değiştirdiyse önce veri dosyası, sonra eşitleme durumu (`esitleme.json`) yazılır; veri yazılamazsa durum da yazılmaz. Böylece ilerlemiş `base` diskte eski veriyle kalmaz (yeniden açılışta eski belgeler güncel `base.rev` ile çakışmasız gönderilip web'deki değişikliği ezerdi). Veri ve durum kayıtlarının hepsi aynı seri kuyrukta, arka planda yazılır: arayüz kodlamayı beklemez ve sonradan kuyruğa giren bir durum kaydı, bekleyen veri yazmasının önüne geçemez.
 
@@ -162,11 +187,22 @@ Eşitlik, JSON değerlerinin derin eşitliğidir: sayılar sayı olarak, nesnele
 
 ## 4. Hesap motoru eşliği
 
-Web paneli, Mac uygulamasının hesaplarını (fark, fiili tüketim, kayıp, maliyet oranları, personel, sipariş önerisi, fiyat uyarıları) TypeScript'te aynen uygular. Eşlik testle korunur:
+Web paneli, Mac uygulamasının hesaplarını (fiili tüketim, fark, tolerans, fazla çıkış, kritik seviye, dönem özeti, kalem analizi, sipariş önerisi, takip şeridi) TypeScript'te aynen uygular. Eşlik testle korunur:
 
 ```
 EnvanterTool demo --data-dir D --date 2026-08-31 --days 35
 EnvanterTool metrics --data-dir D --date 2026-08-31 --from 2026-08-01 --to 2026-08-31 > metrics.json
 ```
 
-`metrics.json` ve demo verisi (`envanter-verisi.json`) web deposunda test fikstürü olarak tutulur. TS motoru aynı sonuçları üretmelidir (±0,01 tolerans). Alanlar için `EnvanterTool metrics` çıktısına bakın.
+`metrics.json` ve demo verisi (`envanter-verisi.json`) web deposunda test fikstürü olarak tutulur. TS motoru aynı sonuçları üretmelidir (±0,01 tolerans). Alanlar:
+
+- kök: `date, from, to, calc, overview, summary, period, daily, orders, trend`
+- `calc[]`: `itemID, opening, openingIsAuto, incoming, transferIn, transferOut, closing, sold, waste, actual, diff, severity, belowMinimum`
+- `overview`: `itemCount, countedItems, hasSales, salesLines, unknownLines, problemItems, shortageItems, belowMinimumItems, isLocked, isFullyCounted, hasNotableProblems, hasSignificantProblems`
+- `summary[]`: `itemID, daysCounted, firstOpening, lastClosing, incoming, transferIn, transferOut, sold, waste, actual, diff, shortageQty, shortageDays`
+- `period`: `days, countedDays, salesDays`
+- `daily[]`: `date, countedItems, problemItems, shortageItems, belowMinimumItems, hasSales, isLocked`
+- `orders[]`: `itemID, stock, countedStock, stockDate, onOrder, dailyUsage, sampleDays, daysOfCover, target, suggested`
+- `trend[]` (14 gün): `date, countedItems, problemItems, shortageItems`
+
+**Takip şeridi** (iki istemcide aynı): `hasNotableProblems = problemItems > 0 && problemItems × 10 ≥ countedItems`, `hasSignificantProblems = problemItems > 0 && problemItems × 5 ≥ countedItems`. Sayım ve satış yok → boş ("Veri yok"); sayım yok → "Yalnızca satış"; belirgin → kırmızı ("Sayılanların %20'sinde fark"); dikkat ya da eksik sayım → sarı ("Eksik sayım ya da sayılanların %10'unda fark"); diğer → yeşil ("Sayım tam, fark az").

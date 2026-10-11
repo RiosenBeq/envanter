@@ -316,6 +316,23 @@ final class UnknownFieldPreservationTests: XCTestCase {
         XCTAssertEqual(a.state.dirty, [])
     }
 
+    /// Açılışta (kaydedilemeyen "dirty" aranırken) çözülemeyen sunucu belgesi ayrışmış sayılmaz; kullanıcı
+    /// değiştirmedikçe üzerine yazılmaz ve Mac'in bilmediği alanlar kalır
+    func testUndecodableServerDocIsNotDivergentAtLaunch() async throws {
+        let (server, a, _) = try await connectedPair()
+        var settings = try XCTUnwrap(server.doc(ws, DocKey.settings)?.body.objectValue)
+        settings["orderLookbackDays"] = .number(1e300)                       // Int'e sığmaz: belge çözülemez
+        settings["futureOnly"] = .string("web-ileriki-surum")
+        server.write(ws: ws, user: "patron", key: DocKey.settings, body: .object(settings))
+        let serverBody = try XCTUnwrap(server.doc(ws, DocKey.settings)?.body)
+        _ = try await a.sync()
+        XCTAssertFalse(CloudSyncEngine.divergentKeys(local: a.data, state: a.state).contains(DocKey.settings))
+        a.state.dirty.formUnion(CloudSyncEngine.divergentKeys(local: a.data, state: a.state))
+        let out = try await a.sync()
+        XCTAssertEqual(out.pushed, [])
+        XCTAssertEqual(server.doc(ws, DocKey.settings)?.body, serverBody)
+    }
+
     /// Sunucudaki ayar belgesi çözülemiyorsa beklenir: eski yerel liste o belgenin üzerine yazılmaz
     func testMigrationWaitsWhenServerSettingsUndecodable() async throws {
         let (server, a, _) = try await connectedPair()

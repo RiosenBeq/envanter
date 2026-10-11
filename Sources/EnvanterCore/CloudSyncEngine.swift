@@ -201,7 +201,9 @@ public enum CloudSyncEngine {
     }
 
     /// Yerel verinin tabandan ayrıştığı anahtarlar (uygulama kapanmadan önce "dirty" kaydedilemediyse bulunur).
-    /// `canWriteCatalog` false ise (personel) tabanı olmayan tanım belgeleri sayılmaz.
+    /// `canWriteCatalog` false ise (personel) tabanı olmayan tanım belgeleri sayılmaz. Tabandaki gövdesi Mac'çe
+    /// çözülemeyen belge (ileriki sürümün biçimi, bozuk alan) ayrışmış sayılmaz: kullanıcı değiştirmeden üzerine
+    /// yazılırsa Mac'in bilmediği veri kaybolurdu.
     public static func divergentKeys(local: AppData, state: SyncState) -> Set<String> {
         let canWriteCatalog = state.config?.canWriteCatalog ?? true
         var keys = Set<String>()
@@ -209,6 +211,8 @@ public enum CloudSyncEngine {
         let baseKeys = Set(state.base.filter { !$0.value.deleted }.keys)
         for k in localKeys.union(baseKeys) where DocKey.isValid(k) {
             if !DocKey.isDay(k) && !canWriteCatalog { continue }
+            if let base = state.base[k], !base.deleted, base.body != nil,
+               DocCodec.decoded(key: k, body: base.body) == nil { continue }
             if needsPush(key: k, data: local, base: state.base[k]) { keys.insert(k) }
         }
         return keys

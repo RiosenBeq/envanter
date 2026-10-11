@@ -46,7 +46,7 @@ public enum CloudSyncError: Error, Equatable, LocalizedError, Sendable {
             return "Oturumun süresi doldu. Web paneli hesabınızla yeniden giriş yapın."
         case .forbidden(let m):
             let detail = m.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "Yetki yok: " + (detail.isEmpty ? "personel yalnızca gün verisi (sayım, satış, vardiya, not) yazabilir." : detail)
+            return "Yetki yok: " + (detail.isEmpty ? "personel yalnızca gün verisi (sayım, satış, not) yazabilir." : detail)
         case .network(let m):
             return "Ağ hatası: sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edin." + (m.isEmpty ? "" : " (\(m))")
         case .rateLimited:

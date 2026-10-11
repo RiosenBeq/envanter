@@ -1,6 +1,6 @@
 import Foundation
 
-/// Satın alma siparişi akışı: öneriden sipariş oluştur → teslim al (Gelen'e işlenir, faturadaki fiyatla maliyet güncellenir).
+/// Satın alma siparişi akışı: öneriden sipariş oluştur → teslim al (Gelen'e işlenir).
 public enum Purchasing {
     public enum Failure: Error, LocalizedError, Equatable {
         case notFound, notOpen, locked(String), nothingReceived
@@ -21,16 +21,17 @@ public enum Purchasing {
     }
 
     /// Siparişi `date` gününe teslim alır. `quantities` verilmeyen kalemlerde sipariş miktarı esas alınır;
-    /// 0 girilen kalem teslim alınmamış sayılır. `prices` girilen kalemlerin birim maliyeti güncellenir.
+    /// 0 girilen kalem teslim alınmamış sayılır.
+    /// - Returns: teslim alınan (miktarı 0'dan büyük) kalem sayısı
     @discardableResult
     public static func receive(orderID: String, on date: String, quantities: [String: Double] = [:],
-                               prices: [String: Double] = [:], data: inout AppData) throws -> (lines: Int, priceUpdates: Int) {
+                               data: inout AppData) throws -> Int {
         guard let oi = data.purchaseOrders.firstIndex(where: { $0.id == orderID }) else { throw Failure.notFound }
         guard data.purchaseOrders[oi].status == .open else { throw Failure.notOpen }
         guard !(data.days[date]?.isLocked ?? false) else { throw Failure.locked(date) }
         var order = data.purchaseOrders[oi]
         var day = data.days[date] ?? DayRecord(date: date)
-        var received = 0, priceUpdates = 0
+        var received = 0
         for li in order.lines.indices {
             let id = order.lines[li].itemID
             let q = max(quantities[id] ?? order.lines[li].qty, 0)
@@ -41,27 +42,18 @@ public enum Purchasing {
                 day.entries[id] = e
                 received += 1
             }
-            if let p = prices[id], p > 0, let ii = data.items.firstIndex(where: { $0.id == id }) {
-                order.lines[li].unitPrice = p
-                if data.items[ii].cost(on: date) != p { data.items[ii].setCost(p, on: date); priceUpdates += 1 }
-            }
         }
         guard received > 0 else { throw Failure.nothingReceived }
         order.status = .received
         order.receivedOn = date
         data.purchaseOrders[oi] = order
         data.days[date] = day
-        return (received, priceUpdates)
+        return received
     }
 
     public static func cancel(orderID: String, data: inout AppData) {
         guard let i = data.purchaseOrders.firstIndex(where: { $0.id == orderID }), data.purchaseOrders[i].status == .open else { return }
         data.purchaseOrders[i].status = .cancelled
-    }
-
-    /// Siparişin tahmini tutarı (kalemlerin güncel birim maliyetiyle)
-    public static func estimatedCost(_ order: PurchaseOrder, items: [String: Item]) -> Double {
-        order.lines.reduce(0) { s, l in s + (l.received ?? l.qty) * (l.unitPrice ?? items[l.itemID]?.unitCost ?? 0) }
     }
 
     /// Tedarikçiye gönderilecek sipariş metni

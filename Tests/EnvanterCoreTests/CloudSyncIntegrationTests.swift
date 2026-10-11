@@ -122,7 +122,7 @@ final class CloudSyncIntegrationTests: XCTestCase {
 
         // --- Personel stok kalemlerini değiştiremez: 403 bildirilir, sunucu sürümü geri gelir
         b.edit { d in
-            if let i = d.items.firstIndex(where: { $0.id == "patates" }) { d.items[i].unitCost = 1 }
+            if let i = d.items.firstIndex(where: { $0.id == "patates" }) { d.items[i].minStock = 1 }
         }
         XCTAssertEqual(b.state.dirty, ["items"])
         let ob3 = try await b.sync()
@@ -231,7 +231,7 @@ final class CloudSyncIntegrationTests: XCTestCase {
         let unchangedRole = try await refreshRole(b)
         XCTAssertFalse(unchangedRole)
         let itemsRev = try XCTUnwrap(b.state.base["items"]?.rev)
-        if let i = b.data.items.firstIndex(where: { $0.id == "patates" }) { b.data.items[i].unitCost = 7777 }  // eskimiş tanım
+        if let i = b.data.items.firstIndex(where: { $0.id == "patates" }) { b.data.items[i].minStock = 7777 }  // eskimiş tanım
         _ = try await rpc("envanter_set_role", ["p_workspace": .string(wsID), "p_user": .string(staffID), "p_role": .string(CloudRole.manager)])
         let promoted = try await refreshRole(b)
         XCTAssertTrue(promoted)
@@ -242,7 +242,7 @@ final class CloudSyncIntegrationTests: XCTestCase {
         XCTAssertEqual(ob7.pushed, [])
         XCTAssertEqual(b.state.base["items"]?.rev, itemsRev)
         var managerEdit = b.data
-        if let i = managerEdit.items.firstIndex(where: { $0.id == "patates" }) { managerEdit.items[i].unitCost = 42.5 }
+        if let i = managerEdit.items.firstIndex(where: { $0.id == "patates" }) { managerEdit.items[i].minStock = 42.5 }
         XCTAssertNil(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: managerEdit))
         b.edit { $0 = managerEdit }
         let ob8 = try await b.sync()
@@ -250,13 +250,13 @@ final class CloudSyncIntegrationTests: XCTestCase {
         XCTAssertEqual(ob8.rejected, [:])
         XCTAssertEqual(ob8.pushed, ["items"])
         try await a.sync()
-        XCTAssertEqual(a.data.items.first { $0.id == "patates" }?.unitCost, 42.5)
+        XCTAssertEqual(a.data.items.first { $0.id == "patates" }?.minStock, 42.5)
         _ = try await rpc("envanter_set_role", ["p_workspace": .string(wsID), "p_user": .string(staffID), "p_role": .string(CloudRole.staff)])
         let demoted = try await refreshRole(b)
         XCTAssertTrue(demoted)
         XCTAssertEqual(b.state.enforcedRole, CloudRole.staff)
         var staffEdit = b.data
-        if let i = staffEdit.items.firstIndex(where: { $0.id == "patates" }) { staffEdit.items[i].unitCost = 1 }
+        if let i = staffEdit.items.firstIndex(where: { $0.id == "patates" }) { staffEdit.items[i].minStock = 1 }
         XCTAssertEqual(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: staffEdit)?.catalogKeys, ["items"])
         let roleRows = try await owner.activity(workspace: wsID, limit: 200).filter { $0.key == "members" }.map { $0.summary }
         XCTAssertTrue(roleRows.contains("Yetki değişti: \(staffEmail) (Personel → Müdür)"), "\(roleRows)")

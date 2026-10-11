@@ -13,8 +13,9 @@ public enum CloudDefaults {
     public static let retiredURLs = ["https://eteyphpvpxmgokyfndsh.supabase.co"]
     /// envanter_activity.client değeri
     public static let client = "mac"
-    /// Yerel değişiklikten sonra eşitlemeye kadar beklenen süre (saniye)
-    public static let debounceSeconds: Double = 8
+    /// Yerel değişiklikten sonra gönderime kadar beklenen süre (saniye): art arda yazılan sayımlar tek gönderimde gider,
+    /// web paneli değişikliği birkaç saniye içinde görür
+    public static let debounceSeconds: Double = 2
     /// Düzenli eşitleme aralığı (saniye)
     public static let intervalSeconds: Double = 60
     /// Mac: rol ve şube adı (şube listesi) en fazla bu kadar saniyede bir yeniden okunur; uygulama öne gelince de okunur
@@ -70,7 +71,7 @@ public enum CloudRole {
         }
     }
 
-    /// Tanım belgelerini (kalem, reçete, ayar, personel, sipariş) yazabilir mi: personel yazamaz.
+    /// Tanım belgelerini (kalem, reçete, ayar, ekip, sipariş) yazabilir mi: personel yazamaz.
     /// Rol bilinmiyorsa (web eşitlemesi yok) her şey serbesttir.
     public static func canWriteCatalog(_ role: String?) -> Bool { role != staff }
 
@@ -96,11 +97,11 @@ public struct LocalChangeRefusal: Equatable, Sendable {
 
     public var message: String {
         if catalogKeys.contains(DocKey.orders) {
-            return "\(CloudPermission.ordersStaffNote) Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, vardiya, not) değiştirilebilir; işlem uygulanmadı."
+            return "\(CloudPermission.ordersStaffNote) Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, not) değiştirilebilir; işlem uygulanmadı."
         }
         if !catalogKeys.isEmpty {
             let labels = catalogKeys.map { DocKey.title($0) }.joined(separator: ", ")
-            return "Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, vardiya, not) değiştirilebilir. \(labels) bölümündeki değişikliği patron ya da müdür web panelinden yapabilir; işlem uygulanmadı."
+            return "Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, not) değiştirilebilir. \(labels) bölümündeki değişikliği patron ya da müdür web panelinden yapabilir; işlem uygulanmadı."
         }
         let dates = lockedDates.map { DateKey.short($0) }.joined(separator: ", ")
         let what = lockedDates.count == 1 ? "\(dates) günü kapatılmış." : "\(dates) günleri kapatılmış."
@@ -112,7 +113,7 @@ public struct LocalChangeRefusal: Equatable, Sendable {
 public enum CloudPermission {
     /// Sunucunun personel için kapatılmış gün hatası (42501) ile aynı metin
     public static let lockedDayMessage = "Kapatılmış günü yalnızca müdür veya patron değiştirebilir."
-    /// Personel hesabıyla salt okunur bölümlerin açıklaması (stok kalemleri, reçeteler, personel, siparişler, ayarlar)
+    /// Personel hesabıyla salt okunur bölümlerin açıklaması (stok kalemleri, reçeteler, ekip, siparişler, ayarlar)
     public static let catalogReadOnlyNote = "Personel hesabı: bu bölümü yalnızca patron veya müdür değiştirebilir (web paneli). Burada web panelindeki hal gösterilir."
     /// Personel hesabıyla kapatılmış günde gösterilen açıklama
     public static let lockedDayStaffNote = "Gün kapatıldı. Kilidi yalnızca patron veya müdür açabilir."
@@ -170,7 +171,7 @@ public enum DayLockAction: Equatable, Sendable {
 
     /// Personelin gün kapatma onayı
     public static func confirmTitle(date: String) -> String { "\(DateKey.short(date)) günü kapatılsın mı?" }
-    public static let confirmMessage = "Günü kapatınca sayım, satış ve vardiya değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+    public static let confirmMessage = "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
 
     /// Onay penceresinin metni: günün sayım ve satış durumu (kapatmadan önce eksik kalan görülsün), sonra kural.
     /// - Parameters:
@@ -365,19 +366,6 @@ public struct SyncStore: Sendable {
     static func decoder() -> JSONDecoder { JSONCoding.decoder() }
 }
 
-extension AppSettings {
-    /// "Sayımı yapan" adını hızlı seçim listesine (Ayarlar > Sayım yapanlar) ekler. Personel hesabıyla ayarlar
-    /// yazılamadığından eklenmez (web: saveDayNote ile aynı); yoksa her yeni ad reddedilen bir ayar yazması olurdu.
-    /// - Returns: güncellenmiş ayarlar; değişiklik yoksa nil
-    public func rememberingStaff(_ name: String, role: String?) -> AppSettings? {
-        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard CloudRole.canWriteCatalog(role), !n.isEmpty, !staff.contains(n) else { return nil }
-        var s = self
-        s.staff.append(n)
-        return s
-    }
-}
-
 /// Eşitlemenin diske yazılma sırası: yerel veri değiştiyse önce veri dosyası, sonra eşitleme durumu (esitleme.json).
 /// Ters sırada bir çökme / zorla kapatma, tabanı ilerlemiş durumu eski veriyle bırakırdı: yeniden açılışta eski belgeler
 /// "değişmiş" sanılıp güncel tabanla (çakışmasız) gönderilir, web panelindeki değişiklik ezilirdi. Veri yazılamazsa
@@ -453,7 +441,7 @@ public enum DocKey {
         case items: return "Stok kalemleri"
         case products: return "Reçeteler"
         case settings: return "Ayarlar"
-        case employees: return "Personel"
+        case employees: return "Ekip"
         case orders: return "Siparişler"
         default: return date(of: key).map { DateKey.short($0) } ?? key
         }
@@ -571,6 +559,40 @@ public enum DocCodec {
         return Self.body(for: key, in: d)
     }
 
+    /// Bilinmeyen alanları korumanın tabanı: `normalize` gibi, ama Mac için boş olan gün de (sayım ve satışı olmayan,
+    /// yalnızca eski sürümlerin vardiya alanlarını taşıyan gün gibi) boş gün gövdesi olarak döner. Yok / silinmiş / bozuksa nil.
+    public static func decoded(key: String, body: JSONValue?) -> JSONValue? {
+        guard let body, !body.isNull else { return nil }
+        guard let date = DocKey.date(of: key) else { return normalize(key: key, body: body) }
+        return Lenient.day(body, date: date).flatMap { try? JSONCoding.value(dated($0, date)) }
+    }
+
+    /// Boş gün gövdesi (`DayRecord(date:)`)
+    public static func emptyDayBody(_ date: String) -> JSONValue {
+        (try? JSONCoding.value(DayRecord(date: date))) ?? .object(["date": .string(date)])
+    }
+
+    /// Mac'in bildiği gün alanları (`DayRecord`)
+    static let knownDayKeys: Set<String> = [
+        "date", "entries", "sales", "salesSource", "salesPeriod", "salesImportedAt", "legacySold", "legacyWaste",
+        "importedFrom", "note", "countedBy", "locked",
+    ]
+
+    /// Gün gövdesinde Mac'in bilmediği dolu bir alan var mı (eski sürümlerin vardiyaları, ileriki sürümlerin alanları):
+    /// değeri null, {} ya da [] olmayan, `knownDayKeys` dışındaki bir anahtar. Böyle gün Mac için boşalsa da silinmez.
+    static func hasForeignContent(_ dayBody: JSONValue) -> Bool {
+        guard case .object(let o) = dayBody else { return false }
+        return o.contains { k, v in
+            guard !knownDayKeys.contains(k) else { return false }
+            switch v {
+            case .null: return false
+            case .object(let x): return !x.isEmpty
+            case .array(let x): return !x.isEmpty
+            default: return true
+            }
+        }
+    }
+
     /// İki veri arasında değişen belge anahtarları (silinen / boşalan günler dahil)
     public static func changedKeys(_ old: AppData, _ new: AppData) -> Set<String> {
         var keys = Set<String>()
@@ -648,7 +670,7 @@ public enum DocCodec {
         return (out, changed)
     }
 
-    /// Yerel veri yalnızca varsayılan (ilk açılış) halinde mi: gün, personel ve sipariş yok; kalemler ve reçeteler
+    /// Yerel veri yalnızca varsayılan (ilk açılış) halinde mi: gün, ekip üyesi ve sipariş yok; kalemler ve reçeteler
     /// varsayılanla aynı. (Ayarlar dikkate alınmaz: şube adı bağlanmadan önce yazılmış olabilir.)
     public static func isSeedOnly(_ data: AppData) -> Bool {
         guard data.days.values.allSatisfy({ storedDay($0) == nil }), data.employees.isEmpty, data.purchaseOrders.isEmpty else {
@@ -687,8 +709,6 @@ enum Lenient {
         } else {
             o["staff"] = .array(d.staff.map { .string($0) })
         }
-        for k in ["targetFoodCostPct", "targetLaborPct", "targetPrimeCostPct"] { o[k] = finite(raw[k]).map { .number($0) } }
-        o["priceAlertPct"] = .number(finite(raw["priceAlertPct"]) ?? d.priceAlertPct)
         return try? JSONCoding.decode(AppSettings.self, from: .object(o))
     }
 
@@ -707,8 +727,6 @@ enum Lenient {
         o["note"] = str(raw["note"])
         o["countedBy"] = str(raw["countedBy"])
         o["locked"] = raw["locked"]?.boolValue.map { .bool($0) }
-        o["shifts"] = record(raw["shifts"]) { shift($0) }.map { .object($0) }
-        o["otherLabor"] = num(raw["otherLabor"])
         return try? JSONCoding.decode(DayRecord.self, from: .object(o))
     }
 
@@ -723,18 +741,7 @@ enum Lenient {
         o["recipeUnit"] = .string(raw["recipeUnit"]?.stringValue ?? "adet")
         o["factor"] = .number(finite(raw["factor"]) ?? 1)
         o["active"] = .bool(raw["active"]?.boolValue ?? true)
-        for k in ["unitCost", "minStock", "tolerance"] { o[k] = num(raw[k]) }
-        if case .array(let h)? = raw["costHistory"] {
-            o["costHistory"] = .array(h.compactMap { p -> JSONValue? in
-                guard case .object(let pr) = p, let cost = finite(pr["cost"]) else { return nil }
-                var po = pr
-                po["cost"] = .number(cost)
-                po["date"] = str(pr["date"])
-                return .object(po)
-            })
-        } else {
-            o["costHistory"] = nil
-        }
+        for k in ["minStock", "tolerance"] { o[k] = num(raw[k]) }
         return .object(o)
     }
 
@@ -749,34 +756,14 @@ enum Lenient {
         return .object(o)
     }
 
-    static func payTerms(_ v: JSONValue) -> JSONValue? {
-        guard case .object(let raw) = v else { return nil }
-        var o = raw
-        o["from"] = str(raw["from"])
-        o["payType"] = .string(payType(raw["payType"]) ?? "monthly")
-        o["rate"] = .number(finite(raw["rate"]) ?? 0)
-        o["costFactor"] = .number(finite(raw["costFactor"]) ?? 1)
-        return .object(o)
-    }
-
     static func employee(_ v: JSONValue) -> JSONValue? {
         guard case .object(let raw) = v, let id = idString(raw["id"]) else { return nil }
         var o = raw
         o["id"] = .string(id)
         o["name"] = .string(raw["name"]?.stringValue ?? "")
         o["role"] = .string(raw["role"]?.stringValue ?? "")
-        o["payType"] = .string(payType(raw["payType"]) ?? "monthly")
-        o["rate"] = .number(finite(raw["rate"]) ?? 0)
-        o["costFactor"] = .number(finite(raw["costFactor"]) ?? 1)
         o["active"] = .bool(raw["active"]?.boolValue ?? true)
-        o["startDate"] = str(raw["startDate"])
-        o["endDate"] = str(raw["endDate"])
-        o["defaultHours"] = num(raw["defaultHours"])
-        if case .array(let h)? = raw["payHistory"] {
-            o["payHistory"] = .array(h.compactMap { payTerms($0) })
-        } else {
-            o["payHistory"] = nil
-        }
+        for k in ["phone", "startDate", "endDate", "note", "account"] { o[k] = str(raw[k]) }
         return .object(o)
     }
 
@@ -786,7 +773,6 @@ enum Lenient {
         o["itemID"] = .string(itemID)
         o["qty"] = .number(finite(raw["qty"]) ?? 0)
         o["received"] = num(raw["received"])
-        o["unitPrice"] = num(raw["unitPrice"])
         return .object(o)
     }
 
@@ -811,22 +797,12 @@ enum Lenient {
         return .object(o)
     }
 
-    static func shift(_ v: JSONValue) -> JSONValue? {
-        guard case .object(let raw) = v else { return nil }
-        var o = raw
-        o["hours"] = num(raw["hours"])
-        o["worked"] = raw["worked"]?.boolValue.map { .bool($0) }
-        o["extra"] = num(raw["extra"])
-        return .object(o)
-    }
-
     static func saleLine(_ v: JSONValue) -> JSONValue? {
         guard case .object(let raw) = v, let code = idString(raw["code"]) else { return nil }
         var o = raw
         o["code"] = .string(code)
         o["name"] = .string(raw["name"]?.stringValue ?? "")
         o["qty"] = .number(finite(raw["qty"]) ?? 0)
-        o["amount"] = num(raw["amount"])
         return .object(o)
     }
 
@@ -847,11 +823,6 @@ enum Lenient {
             return n == n.rounded() && abs(n) < 1e15 ? String(Int64(n)) : String(n)
         default: return nil
         }
-    }
-
-    static func payType(_ v: JSONValue?) -> String? {
-        guard let s = v?.stringValue, PayType(rawValue: s) != nil else { return nil }
-        return s
     }
 
     static func numberRecord(_ v: JSONValue?) -> Obj? {

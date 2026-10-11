@@ -16,25 +16,6 @@ public enum Fmt {
         return s.replacingOccurrences(of: ".", with: ",")
     }
 
-    /// Para tutarı: 12.450 ₺ / 1.234,50 ₺ (binlik ayırıcı nokta, ondalık virgül)
-    public static func money(_ value: Double, fraction: Int? = nil) -> String {
-        guard value.isFinite else { return "—" }
-        let digits = fraction ?? (abs(value) >= 1000 ? 0 : 2)
-        let step = pow(10.0, Double(digits))
-        let rounded = (value * step).rounded() / step
-        let negative = rounded < 0
-        let parts = String(format: "%.\(digits)f", abs(rounded)).split(separator: ".")
-        var intPart = String(parts[0])
-        var grouped = ""
-        while intPart.count > 3 {
-            grouped = "." + intPart.suffix(3) + grouped
-            intPart.removeLast(3)
-        }
-        grouped = intPart + grouped
-        let frac = parts.count > 1 ? "," + parts[1] : ""
-        return (negative ? "-" : "") + grouped + frac + " ₺"
-    }
-
     /// Türkçe büyük harf: "Diğer" → "DİĞER", "ipuçları" → "İPUÇLARI" (`uppercased()` "DIĞER" yazar)
     public static func upper(_ text: String) -> String {
         text.uppercased(with: Locale(identifier: "tr_TR"))
@@ -44,15 +25,6 @@ public enum Fmt {
     public static func percent(_ ratio: Double, maxFraction: Int = 1) -> String {
         guard ratio.isFinite else { return "—" }
         return "%" + number(ratio * 100, maxFraction: maxFraction)
-    }
-
-    /// İşaretli yüzde değişim: 0,133 → "+%13,3", −0,05 → "-%5"; gösterim basamağında sıfırsa "%0"
-    /// (web: İstatistikler > Kalem Analizi "Son değişim" ile aynı biçim)
-    public static func signedPercent(_ ratio: Double, maxFraction: Int = 1) -> String {
-        guard ratio.isFinite else { return "—" }
-        let body = number(abs(ratio) * 100, maxFraction: maxFraction)
-        if body == "0" { return "%0" }
-        return (ratio > 0 ? "+%" : "-%") + body
     }
 
     /// Elle girilen sayı: hem "7,5" hem "7.5" kabul eder. Boş / geçersiz ise nil.
@@ -88,24 +60,6 @@ public enum Fmt {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.range(of: #"^-?\d{1,3}(\.\d{3})+$"#, options: .regularExpression) != nil {
             return Double(s.replacingOccurrences(of: ".", with: ""))
-        }
-        return parse(s)
-    }
-
-    /// Para tutarı girişi (birim maliyet, fatura fiyatı, ücret, ek ödeme): ekranda tutarlar binlik ayırıcı noktayla
-    /// gösterildiğinden "35.000" / "1.050" / "1.295.867" binlik ayırıcılı tam sayı okunur (35.000 ₺ maaş 35 ₺ olmasın).
-    /// İlk grup 0 ile başlarsa ("0.125") ya da grup üç haneli değilse ("1.05", "12.5") ondalık sayılır: `parse` ile aynı.
-    /// Web: src/lib/format.ts `parseAmount` (/^-?[1-9][0-9]{0,2}(\.[0-9]{3})+$/).
-    public static func parseAmount(_ raw: String) -> Double? {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\u{00A0}", with: "")
-            .replacingOccurrences(of: "\u{202F}", with: "")
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "\u{2212}", with: "-")
-        if s.hasPrefix("+") { s.removeFirst() }
-        if s.range(of: #"^-?[1-9][0-9]{0,2}(\.[0-9]{3})+$"#, options: .regularExpression) != nil {
-            guard let d = Double(s.replacingOccurrences(of: ".", with: "")), d.isFinite, abs(d) < 1e12 else { return nil }
-            return d
         }
         return parse(s)
     }

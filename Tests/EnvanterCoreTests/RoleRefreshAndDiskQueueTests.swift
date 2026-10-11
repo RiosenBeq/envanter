@@ -42,8 +42,9 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         return true
     }
 
-    private func costEdit(_ d: inout AppData, _ cost: Double) {
-        if let i = d.items.firstIndex(where: { $0.id == "patates" }) { d.items[i].unitCost = cost }
+    /// Bir tanım (stok kalemi) değişikliği: patatesin kritik stok seviyesi
+    private func catalogEdit(_ d: inout AppData, _ minStock: Double) {
+        if let i = d.items.firstIndex(where: { $0.id == "patates" }) { d.items[i].minStock = minStock }
     }
 
     // MARK: - MACFIX-1: rol oturum açıkken güncellenir
@@ -53,10 +54,10 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         XCTAssertEqual(b.state.enforcedRole, CloudRole.staff)
         // Personelken eskimiş kalmış tanımlar (ör. eski sürümde "yükle" seçilmiş): yerel değişiklik değil
         let serverItems = try XCTUnwrap(server.doc(ws, DocKey.items))
-        costEdit(&b.data, 999)
+        catalogEdit(&b.data, 999)
         XCTAssertEqual(b.state.dirty, [])
         var itemsEdit = b.data
-        costEdit(&itemsEdit, 41)
+        catalogEdit(&itemsEdit, 41)
         XCTAssertNotNil(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: itemsEdit))
         var unlock = b.data
         unlock.days[lockedDate]?.locked = nil
@@ -71,7 +72,7 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         server.addMember(ws, user: "personel", role: CloudRole.manager)
         for _ in 0..<2 { try await b.sync() }
         XCTAssertEqual(b.state.enforcedRole, CloudRole.staff)                // eşitleme tek başına rolü güncellemez
-        costEdit(&b.data, 999)                                              // eşitleme eskimiş tanımı düzeltmişti
+        catalogEdit(&b.data, 999)                                           // eşitleme eskimiş tanımı düzeltmişti
 
         let changed = try await refreshRole(b)
         XCTAssertTrue(changed)
@@ -82,7 +83,7 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         XCTAssertEqual(DocCodec.body(for: DocKey.items, in: b.data), DocCodec.normalize(key: DocKey.items, body: serverItems.body))
         XCTAssertEqual(b.state.dirty, [])
         var managerEdit = b.data
-        costEdit(&managerEdit, 41)
+        catalogEdit(&managerEdit, 41)
         var managerUnlock = b.data
         managerUnlock.days[lockedDate]?.locked = nil
         XCTAssertNil(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: managerEdit))
@@ -92,14 +93,14 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         XCTAssertEqual(quiet.pushed, [])
         XCTAssertEqual(server.doc(ws, DocKey.items)?.rev, serverItems.rev)
 
-        // Müdür olarak kalem maliyeti ve kapatılmış günün kilidi değiştirilir; sunucu kabul eder
-        b.edit { self.costEdit(&$0, 41) }
+        // Müdür olarak kalemin kritik stoğu ve kapatılmış günün kilidi değiştirilir; sunucu kabul eder
+        b.edit { self.catalogEdit(&$0, 41) }
         b.edit { $0.days[self.lockedDate]?.locked = nil }
         let out = try await b.sync()
         XCTAssertNil(out.error)
         XCTAssertEqual(out.rejected, [:])
         XCTAssertEqual(Set(out.pushed), [DocKey.items, DocKey.day(lockedDate)])
-        XCTAssertEqual(Lenient.items(try XCTUnwrap(server.doc(ws, DocKey.items)?.body))?.first { $0.id == "patates" }?.unitCost, 41)
+        XCTAssertEqual(Lenient.items(try XCTUnwrap(server.doc(ws, DocKey.items)?.body))?.first { $0.id == "patates" }?.minStock, 41)
         XCTAssertNil(server.doc(ws, DocKey.day(lockedDate))?.body["locked"])
     }
 
@@ -109,7 +110,7 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         try await refreshRole(b)
         XCTAssertEqual(b.state.enforcedRole, CloudRole.manager)
         // Müdürken gönderilmemiş tanım değişikliği; bu arada personele alınır
-        b.edit { self.costEdit(&$0, 55) }
+        b.edit { self.catalogEdit(&$0, 55) }
         XCTAssertEqual(b.state.dirty, [DocKey.items])
         server.addMember(ws, user: "personel", role: CloudRole.staff)
         let demoted = try await refreshRole(b)
@@ -117,7 +118,7 @@ final class RoleRefreshAndDiskQueueTests: XCTestCase {
         XCTAssertEqual(b.state.enforcedRole, CloudRole.staff)
         XCTAssertEqual(b.state.dirty, [DocKey.items])                       // bekleyen değişikliğe dokunulmaz
         var edit = b.data
-        costEdit(&edit, 60)
+        catalogEdit(&edit, 60)
         XCTAssertEqual(CloudPermission.refusal(role: b.state.enforcedRole, old: b.data, new: edit)?.catalogKeys, [DocKey.items])
         // Gönderim reddedilir, sunucudaki hal geri gelir ve yeniden denenmez
         let out = try await b.sync()

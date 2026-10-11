@@ -10,11 +10,6 @@ public struct SalesReport {
     /// Rapor birden fazla günü kapsıyor mu (ör. 1.08.2026 - 31.08.2026)
     public var isMultiDay: Bool { dateFrom != nil && dateTo != nil && dateFrom != dateTo }
     public var totalQty: Double { lines.reduce(0) { $0 + $1.qty } }
-    /// Raporda tutar sütunu varsa toplam satış tutarı
-    public var totalAmount: Double? {
-        let a = lines.compactMap { $0.amount }
-        return a.isEmpty ? nil : a.reduce(0, +)
-    }
 }
 
 public enum SalesParseError: Error, LocalizedError {
@@ -54,23 +49,23 @@ public enum SalesParser {
     // MARK: Excel sayfası
 
     public static func parse(sheet: XlsxSheet, sourceName: String) throws -> SalesReport {
-        // Başlık satırını bul: "Kodu" ve "Adedi" içeren satır (sütunlar soldan sağa taranır)
+        // Başlık satırını bul: "Kodu" ve "Adedi" içeren satır (sütunlar soldan sağa taranır).
+        // Tutar sütunu okunmaz (yalnızca miktarlar); "Ürün Tutarı" gibi başlığı ürün adı sanılmasın diye atlanır.
         var codeCol = 2, nameCol = 3, qtyCol = 4
-        var amountCol: Int?
         var headerRow = 0
         for r in 1...max(1, min(sheet.maxRow, 40)) {
             guard let row = sheet.rows[r] else { continue }
-            var c: Int?, n: Int?, exactName: Int?, q: Int?, a: Int?
+            var c: Int?, n: Int?, exactName: Int?, q: Int?
             for col in row.keys.sorted() {
                 let k = normalize(row[col] ?? "")
                 if c == nil, k == "kodu" || k == "kod" || k == "urun kodu" { c = col; continue }
                 if q == nil, k == "adedi" || k == "adet" || k == "miktar" || k == "miktari" { q = col; continue }
-                if a == nil, isAmountHeader(k) { a = col; continue }
+                if isAmountHeader(k) { continue }
                 if exactName == nil, k == "urun tipi" || k == "urun adi" || k == "urun" { exactName = col }
                 if n == nil, k.hasPrefix("urun") { n = col }
             }
             if let c, let q {
-                codeCol = c; qtyCol = q; nameCol = exactName ?? n ?? (c + 1); amountCol = a; headerRow = r; break
+                codeCol = c; qtyCol = q; nameCol = exactName ?? n ?? (c + 1); headerRow = r; break
             }
         }
         var lines: [SaleLine] = []
@@ -78,8 +73,7 @@ public enum SalesParser {
             guard let row = sheet.rows[r], let code = row[codeCol]?.trimmingCharacters(in: .whitespaces),
                   isCode(code) else { continue }
             let qty = sheet.quantity(row: r, col: qtyCol) ?? 0
-            let amount = amountCol.flatMap { sheet.number(row: r, col: $0) }
-            lines.append(SaleLine(code: code, name: (row[nameCol] ?? "").trimmingCharacters(in: .whitespaces), qty: qty, amount: amount))
+            lines.append(SaleLine(code: code, name: (row[nameCol] ?? "").trimmingCharacters(in: .whitespaces), qty: qty))
         }
         // Tarih bilgisi: ilk satırlardaki metinler
         var headerText = ""
@@ -166,21 +160,21 @@ public enum SalesParser {
             let code = fields[codeIdx]
             var name = ""
             var qty: Double?
-            var amount: Double?
-            // Koddan sonraki ilk sayı olmayan alan ürün adı, ilk sayı adet, (varsa) ikinci sayı tutardır
+            // Koddan sonraki ilk sayı olmayan alan ürün adı, ilk sayı adettir (sonraki sayılar, ör. tutar, okunmaz)
             for f in fields[(codeIdx + 1)...] where !f.isEmpty {
                 if let v = Fmt.parseQuantity(f) {
-                    if qty == nil { qty = v } else { amount = v; break }
-                } else if qty == nil && name.isEmpty { name = f }
+                    qty = v
+                    break
+                } else if name.isEmpty { name = f }
             }
-            lines.append(SaleLine(code: code, name: name, qty: qty ?? 0, amount: amount))
+            lines.append(SaleLine(code: code, name: name, qty: qty ?? 0))
         }
         return build(lines: lines, dates: extractDates(headerText), periodText: periodText(from: headerText), source: sourceName)
     }
 
     // MARK: Yardımcılar
 
-    /// "Tutar", "Tutarı", "Toplam Tutar", "Net Tutar", "Ciro" gibi başlıklar
+    /// "Tutar", "Tutarı", "Toplam Tutar", "Net Tutar", "Ciro" gibi başlıklar (okunmayan tutar sütunu)
     static func isAmountHeader(_ k: String) -> Bool {
         k == "tutar" || k == "tutari" || k == "ciro" || k == "toplam" || k == "net"
             || k.hasSuffix(" tutar") || k.hasSuffix(" tutari") || k.hasPrefix("tutar ")
@@ -193,7 +187,6 @@ public enum SalesParser {
         for l in lines {
             if var m = merged[l.code] {
                 m.qty += l.qty
-                if let a = l.amount { m.amount = (m.amount ?? 0) + a }
                 if m.name.isEmpty { m.name = l.name }
                 merged[l.code] = m
             } else { merged[l.code] = l; order.append(l.code) }

@@ -2,7 +2,7 @@ import XCTest
 @testable import EnvanterCore
 
 /// Personel kuralları (kapatılmış gün — D1 —, tanım belgeleri), eşitlemede "sunucu kazanır", geri alma, çıkış /
-/// yeniden giriş, şube değişimi, diske yazma sırası ve tutar girişi (Mac inceleme bulguları).
+/// yeniden giriş, şube değişimi ve diske yazma sırası (Mac inceleme bulguları).
 final class RoleAndLockedDayTests: XCTestCase {
     let ws = "22222222-2222-2222-2222-222222222222"
     /// DemoData son iki gün dışındaki günleri kapatır (6 gün: 26–29 Ağustos kapalı, 30–31 açık)
@@ -189,7 +189,7 @@ final class RoleAndLockedDayTests: XCTestCase {
     /// Sık değişen bir belge çakışma sınırını aşsa da diğer anahtarlar (bugünün sayımı) aynı turda gönderilir
     func testConflictExhaustionDoesNotBlockLaterKeys() async throws {
         let (server, a, _) = try await connectedPair(staff: false)
-        a.edit { $0.settings.priceAlertPct = 0.33 }
+        a.edit { $0.settings.branchName = "Çakışma Şubesi" }
         a.edit { $0.days[self.today]?.note = "bugünün notu" }
         var n = 0
         server.beforePut = { key in
@@ -208,7 +208,7 @@ final class RoleAndLockedDayTests: XCTestCase {
         server.beforePut = nil
         let again = try await a.sync()
         XCTAssertNil(again.error)
-        XCTAssertEqual(server.doc(ws, DocKey.settings)?.body["priceAlertPct"]?.doubleValue, 0.33)
+        XCTAssertEqual(server.doc(ws, DocKey.settings)?.body["branchName"]?.stringValue, "Çakışma Şubesi")
     }
 
     // MARK: - Yerel rol denetimi (AppStore.setData)
@@ -223,11 +223,8 @@ final class RoleAndLockedDayTests: XCTestCase {
         XCTAssertEqual(r?.catalogKeys, [DocKey.orders])
         XCTAssertEqual(r?.title, "Bu işlem için müdür yetkisi gerekir")
         XCTAssertTrue(r?.message.hasPrefix("Teslimatı ve siparişleri patron / müdür işler (web paneli).") ?? false)
-        var priced = demo
-        try Purchasing.receive(orderID: open.id, on: today, prices: [open.lines[0].itemID: 41], data: &priced)
-        XCTAssertEqual(CloudPermission.refusal(role: CloudRole.staff, old: demo, new: priced)?.catalogKeys, [DocKey.items, DocKey.orders])
         for role in [CloudRole.owner, CloudRole.manager, nil] {
-            XCTAssertNil(CloudPermission.refusal(role: role, old: demo, new: priced))
+            XCTAssertNil(CloudPermission.refusal(role: role, old: demo, new: received))
         }
         // Personelin günlük işi (açık gün) serbest; açık günü kapatmak da
         var counted = demo
@@ -245,7 +242,12 @@ final class RoleAndLockedDayTests: XCTestCase {
         var settings = demo
         settings.settings.staff.append("Yeni")
         XCTAssertEqual(CloudPermission.refusal(role: CloudRole.staff, old: demo, new: settings)?.message,
-                       "Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, vardiya, not) değiştirilebilir. Ayarlar bölümündeki değişikliği patron ya da müdür web panelinden yapabilir; işlem uygulanmadı.")
+                       "Personel hesabıyla yalnızca günlük kayıtlar (sayım, satış, not) değiştirilebilir. Ayarlar bölümündeki değişikliği patron ya da müdür web panelinden yapabilir; işlem uygulanmadı.")
+        var team = demo
+        team.employees.append(Employee(name: "Yeni"))
+        let rt = CloudPermission.refusal(role: CloudRole.staff, old: demo, new: team)
+        XCTAssertEqual(rt?.catalogKeys, [DocKey.employees])
+        XCTAssertTrue(rt?.message.contains("Ekip bölümündeki değişikliği") ?? false, rt?.message ?? "")
         // Kapatılmış gün: değiştirme, kilit açma, silme reddedilir (müdür / patron için yeni kısıt yok)
         var edited = demo
         edited.days[lockedDate]?.note = "x"
@@ -316,29 +318,34 @@ final class RoleAndLockedDayTests: XCTestCase {
         XCTAssertTrue(b.data.items.contains { $0.id == "g90" })
     }
 
-    /// "Sayımı yapan" adı personel hesabıyla ayarlara yazılmaz: yalnızca gün gönderilir, yetki uyarısı çıkmaz
-    func testStaffCountedByDoesNotWriteSettings() async throws {
-        let s = AppSettings()
-        XCTAssertNil(s.rememberingStaff("Selin", role: CloudRole.staff))
-        XCTAssertEqual(s.rememberingStaff("Selin", role: CloudRole.manager)?.staff.last, "Selin")
-        XCTAssertEqual(s.rememberingStaff(" Selin ", role: nil)?.staff.last, "Selin")
-        XCTAssertNil(s.rememberingStaff("  ", role: nil))
-        var named = s
-        named.staff = ["Selin"]
-        XCTAssertNil(named.rememberingStaff("Selin", role: CloudRole.owner))
-
-        let (server, _, b) = try await connectedPair(staff: true)
+    /// "Sayımı yapan" adı personel hesabıyla ekibe yazılmaz: yalnızca gün gönderilir, yetki uyarısı çıkmaz. Patronun ya da
+    /// müdürün yazdığı yeni ad ekibe eklenir (bir sonraki sayımda seçilir); eski sayan listesine (settings.staff) hiç yazılmaz.
+    func testCountedByRemembersNameInTeamNotSettings() async throws {
+        let (server, a, b) = try await connectedPair(staff: true)
         let name = "Yeni Personel", role = b.state.enforcedRole
         XCTAssertEqual(role, CloudRole.staff)
         b.edit { d in
             d.days[self.today]?.countedBy = name
-            if let st = d.settings.rememberingStaff(name, role: role) { d.settings = st }
+            if let team = Team.rememberingCounter(name, in: d, role: role) { d.employees = team }
         }
         XCTAssertEqual(b.state.dirty, [DocKey.day(today)])
         let out = try await b.sync()
         XCTAssertEqual(out.rejected, [:])
         XCTAssertEqual(out.pushed, [DocKey.day(today)])
         XCTAssertEqual(server.doc(ws, DocKey.day(today))?.body["countedBy"]?.stringValue, name)
+
+        let ownerRole = a.state.enforcedRole
+        XCTAssertEqual(ownerRole, CloudRole.owner)
+        a.edit { d in
+            d.days[self.today]?.countedBy = "Selin"
+            if let team = Team.rememberingCounter("Selin", in: d, role: ownerRole) { d.employees = team }
+        }
+        XCTAssertEqual(a.state.dirty, [DocKey.employees, DocKey.day(today)])
+        let oa = try await a.sync()
+        XCTAssertEqual(Set(oa.pushed), [DocKey.employees, DocKey.day(today)])
+        let team = Lenient.employees(try XCTUnwrap(server.doc(ws, DocKey.employees)?.body)) ?? []
+        XCTAssertEqual(team.last, Employee(id: "staff-selin", name: "Selin"))
+        XCTAssertEqual(Lenient.settings(try XCTUnwrap(server.doc(ws, DocKey.settings)?.body))?.staff, [])
     }
 
     // MARK: - Personelin tanımları web'le aynı kalır (ilk bağlantıda "yükle", terfi)
@@ -382,7 +389,7 @@ final class RoleAndLockedDayTests: XCTestCase {
     /// Eskimiş tanımlar (eski sürümde "yükle" seçilmiş personel Mac'i) eşitlemede sunucudaki haline döner
     func testStaffSyncRestoresStaleCatalogFromServer() async throws {
         let (server, _, b) = try await connectedPair(staff: true)
-        b.data.items[0].unitCost = 999
+        b.data.items[0].minStock = 999
         b.data.settings.orderCoverDays = 9
         XCTAssertEqual(b.state.dirty, [])
         let out = try await b.sync()
@@ -394,10 +401,10 @@ final class RoleAndLockedDayTests: XCTestCase {
         }
         // Müdürün yereldeki tanım değişikliğine dokunulmaz (gönderilmek üzere ayrışan anahtar olarak bulunur)
         let (_, m, _) = try await connectedPair(staff: false)
-        m.data.items[0].unitCost = 999
+        m.data.items[0].minStock = 999
         let om = try await m.sync()
         XCTAssertEqual(om.appliedRemote, [])
-        XCTAssertEqual(m.data.items[0].unitCost, 999)
+        XCTAssertEqual(m.data.items[0].minStock, 999)
     }
 
     // MARK: - Geri alma (başka kullanıcıların sonradan gelen değişiklikleri korunur)
@@ -427,17 +434,17 @@ final class RoleAndLockedDayTests: XCTestCase {
         let redo = DocCodec.undoing(keys: DocCodec.changedKeys(current, undone), old: current, new: undone, current: undone)
         XCTAssertEqual(redo.days[date], current.days[date])
 
-        // Tanım belgesi: A'nın adını geri alırken B'nin sonradan değişen maliyeti korunur
+        // Tanım belgesi: A'nın adını geri alırken B'nin sonradan değişen toleransı korunur
         var c0 = old
         c0.days = [:]
         var c1 = c0
         c1.items[0].name = "Yeni Ad"
         var c2 = c1
-        c2.items[1].unitCost = 77
-        XCTAssertNotEqual(c0.items[1].unitCost, 77)
+        c2.items[1].tolerance = 77
+        XCTAssertNotEqual(c0.items[1].tolerance, 77)
         let u = DocCodec.undoing(keys: DocCodec.changedKeys(c0, c1), old: c0, new: c1, current: c2)
         XCTAssertEqual(u.items[0].name, c0.items[0].name)
-        XCTAssertEqual(u.items[1].unitCost, 77)
+        XCTAssertEqual(u.items[1].tolerance, 77)
         // Belge işlemden sonra değişmediyse birebir eski hal (sıra dahil): silinen kalem yerine döner
         var d1 = c0
         d1.items.remove(at: 1)
@@ -603,19 +610,5 @@ final class RoleAndLockedDayTests: XCTestCase {
         XCTAssertEqual(server.doc(ws, key)?.body["entries"]?["g90"]?["closing"]?.doubleValue, 77)
         XCTAssertEqual(c.data.days[date]?.entries["g90"]?.closing, 77)
         XCTAssertEqual(c.state.dirty, [])
-    }
-
-    // MARK: - Tutar girişi (web: Fmt.parseAmount ile aynı)
-
-    func testParseAmountReadsTurkishThousands() {
-        let cases: [(String, Double?)] = [
-            ("35.000", 35000), ("1.050", 1050), ("1.295.867", 1_295_867), ("0.125", 0.125), ("1.05", 1.05),
-            ("7,5", 7.5), ("1.050,5", 1050.5), ("12.5", 12.5), ("85000", 85000), (" 35.000 ", 35000),
-            ("+1.050", 1050), ("\u{2212}1.050", -1050), ("0.500", 0.5), ("1.0500", 1.05), ("35\u{00A0}000", 35000),
-            ("abc", nil), ("", nil), ("1e5", nil),
-        ]
-        for (s, v) in cases { XCTAssertEqual(Fmt.parseAmount(s), v, s) }
-        // Miktar alanlarında kural değişmez (nokta ondalık)
-        XCTAssertEqual(Fmt.parse("1.050"), 1.05)
     }
 }

@@ -103,6 +103,8 @@ final class FakeAPI: SupabaseAPIProtocol, @unchecked Sendable {
     let user: String
     var canCreate = true
     private(set) var pullCalls: [Int64] = []
+    /// Bir anahtarın yazılması istek sunucuya ulaşmadan hata versin (ör. bağlantı koptu); nil: normal
+    var failPut: ((_ key: String) -> Error?)?
 
     init(server: FakeServer, user: String) { self.server = server; self.user = user }
 
@@ -131,7 +133,8 @@ final class FakeAPI: SupabaseAPIProtocol, @unchecked Sendable {
     }
 
     func put(workspace: String, key: String, body: JSONValue, baseRev: Int64, deleted: Bool, client: String, summary: String?) async throws -> PutResult {
-        try server.put(user: user, ws: workspace, key: key, body: body, baseRev: baseRev, deleted: deleted, client: client, summary: summary)
+        if let e = failPut?(key) { throw e }
+        return try server.put(user: user, ws: workspace, key: key, body: body, baseRev: baseRev, deleted: deleted, client: client, summary: summary)
     }
 }
 

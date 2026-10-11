@@ -120,7 +120,7 @@ final class CloudSyncTests: XCTestCase {
          {"id":7,"name":"Yedi"},
          {"name":"kimliksiz"},
          "bozuk",
-         {"id":"p","name":"P","unitCost":"pahalı","costHistory":[{"cost":5},{"date":"2026-08-01"}]}]
+         {"id":"p","name":"P","minStock":"çok","tolerance":0.5,"unitCost":40,"costHistory":[{"cost":5},{"date":"2026-08-01"}]}]
         """#)
         var d = AppData(items: [], products: [])
         XCTAssertTrue(DocCodec.apply(key: "items", body: items, to: &d))
@@ -129,8 +129,11 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(d.items[1].recipeUnit, "adet")
         XCTAssertEqual(d.items[1].factor, 1)
         XCTAssertTrue(d.items[1].active)
-        XCTAssertNil(d.items[2].unitCost)
-        XCTAssertEqual(d.items[2].costHistory, [PricePoint(date: nil, cost: 5)])
+        XCTAssertNil(d.items[2].minStock)
+        XCTAssertEqual(d.items[2].tolerance, 0.5)
+        // Eski maliyet alanları okunmaz (yerelde yok; bulutta korunur)
+        XCTAssertEqual(DocCodec.normalize(key: "items", body: items)?.arrayValue?[2],
+                       j(#"{"id":"p","name":"P","unit":"Adet","recipeUnit":"adet","factor":1,"active":true,"tolerance":0.5}"#))
 
         let day = j(#"""
         {"date":"2026-01-01","entries":{"g90":{"closing":12,"opening":"x"},"bad":3},
@@ -142,31 +145,37 @@ final class CloudSyncTests: XCTestCase {
         let r = d.days["2026-08-01"]!
         XCTAssertEqual(r.date, "2026-08-01")
         XCTAssertEqual(r.entries, ["g90": DayEntry(closing: 12)])
-        XCTAssertEqual(r.sales, [SaleLine(code: "11101", name: "", qty: 2, amount: 500)])
+        XCTAssertEqual(r.sales, [SaleLine(code: "11101", name: "", qty: 2)])
         XCTAssertEqual(r.salesImportedAt.map { Int($0.timeIntervalSince1970) },
                        JSONCoding.parseISODate("2026-08-01T10:15:00Z").map { Int($0.timeIntervalSince1970) })
         XCTAssertNotNil(r.salesImportedAt)
         XCTAssertNil(r.locked)
-        XCTAssertEqual(r.shifts, ["e1": ShiftEntry(hours: 6)])
-        XCTAssertEqual(r.otherLabor, 250)
+        let dayN = DocCodec.normalize(key: "day:2026-08-01", body: day)
+        for k in ["shifts", "otherLabor", "futureField"] { XCTAssertNil(dayN?[k], k) }
+        XCTAssertNil(dayN?["sales"]?.arrayValue?.first?["amount"])
 
-        let settings = j(#"{"branchName":"Kadıköy","orderLookbackDays":10.6,"staff":["Ali",3,"Ayşe"],"targetLaborPct":"x"}"#)
+        let settings = j(#"{"branchName":"Kadıköy","orderLookbackDays":10.6,"staff":["Ali",3,"Ayşe"],"targetLaborPct":0.25,"priceAlertPct":0.1}"#)
         XCTAssertTrue(DocCodec.apply(key: "settings", body: settings, to: &d))
         XCTAssertEqual(d.settings.orderLookbackDays, 11)
         XCTAssertEqual(d.settings.staff, ["Ali", "Ayşe"])
-        XCTAssertNil(d.settings.targetLaborPct)
-        XCTAssertEqual(d.settings.priceAlertPct, 0.05)
+        XCTAssertEqual(d.settings.orderCoverDays, 3)
+        XCTAssertEqual(DocCodec.normalize(key: "settings", body: settings),
+                       j(#"{"branchName":"Kadıköy","orderCoverDays":3,"orderLookbackDays":11,"staff":["Ali","Ayşe"]}"#))
 
-        let orders = j(#"[{"id":"o1","lines":[{"itemID":"g90","qty":10},{"qty":3}],"status":"garip"}]"#)
+        let orders = j(#"[{"id":"o1","lines":[{"itemID":"g90","qty":10,"unitPrice":38},{"qty":3}],"status":"garip"}]"#)
         XCTAssertTrue(DocCodec.apply(key: "orders", body: orders, to: &d))
         XCTAssertEqual(d.purchaseOrders.first?.status, .open)
-        XCTAssertEqual(d.purchaseOrders.first?.lines.map { $0.itemID }, ["g90"])
+        XCTAssertEqual(d.purchaseOrders.first?.lines, [OrderLine(itemID: "g90", qty: 10)])
 
-        let employees = j(#"[{"id":"e1","name":"Can","payType":"weekly","payHistory":[{"rate":10}]}]"#)
+        // Eski personel kaydı (ücret alanlarıyla) ekip üyesi olarak okunur; yeni alanlar metin değilse atılır
+        let employees = j(#"""
+        [{"id":"e1","name":"Can","payType":"weekly","rate":150,"costFactor":1.2,"payHistory":[{"rate":10}],"defaultHours":6},
+         {"id":2,"name":"Ayşe","role":"Kasiyer","active":false,"phone":"0500","note":5,"account":"ayse@envanter.local","startDate":"2026-08-01"}]
+        """#)
         XCTAssertTrue(DocCodec.apply(key: "employees", body: employees, to: &d))
-        XCTAssertEqual(d.employees.first?.payType, .monthly)
-        XCTAssertEqual(d.employees.first?.costFactor, 1)
-        XCTAssertEqual(d.employees.first?.payHistory, [PayTerms(from: nil, payType: .monthly, rate: 10, costFactor: 1)])
+        XCTAssertEqual(d.employees, [Employee(id: "e1", name: "Can"),
+                                     Employee(id: "2", name: "Ayşe", role: "Kasiyer", phone: "0500", active: false,
+                                              startDate: "2026-08-01", account: "ayse@envanter.local")])
 
         // Gövde nesne değilse gün çözülemez → veri değişmez
         XCTAssertFalse(DocCodec.apply(key: "day:2026-08-02", body: j("[1,2]"), to: &d))
@@ -177,7 +186,7 @@ final class CloudSyncTests: XCTestCase {
         let a = DemoData.make(endingAt: "2026-08-10", days: 5)
         XCTAssertEqual(DocCodec.changedKeys(a, a), [])
         var b = a
-        b.items[0].unitCost = 999
+        b.items[0].minStock = 999
         b.days["2026-08-10"]?.entries["g90", default: DayEntry()].closing = 1
         b.days["2026-08-06"] = nil                                       // silinen gün
         b.days["2026-09-01"] = DayRecord(date: "2026-09-01")             // boş gün: belge değil
@@ -188,30 +197,30 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(DocCodec.changedKeys(a, b),
                        ["items", "settings", "orders", "day:2026-08-10", "day:2026-08-06", "day:2026-09-02"])
         var c = a
-        c.employees[0].rate += 1
+        c.employees[0].role = "Şef"
         c.products[0].note = "x"
         XCTAssertEqual(DocCodec.changedKeys(a, c), ["employees", "products"])
     }
 
     func testReplacingAndRebase() {
         let started = DemoData.make(endingAt: "2026-08-10", days: 5)
-        // Eşitleme sunucudan: aynı günde g90, ayrıca kalem maliyeti
+        // Eşitleme sunucudan: aynı günde g90, ayrıca kalemin kritik stoğu
         var synced = started
         synced.days["2026-08-10"]?.entries["g90", default: DayEntry()].closing = 77
-        synced.items[0].unitCost = 41
+        synced.items[0].minStock = 41
         // Kullanıcı eşitleme sürerken: aynı günde peynir, başka bir gün ve ayarlar
         var current = started
         current.days["2026-08-10"]?.entries["peynir", default: DayEntry()].closing = 3.5
         current.days["2026-08-09"]?.note = "eşitleme sırasında"
-        current.settings.priceAlertPct = 0.1
+        current.settings.orderCoverDays = 5
 
         let (out, changed) = DocCodec.rebase(started: started, current: current, synced: synced)
         XCTAssertEqual(changed, ["day:2026-08-10", "day:2026-08-09", "settings"])
         XCTAssertEqual(out.days["2026-08-10"]?.entries["g90"]?.closing, 77)
         XCTAssertEqual(out.days["2026-08-10"]?.entries["peynir"]?.closing, 3.5)
         XCTAssertEqual(out.days["2026-08-09"]?.note, "eşitleme sırasında")
-        XCTAssertEqual(out.items[0].unitCost, 41)
-        XCTAssertEqual(out.settings.priceAlertPct, 0.1)
+        XCTAssertEqual(out.items[0].minStock, 41)
+        XCTAssertEqual(out.settings.orderCoverDays, 5)
         // Değişiklik yoksa eşitleme sonucu aynen
         XCTAssertEqual(DocCodec.rebase(started: started, current: started, synced: synced).changed, [])
 
@@ -233,7 +242,7 @@ final class CloudSyncTests: XCTestCase {
         seed.days["2026-08-01"]?.note = "x"
         XCTAssertFalse(DocCodec.isSeedOnly(seed))
         var edited = AppData.seeded()
-        edited.items[0].unitCost = 10
+        edited.items[0].tolerance = 10
         XCTAssertFalse(DocCodec.isSeedOnly(edited))
 
         XCTAssertEqual(CloudSyncEngine.initialMode(localIsSeedOnly: true, remoteEmpty: true), .upload)
@@ -246,16 +255,20 @@ final class CloudSyncTests: XCTestCase {
     }
 
     func testBodyPreservesUnknownFields() {
-        let raw = j(#"[{"id":"g90","name":"90 Gr","unit":"Adet","recipeUnit":"adet","factor":1,"active":true,"unitCost":40,"supplier":"web"}]"#)
+        let raw = j(#"[{"id":"g90","name":"90 Gr","unit":"Adet","recipeUnit":"adet","factor":1,"active":true,"minStock":40,"supplier":"web","unitCost":38,"costHistory":[{"date":null,"cost":38}]}]"#)
         let baseN = DocCodec.normalize(key: "items", body: raw)!
         XCTAssertNil(baseN.arrayValue?.first?["supplier"])
+        XCTAssertNil(baseN.arrayValue?.first?["unitCost"])
         var d = AppData(items: [], products: [])
         DocCodec.apply(key: "items", body: raw, to: &d)
-        d.items[0].unitCost = 44
+        d.items[0].minStock = 44
         let local = DocCodec.body(for: "items", in: d)!
         let body = CloudSyncEngine.bodyPreservingUnknownFields(local: local, baseRaw: raw, baseNormalized: baseN)
         XCTAssertEqual(body.arrayValue?.first?["supplier"]?.stringValue, "web")
-        XCTAssertEqual(body.arrayValue?.first?["unitCost"]?.doubleValue, 44)
+        XCTAssertEqual(body.arrayValue?.first?["minStock"]?.doubleValue, 44)
+        // Eski sürümlerin maliyet alanları da bilinmeyen alan olarak korunur
+        XCTAssertEqual(body.arrayValue?.first?["unitCost"]?.doubleValue, 38)
+        XCTAssertEqual(body.arrayValue?.first?["costHistory"], j(#"[{"date":null,"cost":38}]"#))
         // Taban yoksa yerel aynen
         XCTAssertEqual(CloudSyncEngine.bodyPreservingUnknownFields(local: local, baseRaw: nil, baseNormalized: nil), local)
     }
@@ -274,41 +287,71 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: nil,
                                                after: j(#"{"sales":[{"code":"11101","name":"A","qty":3,"amount":1200},{"code":"13001","name":"K","qty":1,"amount":50}],"salesImportedAt":"2026-10-09T20:00:00Z"}"#),
                                                data: data),
-                       "09.10.2026 satış raporu aktarıldı (2 satır, 1.250 ₺)")
+                       "09.10.2026 satış raporu aktarıldı (2 satır)")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x"}"#), after: j(#"{"note":"x","locked":true}"#)),
                        "09.10.2026 günü kapatıldı")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x","locked":true}"#), after: j(#"{"note":"x"}"#)),
                        "09.10.2026 günün kilidi açıldı")
+        // Eski sürümün vardiya alanları özete girmez
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x"}"#),
                                                after: j(#"{"note":"x","shifts":{"e8":{"hours":6}},"otherLabor":500}"#), data: data),
-                       "Vardiya 09.10.2026: Can Ö. 6 saat, diğer personel gideri 500 ₺")
+                       "09.10.2026 günü güncellendi")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x"}"#), after: nil), "09.10.2026 günü silindi")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"a"}"#), after: j(#"{"note":"b","countedBy":"Selin"}"#)),
                        "09.10.2026 sayımı yapan: Selin; 09.10.2026 notu: b")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"a"}"#), after: j(#"{"note":"a"}"#)),
                        "09.10.2026 günü güncellendi")
 
-        let item = #"{"id":"patates","name":"Patates","unit":"Kg","recipeUnit":"kg","factor":1,"active":true,"unitCost":60}"#
+        let item = #"{"id":"patates","name":"Patates","unit":"Kg","recipeUnit":"kg","factor":1,"active":true,"minStock":5,"unitCost":60}"#
+        XCTAssertEqual(ChangeSummary.summarize(key: "items", before: j("[\(item)]"),
+                                               after: j("[\(item.replacingOccurrences(of: "\"minStock\":5", with: "\"minStock\":8"))]")),
+                       "Stok kalemleri: Patates kritik stok 5 → 8")
+        // Yalnızca eski maliyet alanı değiştiyse (eski sürümden) kalem değişmiş sayılmaz
         XCTAssertEqual(ChangeSummary.summarize(key: "items", before: j("[\(item)]"),
                                                after: j("[\(item.replacingOccurrences(of: "60", with: "68"))]")),
-                       "Stok kalemleri: Patates birim maliyet 60 → 68 ₺")
+                       "Stok kalemleri güncellendi")
         XCTAssertEqual(ChangeSummary.summarize(key: "items", before: j("[\(item)]"), after: j("[]")), "Stok kalemleri: Patates silindi")
         XCTAssertEqual(ChangeSummary.summarize(key: "products",
                                                before: j(#"[{"code":"11101","name":"Dublex","category":"BURGERLER","amounts":{"g90":2}}]"#),
                                                after: j(#"[{"code":"11101","name":"Dublex","category":"BURGERLER","amounts":{"g90":2,"peynir":2}}]"#),
                                                data: data),
                        "Reçeteler: Dublex: Peynir 2")
+        XCTAssertEqual(ChangeSummary.summarize(key: "employees", before: j("[]"),
+                                               after: j(#"[{"id":"e1","name":"Ayşe","role":"Kasiyer","active":true}]"#)),
+                       "Ekip: Ayşe eklendi")
+        let ayse = #"{"id":"e1","name":"Ayşe","role":"Kasiyer","active":true,"payType":"monthly","rate":85000}"#
+        XCTAssertEqual(ChangeSummary.summarize(key: "employees", before: j("[\(ayse)]"),
+                                               after: j("[\(ayse.replacingOccurrences(of: "Kasiyer", with: "Usta"))]")),
+                       "Ekip: Ayşe görev Kasiyer → Usta")
+        XCTAssertEqual(ChangeSummary.summarize(key: "employees", before: j("[\(ayse)]"),
+                                               after: j(#"[{"id":"e1","name":"Ayşe","role":"Kasiyer","active":true,"account":"ayse.yilmaz@envanter.local"}]"#)),
+                       "Ekip: Ayşe hesabı: ayse.yilmaz")
         XCTAssertEqual(ChangeSummary.summarize(key: "employees",
-                                               before: j(#"[{"id":"e1","name":"Murat","role":"Müdür","payType":"monthly","rate":85000,"costFactor":1.2,"active":true}]"#),
-                                               after: j(#"[{"id":"e1","name":"Murat","role":"Müdür","payType":"monthly","rate":90000,"costFactor":1.2,"active":true}]"#)),
-                       "Personel: Murat ücret 85.000 → 90.000 ₺")
+                                               before: j(#"[{"id":"e1","name":"Ayşe","role":"","phone":"0500 111","account":"ayse@ornek.com","note":"a"}]"#),
+                                               after: j(#"[{"id":"e1","name":"Ayşe","role":"Usta","phone":"0500 222","note":"b"}]"#)),
+                       "Ekip: Ayşe görev Usta, telefon güncellendi, hesabı kaldırıldı, not güncellendi")
+        XCTAssertEqual(ChangeSummary.summarize(key: "employees",
+                                               before: j(#"[{"id":"e1","name":"Ayşe","role":"Usta","phone":"0500"}]"#),
+                                               after: j(#"[{"id":"e1","name":"Ayşe","role":"","active":false,"endDate":"2026-10-09"}]"#)),
+                       "Ekip: Ayşe görev silindi, ayrıldı (09.10.2026), telefon silindi")
+        // Yalnızca eski ücret alanı değiştiyse üye değişmiş sayılmaz
+        XCTAssertEqual(ChangeSummary.summarize(key: "employees", before: j("[\(ayse)]"),
+                                               after: j("[\(ayse.replacingOccurrences(of: "85000", with: "90000"))]")),
+                       "Ekip güncellendi")
+        XCTAssertEqual(ChangeSummary.summarize(key: "employees", before: j("[\(ayse)]"), after: nil), "Ekip silindi")
         XCTAssertEqual(ChangeSummary.summarize(key: "orders",
                                                before: j(#"[{"id":"o1","date":"2026-10-08","supplier":"Et Tedarik","lines":[{"itemID":"g90","qty":100}],"status":"open"}]"#),
                                                after: j(#"[{"id":"o1","date":"2026-10-08","supplier":"Et Tedarik","lines":[{"itemID":"g90","qty":100,"received":100}],"status":"received","receivedOn":"2026-10-09"}]"#)),
                        "Sipariş teslim alındı (Et Tedarik)")
         XCTAssertEqual(ChangeSummary.summarize(key: "settings", before: j(#"{"branchName":"A"}"#),
                                                after: j(#"{"branchName":"A","targetFoodCostPct":0.309,"staff":["Ali"]}"#)),
-                       "Ayarlar: hammadde hedefi %30,9, sayım ekibine Ali eklendi")
+                       "Ayarlar: sayım ekibine Ali eklendi")
+        // Eski sayan adları ekibe taşınınca tek satır
+        XCTAssertEqual(ChangeSummary.summarize(key: "settings", before: j(#"{"branchName":"A","staff":["Ali","Veli"]}"#),
+                                               after: j(#"{"branchName":"A","staff":[]}"#)),
+                       "Ayarlar: sayım yapanlar Ekip'e taşındı")
+        XCTAssertEqual(ChangeSummary.summarize(key: "settings", before: j(#"{"priceAlertPct":0.05}"#), after: j(#"{"priceAlertPct":0.1}"#)),
+                       "Ayarlar: güncellendi")
 
         // Uzun özet 140 karakteri aşmaz ve sığmayanları sayar
         var entries: [String: JSONValue] = [:]
@@ -317,6 +360,13 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertLessThanOrEqual(long.utf16.count, ChangeSummary.maxLength)
         XCTAssertTrue(long.hasPrefix("09.10.2026 sayımı: 90 Gr kapanış 1, 120 Gr kapanış 1"), long)
         XCTAssertTrue(long.contains(" değişiklik"), long)
+    }
+
+    /// Yerel değişiklik birkaç saniye içinde gönderilir; düzenli eşitleme güvenlik ağı olarak dakikada bir
+    func testSyncTimingDefaults() {
+        XCTAssertEqual(CloudDefaults.debounceSeconds, 2)
+        XCTAssertEqual(CloudDefaults.intervalSeconds, 60)
+        XCTAssertLessThan(CloudDefaults.debounceSeconds, CloudDefaults.intervalSeconds)
     }
 
     // MARK: - Durum dosyası
@@ -593,7 +643,7 @@ final class CloudSyncTests: XCTestCase {
         let date = "2026-08-31"
         let serverItems = server.doc(ws, "items")!.rev
         b.edit { d in
-            if let i = d.items.firstIndex(where: { $0.id == "patates" }) { d.items[i].unitCost = 1 }
+            if let i = d.items.firstIndex(where: { $0.id == "patates" }) { d.items[i].minStock = 1 }
             d.days[date]?.entries["patates", default: DayEntry()].closing = 12.5
         }
         XCTAssertEqual(b.state.dirty, ["items", "day:\(date)"])
@@ -639,23 +689,23 @@ final class CloudSyncTests: XCTestCase {
         server.write(ws: ws, user: "patron", key: "items", body: .array(items))
         try await a.sync()
         XCTAssertEqual(a.state.dirty, [])
-        // Mac başka bir kalemin maliyetini değiştirir
-        a.edit { $0.items[1].unitCost = 123 }
+        // Mac başka bir kalemin kritik stoğunu değiştirir
+        a.edit { $0.items[1].minStock = 123 }
         let out = try await a.sync()
         XCTAssertEqual(out.pushed, ["items"])
         let stored = server.doc(ws, "items")!.body.arrayValue!
         XCTAssertEqual(stored[0]["supplierCode"]?.stringValue, "TDK-42")
-        XCTAssertEqual(stored[1]["unitCost"]?.doubleValue, 123)
+        XCTAssertEqual(stored[1]["minStock"]?.doubleValue, 123)
         try await b.sync()
-        XCTAssertEqual(b.data.items[1].unitCost, 123)
+        XCTAssertEqual(b.data.items[1].minStock, 123)
     }
 
     func testRevertedChangeIsNotPushed() async throws {
         let (server, a, _) = try await connectedPair()
         let before = server.putCount
-        let old = a.data.settings.priceAlertPct
-        a.edit { $0.settings.priceAlertPct = 0.2 }
-        a.edit { $0.settings.priceAlertPct = old }
+        let old = a.data.settings.orderCoverDays
+        a.edit { $0.settings.orderCoverDays = 7 }
+        a.edit { $0.settings.orderCoverDays = old }
         XCTAssertEqual(a.state.dirty, ["settings"])
         let out = try await a.sync()
         XCTAssertEqual(out.pushed, [])
@@ -797,7 +847,7 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(CloudSyncError.invalidCredentials.localizedDescription, "E-posta ya da şifre yanlış.")
         XCTAssertTrue(CloudSyncError.emailNotConfirmed.localizedDescription.contains("onaylanmamış"))
         XCTAssertEqual(CloudSyncError.forbidden("").localizedDescription,
-                       "Yetki yok: personel yalnızca gün verisi (sayım, satış, vardiya, not) yazabilir.")
+                       "Yetki yok: personel yalnızca gün verisi (sayım, satış, not) yazabilir.")
         XCTAssertTrue(CloudSyncError.network("timeout").localizedDescription.hasPrefix("Ağ hatası"))
         // Ağ hatası
         let down = try SupabaseAPI(url: "https://p.supabase.co", publishableKey: "k",

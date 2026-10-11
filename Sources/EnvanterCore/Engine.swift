@@ -53,8 +53,6 @@ public struct ItemCalc {
     public var diff: Double?
     /// Farkın değerlendirmesi (sayım yoksa nil)
     public var severity: DiffSeverity?
-    /// Farkın parasal karşılığı (₺; birim maliyet tanımlı değilse nil)
-    public var diffValue: Double?
     /// Kapanış kritik stok seviyesinin altında
     public var belowMinimum: Bool
 
@@ -81,27 +79,78 @@ public struct DayOverview: Identifiable {
     public var shortageItems: Int
     /// Kritik seviyenin altındaki kalem sayısı
     public var belowMinimumItems: Int
-    /// Fazla çıkışların (kayıp) parasal toplamı, pozitif sayı (₺)
-    public var lossValue: Double
-    /// Tüm farkların net parasal toplamı (₺)
-    public var netValue: Double
     public var isLocked: Bool
-    /// Günün satış tutarı (rapor tutar içeriyorsa)
-    public var revenue: Double? = nil
 
     public var isFullyCounted: Bool { itemCount > 0 && countedItems == itemCount }
-    /// Kayıp satışın %1'ini (satış tutarı yoksa 500 ₺'yi) aşıyorsa belirgin sayılır
-    public var hasSignificantLoss: Bool {
-        guard lossValue > 0 else { return false }
-        if let revenue, revenue > 0 { return lossValue >= revenue * 0.01 }
-        return lossValue >= 500
-    }
-    /// Dikkat edilecek kayıp: satışın %0,5'i ve üzeri (satış tutarı yoksa tolerans dışı fark olması)
-    public var hasNotableLoss: Bool {
-        if let revenue, revenue > 0 { return lossValue >= revenue * 0.005 }
-        return problemItems > 0
-    }
+    /// Dikkat: sayılan kalemlerin en az %10'unda tolerans dışı fark (web ile aynı tam sayı hesabı)
+    public var hasNotableProblems: Bool { problemItems > 0 && problemItems * 10 >= countedItems }
+    /// Belirgin sorun: sayılan kalemlerin en az %20'sinde tolerans dışı fark
+    public var hasSignificantProblems: Bool { problemItems > 0 && problemItems * 5 >= countedItems }
     public var hasAnyCount: Bool { countedItems > 0 }
+
+    /// Takip şeridindeki renk sınıfı (web `trackerState` ile aynı kural, sırası önemli):
+    /// sayım ve satış yok → boş; sayım yok → yalnızca satış; %20 fark → kötü; %10 fark ya da eksik sayım → dikkat; değilse iyi.
+    public var trackerState: TrackerState {
+        if !hasAnyCount && !hasSales { return .empty }
+        if !hasAnyCount { return .salesOnly }
+        if hasSignificantProblems { return .bad }
+        if hasNotableProblems || !isFullyCounted { return .warn }
+        return .ok
+    }
+}
+
+/// Takip şeridi (son 30 gün) kutusunun durumu. Ham değerler web'deki `TrackerState` anahtarlarıyla aynıdır.
+public enum TrackerState: String, CaseIterable {
+    /// Sayım da satış raporu da yok
+    case empty = "none"
+    /// Satış raporu var, sayım yok
+    case salesOnly
+    /// Sayılanların en az %20'sinde tolerans dışı fark
+    case bad
+    /// Sayılanların en az %10'unda fark ya da eksik sayım
+    case warn
+    /// Sayım tam, fark az
+    case ok
+
+    /// Renk açıklamasındaki metin (Mac ve web aynı)
+    public var label: String {
+        switch self {
+        case .ok: return "Sayım tam, fark az"
+        case .warn: return "Eksik sayım ya da sayılanların %10'unda fark"
+        case .bad: return "Sayılanların %20'sinde fark"
+        case .salesOnly: return "Yalnızca satış"
+        case .empty: return "Veri yok"
+        }
+    }
+
+    /// Renk açıklamasındaki sıra (iyiden veri yoka)
+    public static let legendOrder: [TrackerState] = [.ok, .warn, .bad, .salesOnly, .empty]
+}
+
+/// Bir stok kaleminin bir günlük noktası (grafikler için)
+public struct ItemDayPoint: Identifiable {
+    public var id: String { date }
+    public var date: String
+    /// Reçeteye göre beklenen tüketim (satılan + zayi)
+    public var expected: Double
+    /// Sayıma göre fiili tüketim (sayım yoksa nil)
+    public var actual: Double?
+    public var diff: Double?
+    public var closing: Double?
+    public var incoming: Double
+    public var waste: Double
+}
+
+/// Dönemin günlük durumu (Genel Bakış, rapor ve Excel'deki "Günlük Durum" sayfası için)
+public struct PeriodStats {
+    public var from: String
+    public var to: String
+    /// Verisi olan günlerin özeti (eskiden yeniye)
+    public var days: [DayOverview]
+    /// En az bir kalemi sayılmış gün sayısı
+    public var countedDays: Int
+    /// Satış raporu (ya da Excel'den gelen satış) olan gün sayısı
+    public var salesDays: Int
 }
 
 /// Sipariş önerisi satırı
@@ -126,8 +175,6 @@ public struct OrderSuggestion: Identifiable {
     public var target: Double
     /// Önerilen sipariş miktarı (yukarı yuvarlanmış)
     public var suggested: Double
-    /// Önerilen siparişin maliyeti (₺)
-    public var cost: Double?
 }
 
 public struct Engine {
@@ -237,7 +284,6 @@ public struct Engine {
         var actual: Double?
         var diff: Double?
         var severity: DiffSeverity?
-        var diffValue: Double?
         if let closing = entry.closing {
             // Fiili Tüketim = Açılış + Gelen + Gelen Transfer - (Giden Transfer + Kapanış)
             let a = opening + incoming + tin - (tout + closing)
@@ -246,12 +292,11 @@ public struct Engine {
             let d = Self.clean(sold + waste - a)
             diff = d
             severity = item.severity(of: d)
-            if let cost = item.cost(on: date) { diffValue = Self.clean(d * cost) }
         }
         return ItemCalc(itemID: item.id, opening: opening, openingIsAuto: entry.opening == nil,
                         incoming: incoming, transferIn: tin, transferOut: tout, closing: entry.closing,
                         sold: Self.clean(sold), waste: Self.clean(waste), actual: actual, diff: diff,
-                        severity: severity, diffValue: diffValue, belowMinimum: item.isBelowMinimum(entry.closing))
+                        severity: severity, belowMinimum: item.isBelowMinimum(entry.closing))
     }
 
     /// Kayan nokta artıklarını temizler (10.864000000000001 -> 10.864).
@@ -271,20 +316,13 @@ public struct Engine {
         let day = data.days[date]
         var o = DayOverview(date: date, itemCount: rows.count, countedItems: 0, hasSales: day?.hasSalesData ?? false,
                             salesLines: day?.sales.count ?? 0, unknownLines: analysis.unknownLines.count,
-                            problemItems: 0, shortageItems: 0, belowMinimumItems: 0, lossValue: 0, netValue: 0,
-                            isLocked: day?.isLocked ?? false)
+                            problemItems: 0, shortageItems: 0, belowMinimumItems: 0, isLocked: day?.isLocked ?? false)
         for r in rows {
             if r.isCounted { o.countedItems += 1 }
             if r.belowMinimum { o.belowMinimumItems += 1 }
             if r.severity?.isProblem == true { o.problemItems += 1 }
-            if r.severity == .shortage {
-                o.shortageItems += 1
-                if let v = r.diffValue { o.lossValue -= v }
-            }
-            if let v = r.diffValue { o.netValue += v }
+            if r.severity == .shortage { o.shortageItems += 1 }
         }
-        o.lossValue = Self.clean(o.lossValue); o.netValue = Self.clean(o.netValue)
-        o.revenue = day?.salesRevenue
         return o
     }
 
@@ -308,11 +346,7 @@ public struct Engine {
         public var waste: Double
         public var actual: Double
         public var diff: Double
-        /// Toplam farkın parasal karşılığı (₺; maliyet tanımlı değilse nil)
-        public var diffValue: Double?
-        /// Kayıp: tolerans dışı fazla çıkış olan günlerin tutarı (pozitif ₺; az çıkışlarla mahsup edilmez)
-        public var shortageValue: Double = 0
-        /// Tolerans dışı fazla çıkış olan günlerin miktarı (pozitif, envanter birimi)
+        /// Tolerans dışı fazla çıkış olan günlerin miktarı (pozitif, envanter birimi; az çıkışlarla mahsup edilmez)
         public var shortageQty: Double = 0
         /// Tolerans dışı fazla çıkış olan gün sayısı
         public var shortageDays: Int
@@ -333,7 +367,7 @@ public struct Engine {
         return activeItems.map { item in
             var r = SummaryRow(item: item, daysCounted: 0, firstOpening: nil, lastClosing: nil,
                                incoming: 0, transferIn: 0, transferOut: 0, sold: 0, waste: 0,
-                               actual: 0, diff: 0, diffValue: nil, shortageDays: 0, daily: [])
+                               actual: 0, diff: 0, shortageDays: 0, daily: [])
             for (d, calcs) in perDay {
                 guard let c = calcs[item.id], c.isCounted, let actual = c.actual, let diff = c.diff else { continue }
                 r.daysCounted += 1
@@ -341,21 +375,37 @@ public struct Engine {
                 r.lastClosing = c.closing
                 r.incoming += c.incoming; r.transferIn += c.transferIn; r.transferOut += c.transferOut
                 r.sold += c.sold; r.waste += c.waste; r.actual += actual; r.diff += diff
-                if let v = c.diffValue { r.diffValue = (r.diffValue ?? 0) + v }
                 if c.severity == .shortage {
                     r.shortageDays += 1
                     r.shortageQty -= diff
-                    if let v = c.diffValue { r.shortageValue -= v }
                 }
                 r.daily.append((d, diff))
             }
             r.incoming = Self.clean(r.incoming); r.transferIn = Self.clean(r.transferIn)
             r.transferOut = Self.clean(r.transferOut); r.sold = Self.clean(r.sold)
             r.waste = Self.clean(r.waste); r.actual = Self.clean(r.actual); r.diff = Self.clean(r.diff)
-            // Fark tutarı her günün o günkü birim maliyetiyle hesaplanıp toplanır
-            r.diffValue = r.diffValue.map(Self.clean)
-            r.shortageValue = Self.clean(r.shortageValue); r.shortageQty = Self.clean(r.shortageQty)
+            r.shortageQty = Self.clean(r.shortageQty)
             return r
+        }
+    }
+
+    // MARK: - Dönem
+
+    /// from...to (dahil) arasındaki verisi olan günlerin özeti
+    public func periodStats(from: String, to: String) -> PeriodStats {
+        let days = datesWithData.filter { $0 >= from && $0 <= to }.map { overview(date: $0) }
+        return PeriodStats(from: from, to: to, days: days, countedDays: days.filter { $0.hasAnyCount }.count,
+                           salesDays: days.filter { $0.hasSales }.count)
+    }
+
+    // MARK: - Kalem analizi
+
+    /// Bir kalemin verisi olan günlerdeki beklenen ve fiili tüketimi (hareket olmayan günler atlanır)
+    public func itemSeries(itemID: String, from: String, to: String) -> [ItemDayPoint] {
+        datesWithData.filter { $0 >= from && $0 <= to }.compactMap { d in
+            guard let r = calc(date: d).rows.first(where: { $0.itemID == itemID }), r.hasActivity else { return nil }
+            return ItemDayPoint(date: d, expected: Self.clean(r.sold + r.waste), actual: r.actual, diff: r.diff,
+                                closing: r.closing, incoming: r.incoming, waste: r.waste)
         }
     }
 
@@ -420,8 +470,7 @@ public struct Engine {
                 item: item, stock: stock.map(Self.clean), stockDate: last?.date, countedStock: last?.value, onOrder: Self.clean(onOrder),
                 dailyUsage: Self.clean(usage), sampleDays: samples.count,
                 daysOfCover: (stock != nil && usage > 0) ? Self.clean(stock! / usage) : nil,
-                target: Self.clean(target), suggested: Self.clean(suggested),
-                cost: item.unitCost.map { Self.clean($0 * suggested) })
+                target: Self.clean(target), suggested: Self.clean(suggested))
         }
     }
 }

@@ -110,7 +110,10 @@ public enum JSONMerge {
     /// 5. local ve remote kimlikli dizi ("id" ya da "code" metin alanlı, kimlikleri tekil nesneler) → kimliğe göre;
     ///    sıra: local, sonra yalnızca remote'ta yeni olanlar remote sırasıyla; sonucu `nil` olan eleman çıkarılır
     /// 6. diğer her durumda yerel kazanır → local
-    public static func merge3(base: JSONValue?, local: JSONValue?, remote: JSONValue?) -> JSONValue? {
+    /// `identityFields`: 5. kuraldaki kimlik alanları (öncelik sırasıyla). Ortak sözleşme (web, docs/merge3-vectors.json)
+    /// varsayılanı kullanır; Mac yalnızca bilinmeyen alanları korurken "itemID"yi ekler (sipariş satırları).
+    public static func merge3(base: JSONValue?, local: JSONValue?, remote: JSONValue?,
+                              identityFields: [String] = ["id", "code"]) -> JSONValue? {
         let b: JSONValue? = (base?.isNull ?? true) ? nil : base
         if local == b { return remote }
         if remote == b { return local }
@@ -126,13 +129,13 @@ public enum JSONMerge {
             if let bo {
                 var out: [String: JSONValue] = [:]
                 for k in Set(lo.keys).union(ro.keys) {
-                    if let v = merge3(base: bo[k], local: lo[k], remote: ro[k]) { out[k] = v }
+                    if let v = merge3(base: bo[k], local: lo[k], remote: ro[k], identityFields: identityFields) { out[k] = v }
                 }
                 return .object(out)
             }
         }
 
-        if case .array(let la)? = local, case .array(let ra)? = remote, let field = identityField(la, ra) {
+        if case .array(let la)? = local, case .array(let ra)? = remote, let field = identityField(identityFields, la, ra) {
             let ba: [JSONValue]
             if case .array(let a)? = b { ba = a } else { ba = [] }
             let bm = index(ba, by: field), lm = index(la, by: field), rm = index(ra, by: field)
@@ -140,7 +143,7 @@ public enum JSONMerge {
             for el in ra { if let id = el[field]?.stringValue, lm[id] == nil { order.append(id) } }
             var out: [JSONValue] = []
             for id in order {
-                if let v = merge3(base: bm[id], local: lm[id], remote: rm[id]) { out.append(v) }
+                if let v = merge3(base: bm[id], local: lm[id], remote: rm[id], identityFields: identityFields) { out.append(v) }
             }
             return .array(out)
         }
@@ -148,9 +151,10 @@ public enum JSONMerge {
         return local
     }
 
-    /// Kimlik alanı: dizilerin tüm elemanları bu alanı (tekil) metin olarak taşıyan nesnelerse "id", değilse "code"
-    static func identityField(_ arrays: [JSONValue]...) -> String? {
-        for field in ["id", "code"] {
+    /// Kimlik alanı: `fields` sırasıyla, dizilerin tüm elemanlarının (tekil) metin olarak taşıdığı ilk alan
+    /// (varsayılanla: "id", değilse "code")
+    static func identityField(_ fields: [String], _ arrays: [JSONValue]...) -> String? {
+        for field in fields {
             var ok = true
             outer: for arr in arrays {
                 var seen = Set<String>()

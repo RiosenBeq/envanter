@@ -31,7 +31,7 @@ public enum InitialSyncMode: String, Sendable, Equatable {
     /// Buluttakini indir (önce yerel yedek alınır)
     case download
     /// Başka şubeden boş şubeye geçiş: yalnızca tanımlar (stok kalemleri, reçeteler, ayarlar) kopyalanır; günler,
-    /// personel ve siparişler eski şubede kalır
+    /// ekip ve siparişler eski şubede kalır
     case copyCatalog
     /// İkisi de dolu: kullanıcıya sor
     case ask
@@ -86,7 +86,7 @@ public enum CloudSyncEngine {
     /// İlk bağlantı: tam okumanın (`rows`, since = 0) ardından yerel veriyi ve durumu hazırlar.
     /// - upload: bulutta olup yerelde olmayan günler yerele alınır; yerel her belge "dirty" olur (yerel kazanır).
     ///   Personel tanım belgelerini yazamadığından onlarda buluttaki hal geçerlidir (bulutta yoksa yereldeki kalır).
-    /// - copyCatalog: upload gibi, ama önce yereldeki günler, personel ve siparişler boşaltılır (başka şubenindir);
+    /// - copyCatalog: upload gibi, ama önce yereldeki günler, ekip ve siparişler boşaltılır (başka şubenindir);
     ///   şube adı ayarı yeni şubenin adı olur.
     /// - download: yerel veri buluttakiyle değiştirilir (bulutta olmayan günler silinir); bulutta hiç olmayan
     ///   tanım belgeleri yerelden korunur ve (yetki varsa) yüklenmek üzere "dirty" işaretlenir.
@@ -243,6 +243,11 @@ public enum CloudSyncEngine {
                     let localBody = DocCodec.body(for: key, in: out.data)
                     let merged = JSONMerge.merge3(base: baseN, local: localBody, remote: remoteN)
                     if merged != localBody { applyLocal(key, merged, &out) }
+                    if key == DocKey.settings, state.config?.canWriteCatalog ?? true {
+                        // Dizide kimlik olmadığından birleştirme yereldeki (taşınıp boşaltılmış) listeyi seçer; eski bir
+                        // istemcinin bu arada eklediği adlar korunur, aşağıdaki taşıma onları da ekibe alır
+                        unionLegacyStaff(remote: remoteN, into: &out.data)
+                    }
                     out.conflicts.insert(key)
                 }
             } else {
@@ -265,12 +270,22 @@ public enum CloudSyncEngine {
             }
         }
 
+        // Ekip: eski sayan adları (settings.staff) ekibe taşınır (docs/SYNC.md §1 "Ekip"). Çekmeden sonra yapılır, böylece
+        // web panelinde eklenmiş adlar da görülür (dizide kimlik olmadığından erken boşaltma onları silerdi). Yalnızca tanım
+        // belgelerini yazabilen rol taşır; sunucudaki ayar ya da ekip belgesi çözülemiyorsa (bu turda çekilen ya da önceki
+        // turlardan tabanda kalan hali) beklenir.
+        if state.config?.canWriteCatalog ?? true, !legacyStaffMigrationOnHold(state: state, undecodable: out.undecodable) {
+            migrateLegacyStaff(&out, state: &state)
+        }
+
         // 2. Gönder
-        let keys = DocKey.sorted(state.dirty)
+        let keys = pushOrder(state.dirty)
         var done = 0
         progress?(0, keys.count)
         do {
             for key in keys {
+                // Ekip gönderilemediyse (çakışma sınırı) eski adları boşaltan ayar da bekler: adlar sunucuda ayarda kalır
+                if key == DocKey.settings && settingsWaitsForTeam(state: state, data: out.data) { continue }
                 try await push(key: key, workspace: ws, state: &state, out: &out, api: api, client: client)
                 done += 1
                 progress?(done, keys.count)
@@ -301,9 +316,22 @@ public enum CloudSyncEngine {
                 return
             }
             if local == nil && !DocKey.isDay(key) { state.dirty.remove(key); return }  // tanım belgeleri silinmez
-            let deleted = local == nil
-            let body: JSONValue = local.map { bodyPreservingUnknownFields(local: $0, baseRaw: base?.body, baseNormalized: baseN) } ?? .object([:])
-            let summary = ChangeSummary.summarize(key: key, before: baseN, after: local, data: out.data)
+            // Bilinmeyen alanların tabanı: Mac için boş olan gün de çözülmüş haliyle (yoksa o alanlar düşerdi)
+            let baseView = (base?.deleted ?? true) ? nil : DocCodec.decoded(key: key, body: base?.body)
+            var deleted = local == nil
+            var body: JSONValue = .object([:])
+            if let local {
+                body = bodyPreservingUnknownFields(local: local, baseRaw: base?.body, baseNormalized: baseView)
+            } else if let date = DocKey.date(of: key), let raw = base?.body, base?.deleted == false,
+                      let kept = keptUnknownDay(date: date, baseRaw: raw, baseView: baseView) {
+                // Mac için boşalan gün, Mac'in bilmediği alanları taşıyorsa (eski sürümlerin vardiyaları gibi) silinmez:
+                // bilinen alanları temizlenmiş hali yazılır; zaten öyleyse yazılacak bir şey yoktur
+                if kept == raw { state.dirty.remove(key); return }
+                body = kept
+                deleted = false
+            }
+            let after = deleted ? nil : (local ?? DocCodec.decoded(key: key, body: body))
+            let summary = ChangeSummary.summarize(key: key, before: baseN, after: after, data: out.data)
             let r: PutResult
             do {
                 r = try await api.put(workspace: workspace, key: key, body: body, baseRev: base?.rev ?? 0,
@@ -326,7 +354,7 @@ public enum CloudSyncEngine {
             if r.ok {
                 state.base[key] = BaseDoc(rev: r.rev, body: deleted ? nil : (r.body ?? body), deleted: deleted)
                 state.dirty.remove(key)
-                out.pushed.append(key)
+                if !out.pushed.contains(key) { out.pushed.append(key) }   // ekip, ayar çakışmasında yeniden gönderilebilir
                 return
             }
             // Çakışma: sunucudaki güncel hal döndü
@@ -345,6 +373,18 @@ public enum CloudSyncEngine {
                 } else {
                     let merged = JSONMerge.merge3(base: baseN, local: local, remote: serverN)
                     if merged != local { applyLocal(key, merged, &out) }
+                    if key == DocKey.settings, state.config?.canWriteCatalog ?? true,
+                       !legacyStaffMigrationOnHold(state: state, undecodable: []) {
+                        // Taşıma sürerken eski bir istemci (eski web paneli / Mac) ayara yeni bir sayan adı ekledi: ad
+                        // ekibe taşınır ve ekip, ayar yeniden denenmeden önce gönderilir (birleştirme yereldeki boş listeyi
+                        // seçtiğinden ad kaybolurdu). Ekip gönderilemezse ayar "dirty" kalır, sonraki turda denenir.
+                        unionLegacyStaff(remote: serverN, into: &out.data)
+                        migrateLegacyStaff(&out, state: &state)
+                        if state.dirty.contains(DocKey.employees) {
+                            try await push(key: DocKey.employees, workspace: workspace, state: &state, out: &out, api: api, client: client)
+                            if settingsWaitsForTeam(state: state, data: out.data) { return }
+                        }
+                    }
                 }
             }
             if attempts > CloudDefaults.maxConflictRetries {
@@ -356,12 +396,75 @@ public enum CloudSyncEngine {
         }
     }
 
+    // MARK: - Ekip taşıması (eski sayan adları)
+
+    /// Gönderim sırası: `DocKey.sorted` (tanım belgeleri, sonra günler), yalnız ekip ayardan önce. Taşımada ayar
+    /// (boşaltılmış `staff`) ekipten (yeni üyeler) önce sunucuya ulaşıp tur yarıda kalsaydı adlar iki belgede de kalmazdı.
+    static func pushOrder(_ keys: some Sequence<String>) -> [String] {
+        var out = DocKey.sorted(keys)
+        if let s = out.firstIndex(of: DocKey.settings), let e = out.firstIndex(of: DocKey.employees), e > s {
+            out.remove(at: e)
+            out.insert(DocKey.employees, at: s)
+        }
+        return out
+    }
+
+    /// Taşıma bekletilmeli mi: sunucudaki ayar ya da ekip belgesi çözülemiyor. Bu turda çekilenler (`undecodable`) ve önceki
+    /// turlardan tabanda kalan hal birlikte denetlenir (belge yeniden çekilmeyince bekleme bitmemeli); taşıma o belgeyi
+    /// yerel değerle ezer, Mac'in bilmediği alanlarını da düşürürdü.
+    static func legacyStaffMigrationOnHold(state: SyncState, undecodable: Set<String>) -> Bool {
+        [DocKey.settings, DocKey.employees].contains { key in
+            if undecodable.contains(key) { return true }
+            guard let b = state.base[key], !b.deleted, let body = b.body, !body.isNull else { return false }
+            return DocCodec.normalize(key: key, body: body) == nil
+        }
+    }
+
+    /// Ayar gönderimi ekibi beklemeli mi: sunucudaki ayarda eski sayan adları var, yerelde taşınıp boşaltılmış, ama ekip
+    /// belgesi henüz gönderilemedi. Ayar gönderilseydi adlar sunucuda hiçbir belgede kalmazdı.
+    static func settingsWaitsForTeam(state: SyncState, data: AppData) -> Bool {
+        guard state.dirty.contains(DocKey.employees), data.settings.staff.isEmpty,
+              let b = state.base[DocKey.settings], !b.deleted,
+              let server = DocCodec.normalize(key: DocKey.settings, body: b.body),
+              let staff = server["staff"]?.arrayValue else { return false }
+        return !staff.isEmpty
+    }
+
+    /// Uzak ayardaki eski sayan adlarını yerel listeye ekler (aynı ada çıkanlar bir kez). Taşıma ekip üyesi olanları atlar.
+    static func unionLegacyStaff(remote: JSONValue?, into data: inout AppData) {
+        let names = remote?["staff"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+        var seen = Set(data.settings.staff.map { Team.nameKey($0) })
+        for n in names where seen.insert(Team.nameKey(n)).inserted { data.settings.staff.append(n) }
+    }
+
+    /// `Team.migrateLegacyStaff` sonucunu işler: değişen belgeler yerelde uygulanmış ve "dirty" sayılır.
+    static func migrateLegacyStaff(_ out: inout SyncOutcome, state: inout SyncState) {
+        guard let migrated = Team.migratingLegacyStaff(out.data) else { return }
+        let keys = DocCodec.changedKeys(out.data, migrated)
+        out.data = migrated
+        out.appliedRemote.formUnion(keys)
+        state.dirty.formUnion(keys)
+    }
+
     /// Gönderilecek gövde: yerel (Mac'in bildiği alanlar) + sunucudaki bilinmeyen alanlar.
-    /// merge3(taban = sunucu gövdesinin Mac karşılığı, yerel, uzak = sunucunun ham gövdesi): Mac'in değiştirdiği
-    /// alanlar yerelden, Mac'in bilmediği (ileriki sürüm / web) alanları sunucudan gelir.
+    /// merge3(taban = sunucu gövdesinin Mac karşılığı (`DocCodec.decoded`), yerel, uzak = sunucunun ham gövdesi): Mac'in
+    /// değiştirdiği alanlar yerelden, Mac'in bilmediği (eski sürümlerin maliyet / vardiya alanları, ileriki sürüm / web)
+    /// alanları sunucudan gelir. Dizi elemanları "id", "code" ya da "itemID" ile eşlenir: sipariş satırlarının bilinmeyen
+    /// alanları da korunur (ortak merge3 sözleşmesi yalnızca "id" / "code" kullanır).
     public static func bodyPreservingUnknownFields(local: JSONValue, baseRaw: JSONValue?, baseNormalized: JSONValue?) -> JSONValue {
         guard let baseRaw, !baseRaw.isNull, let baseNormalized, baseRaw != baseNormalized else { return local }
-        return JSONMerge.merge3(base: baseNormalized, local: local, remote: baseRaw) ?? local
+        return JSONMerge.merge3(base: baseNormalized, local: local, remote: baseRaw, identityFields: preservationIdentity) ?? local
+    }
+
+    /// Bilinmeyen alanları korurken dizi elemanlarının kimlik alanları (öncelik sırasıyla)
+    static let preservationIdentity = ["id", "code", "itemID"]
+
+    /// Mac için boşalan günün sunucuya yazılacak hali: sunucudaki gövde Mac'in bilmediği dolu alanlar taşıyorsa
+    /// (`DocCodec.hasForeignContent`) bilinen alanları temizlenmiş, bilinmeyenleri korunmuş gövde; taşımıyorsa nil (gün silinir).
+    static func keptUnknownDay(date: String, baseRaw: JSONValue, baseView: JSONValue?) -> JSONValue? {
+        guard DocCodec.hasForeignContent(baseRaw) else { return nil }
+        let empty = DocCodec.emptyDayBody(date)
+        return bodyPreservingUnknownFields(local: empty, baseRaw: baseRaw, baseNormalized: baseView ?? empty)
     }
 
     /// Gövde çözülebilen ama boş (saklanmayan) bir gün mü (normalize nil döndürse de "bozuk" sayılmaz)

@@ -3,10 +3,10 @@ import Foundation
 /// Değişiklik geçmişi özeti: bir belge yazılırken `envanter_put(p_summary)` için kısa Türkçe metin üretir.
 /// Web istemcisindeki `src/lib/activity.ts` ile aynı biçim. Örnekler:
 ///   "09.10.2026 sayımı: 90 Gr kapanış 120 → 110, Peynir gelen 5"
-///   "09.10.2026 satış raporu aktarıldı (121 satır, 82.450 ₺)"
-///   "Vardiya 09.10.2026: Can Ö. 6 saat"
+///   "09.10.2026 satış raporu aktarıldı (121 satır)"
 ///   "09.10.2026 günü kapatıldı"
-///   "Stok kalemleri: Patates birim maliyet 60 → 68 ₺"
+///   "Stok kalemleri: Patates kritik stok 5 → 8"
+///   "Ekip: Ayşe görev Kasiyer → Usta"
 /// Metin en fazla ~140 karakterdir; sığmayan ayrıntılar "+N değişiklik" olarak sayılır.
 public enum ChangeSummary {
     public static let maxLength = 140
@@ -18,12 +18,12 @@ public enum ChangeSummary {
     }
 
     static let labels: [String: String] = [
-        DocKey.items: "Stok kalemleri", DocKey.products: "Reçeteler", DocKey.employees: "Personel",
+        DocKey.items: "Stok kalemleri", DocKey.products: "Reçeteler", DocKey.employees: "Ekip",
         DocKey.orders: "Siparişler", DocKey.settings: "Ayarlar",
     ]
 
     /// Bir belge değişikliğinin kısa Türkçe özeti. `before`/`after` belge gövdeleridir; `nil` = yok ya da silindi.
-    /// `data` verilirse kalem ve personel adları ondan alınır (yoksa kimlik yazılır).
+    /// `data` verilirse kalem adları ondan alınır (yoksa kimlik yazılır).
     public static func summarize(key: String, before: JSONValue?, after: JSONValue?, data: AppData? = nil) -> String {
         let b = before?.isNull == true ? nil : before
         let a = after?.isNull == true ? nil : after
@@ -95,14 +95,6 @@ public enum ChangeSummary {
         return "\(label) silindi"
     }
 
-    /// Para tutarı "₺" olmadan: 60 → "60", 8,25 → "8,25", 85000 → "85.000"
-    static func amount(_ v: Double) -> String {
-        let s = Fmt.money(v, fraction: v.isFinite && v == v.rounded() ? 0 : 2)
-        return s.hasSuffix(" ₺") ? String(s.dropLast(2)) : s
-    }
-
-    static func percent(_ v: Double) -> String { "%" + Fmt.number(v * 100, maxFraction: 1) }
-
     static func nonEmpty(_ s: String?) -> String? {
         guard let s, !s.isEmpty else { return nil }
         return s
@@ -110,10 +102,6 @@ public enum ChangeSummary {
 
     static func itemName(_ data: AppData?, _ id: String) -> String {
         nonEmpty(data?.items.first { $0.id == id }?.name) ?? id
-    }
-
-    static func employeeName(_ data: AppData?, _ id: String) -> String {
-        nonEmpty(data?.employees.first { $0.id == id }?.name) ?? id
     }
 
     /// JavaScript `Array.prototype.sort()` sırası (UTF-16 birimleri)
@@ -152,8 +140,7 @@ public enum ChangeSummary {
 
         let bs = b?.sales ?? []
         if !a.sales.isEmpty && (bs != a.sales || b?.salesImportedAt != a.salesImportedAt) {
-            let rev = a.salesRevenue.map { ", \(Fmt.money($0, fraction: 0))" } ?? ""
-            segs.append(Segment(head: "\(D) satış raporu aktarıldı (\(a.sales.count) satır\(rev))"))
+            segs.append(Segment(head: "\(D) satış raporu aktarıldı (\(a.sales.count) satır)"))
         } else if a.sales.isEmpty && !bs.isEmpty {
             segs.append(Segment(head: "\(D) satışları silindi"))
         }
@@ -173,37 +160,6 @@ public enum ChangeSummary {
             if !phrases.isEmpty { entryDetails.append("\(itemName(data, id)) \(phrases.joined(separator: ", "))") }
         }
         if !entryDetails.isEmpty { segs.append(Segment(head: "\(D) sayımı: ", details: entryDetails)) }
-
-        var shiftDetails: [String] = []
-        for id in orderedKeys(data?.employees.map { $0.id } ?? [], b?.shifts.map { Array($0.keys) }, a.shifts.map { Array($0.keys) }) {
-            let bsft = b?.shifts?[id] ?? ShiftEntry(), asft = a.shifts?[id] ?? ShiftEntry()
-            if bsft == asft { continue }
-            let name = employeeName(data, id)
-            if asft.isEmpty { shiftDetails.append("\(name) vardiyası silindi"); continue }
-            var phrases: [String] = []
-            if bsft.hours != asft.hours {
-                if let h = asft.hours {
-                    if let old = bsft.hours {
-                        phrases.append("\(Fmt.number(old, maxFraction: 2)) → \(Fmt.number(h, maxFraction: 2)) saat")
-                    } else {
-                        phrases.append("\(Fmt.number(h, maxFraction: 2)) saat")
-                    }
-                } else {
-                    phrases.append("saat silindi")
-                }
-            }
-            if bsft.worked != asft.worked {
-                phrases.append(asft.worked == true ? "çalıştı" : asft.worked == false ? "çalışmadı" : "çalıştı işareti kaldırıldı")
-            }
-            if let ex = pair(bsft.extra, asft.extra, amount, "ek ödeme", bsft.extra != nil && asft.extra == nil ? "" : "₺") {
-                phrases.append(ex)
-            }
-            if !phrases.isEmpty { shiftDetails.append("\(name) \(phrases.joined(separator: ", "))") }
-        }
-        if let ol = pair(b?.otherLabor, a.otherLabor, amount, "diğer personel gideri", a.otherLabor == nil ? "" : "₺") {
-            shiftDetails.append(ol)
-        }
-        if !shiftDetails.isEmpty { segs.append(Segment(head: "Vardiya \(D): ", details: shiftDetails)) }
 
         if (b?.countedBy ?? "") != (a.countedBy ?? "") {
             segs.append(Segment(head: nonEmpty(a.countedBy).map { "\(D) sayımı yapan: \(clip($0, 30))" } ?? "\(D) sayımı yapan silindi"))
@@ -225,11 +181,6 @@ public enum ChangeSummary {
             if old == it { continue }
             var p: [String] = []
             let label = old.name != it.name ? "\(nonEmpty(old.name) ?? it.id) → \(nonEmpty(it.name) ?? it.id)" : (nonEmpty(it.name) ?? it.id)
-            if let uc = pair(old.unitCost, it.unitCost, amount, "birim maliyet", it.unitCost == nil ? "" : "₺") {
-                p.append(uc.replacingOccurrences(of: "birim maliyet silindi", with: "birim maliyet kaldırıldı"))
-            } else if old.costHistory != it.costHistory {
-                p.append("fiyat geçmişi güncellendi")
-            }
             let frac = it.maxFraction
             if let x = pair(old.minStock, it.minStock, { Fmt.number($0, maxFraction: frac) }, "kritik stok") { p.append(x) }
             if let x = pair(old.tolerance, it.tolerance, { Fmt.number($0, maxFraction: frac) }, "tolerans") { p.append(x) }
@@ -281,7 +232,7 @@ public enum ChangeSummary {
         return details.isEmpty ? [] : [Segment(head: "Reçeteler: ", details: details)]
     }
 
-    // MARK: - Personel
+    // MARK: - Ekip
 
     static func summarizeEmployees(_ before: JSONValue?, _ after: JSONValue?) -> [Segment] {
         let bl = before.flatMap { Lenient.employees($0) } ?? [], al = after.flatMap { Lenient.employees($0) } ?? []
@@ -296,33 +247,29 @@ public enum ChangeSummary {
         }
         for e in bl where am[e.id] == nil { details.append("\(nonEmpty(e.name) ?? e.id) silindi") }
         if details.isEmpty && bl != al { details.append("sıralama değişti") }
-        return details.isEmpty ? [] : [Segment(head: "Personel: ", details: details)]
+        return details.isEmpty ? [] : [Segment(head: "Ekip: ", details: details)]
     }
 
     static func employeePhrases(_ old: Employee, _ e: Employee) -> [String] {
         var p: [String] = []
-        let historyChanged = old.payHistory != e.payHistory
-        let since = (nonEmpty(e.payHistory?.last?.from)).flatMap { historyChanged ? " (\(DateKey.short($0)) itibarıyla)" : nil } ?? ""
-        if old.payType != e.payType { p.append("\(old.payType.title) → \(e.payType.title)") }
-        if old.rate != e.rate { p.append("ücret \(amount(old.rate)) → \(amount(e.rate)) ₺") }
-        if old.costFactor != e.costFactor {
-            p.append("maliyet çarpanı \(Fmt.number(old.costFactor, maxFraction: 3)) → \(Fmt.number(e.costFactor, maxFraction: 3))")
+        if old.role != e.role {
+            switch (nonEmpty(old.role), nonEmpty(e.role)) {
+            case let (x?, y?): p.append("görev \(x) → \(y)")
+            case let (nil, y?): p.append("görev \(y)")
+            default: p.append("görev silindi")
+            }
         }
-        if !p.isEmpty {
-            p[p.count - 1] += since
-        } else if historyChanged {
-            p.append("ücret geçmişi güncellendi")
-        }
-        if old.role != e.role { p.append(nonEmpty(e.role).map { "görev \($0)" } ?? "görev silindi") }
         if old.startDate != e.startDate { p.append(nonEmpty(e.startDate).map { "giriş \(DateKey.short($0))" } ?? "giriş tarihi kaldırıldı") }
         if old.endDate != e.endDate { p.append(nonEmpty(e.endDate).map { "ayrıldı (\(DateKey.short($0)))" } ?? "çıkış tarihi kaldırıldı") }
         if old.active != e.active && !(nonEmpty(e.endDate) != nil && old.endDate != e.endDate) {
             p.append(e.active ? "aktif edildi" : "pasife alındı")
         }
-        if let dh = pair(old.defaultHours, e.defaultHours, { Fmt.number($0, maxFraction: 2) }, "varsayılan vardiya",
-                         e.defaultHours == nil ? "" : "saat") {
-            p.append(dh)
+        // Telefon numarası geçmişe yazılmaz
+        if (old.phone ?? "") != (e.phone ?? "") { p.append(nonEmpty(e.phone) == nil ? "telefon silindi" : "telefon güncellendi") }
+        if (old.account ?? "") != (e.account ?? "") {
+            p.append(nonEmpty(e.account).map { "hesabı: \(LoginName.display($0))" } ?? "hesabı kaldırıldı")
         }
+        if (old.note ?? "") != (e.note ?? "") { p.append("not güncellendi") }
         if p.isEmpty { p.append("güncellendi") }
         return p
     }
@@ -381,18 +328,15 @@ public enum ChangeSummary {
         if b.branchName != a.branchName {
             d.append(nonEmpty(a.branchName).map { "şube adı \"\(clip($0, 40))\"" } ?? "şube adı silindi")
         }
-        func pct(_ old: Double?, _ now: Double?, _ label: String) {
-            if old == now { return }
-            d.append(now.map { "\(label) \(percent($0))" } ?? "\(label) kaldırıldı")
-        }
-        pct(b.targetFoodCostPct, a.targetFoodCostPct, "hammadde hedefi")
-        pct(b.targetLaborPct, a.targetLaborPct, "personel hedefi")
-        pct(b.targetPrimeCostPct, a.targetPrimeCostPct, "prime cost hedefi")
-        pct(b.priceAlertPct, a.priceAlertPct, "fiyat uyarı eşiği")
         if b.orderLookbackDays != a.orderLookbackDays { d.append("ortalama tüketim \(a.orderLookbackDays) gün") }
         if b.orderCoverDays != a.orderCoverDays { d.append("sipariş kapsamı \(Fmt.number(a.orderCoverDays, maxFraction: 1)) gün") }
-        for s in a.staff where !b.staff.contains(s) { d.append("sayım ekibine \(s) eklendi") }
-        for s in b.staff where !a.staff.contains(s) { d.append("sayım ekibinden \(s) çıkarıldı") }
+        if a.staff.isEmpty && !b.staff.isEmpty {
+            // Eski sayan adları ekibe taşındı (Team.migrateLegacyStaff)
+            d.append("sayım yapanlar Ekip'e taşındı")
+        } else {
+            for s in a.staff where !b.staff.contains(s) { d.append("sayım ekibine \(s) eklendi") }
+            for s in b.staff where !a.staff.contains(s) { d.append("sayım ekibinden \(s) çıkarıldı") }
+        }
         if d.isEmpty && before != after { d.append("güncellendi") }
         return d.isEmpty ? [] : [Segment(head: "Ayarlar: ", details: d)]
     }

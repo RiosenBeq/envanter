@@ -8,6 +8,7 @@ trap 'rm -rf "$WORK"' EXIT
 fail() { echo "✗ $*"; exit 1; }
 ok() { echo "✓ $*"; }
 expect() { grep -q -- "$2" <<<"$1" || fail "$3 (beklenen: $2)"; ok "$3"; }
+reject() { if grep -q -- "$2" <<<"$1"; then fail "$3 (olmamalı: $2)"; fi; ok "$3"; }
 
 END="2026-08-31"
 
@@ -16,16 +17,37 @@ if "$TOOL" demo >/dev/null 2>&1; then fail "demo --data-dir olmadan çalışmama
 "$TOOL" demo --data-dir "$WORK/demo" --date "$END" --days 35 >/dev/null
 if "$TOOL" demo --data-dir "$WORK/demo" >/dev/null 2>&1; then fail "dolu klasöre demo yazılmamalı"; else ok "dolu klasöre demo yazılmadı"; fi
 
-# 2) Durum ve rapor
+# 2) Durum ve envanter raporu (maliyet yok)
 out=$("$TOOL" status --data-dir "$WORK/demo")
 expect "$out" "Kayıtlı gün: 35" "status: 35 gün"
 expect "$out" "Burger Yiyelim · Tuzla Marina" "status: şube adı"
 out=$("$TOOL" report --data-dir "$WORK/demo" --from 01.08.2026 --to 31.08.2026)
-expect "$out" "Satış tutarı" "report: satış tutarı"
-expect "$out" "Personel" "report: personel satırı"
-expect "$out" "Prime cost" "report: prime cost satırı"
-expect "$out" "Fiyat artışı" "report: fiyat artışı uyarısı"
+expect "$out" "Burger Yiyelim · Tuzla Marina · 01.08.2026 – 31.08.2026" "report: başlık"
+expect "$out" "Gün                 : 31 (sayım 31, satış 31)" "report: sayılan ve satışlı günler"
+expect "$out" "Sorunlu kalem       : [0-9]* / 21" "report: sorunlu kalemler"
+expect "$out" "Fazla çıkış         : [0-9]* kalem (en sık olanlar)" "report: fazla çıkış başlığı"
+expect "$out" "  • Patates: .* kg (.* gün)" "report: fazla çıkış listesi"
+# Sıra birimler arası miktara göre değil, fazla çıkış günü sayısına göre: her gün eksik çıkan Peynir başta
+expect "$(grep -A1 '^Fazla çıkış' <<<"$out" | tail -1)" "  • Peynir: .* kg (31 gün)" "report: en sık fazla çıkış başta"
+expect "$out" "Kritik seviye altı  : yok" "report: kritik seviye satırı"
 expect "$out" "Açık sipariş        : 1" "report: açık sipariş"
+reject "$out" "₺" "report: para birimi yok"
+reject "$out" "Satış tutarı\|Personel\|Prime cost\|Fiyat artışı" "report: maliyet satırları yok"
+
+# 2a) Kritik seviye: dönem sonundaki (ya da öncesindeki) son sayılan kapanışa göre
+cp -R "$WORK/demo" "$WORK/kritik"
+perl -0pi -e 's/("id" : "g90",\s*"minStock" : )[0-9.]+/${1}100000/' "$WORK/kritik/envanter-verisi.json"
+out=$("$TOOL" report --data-dir "$WORK/kritik" --from 01.08.2026 --to 15.08.2026)
+expect "$out" "Kritik seviye altı  : 1 kalem (15.08.2026 itibarıyla son sayım)" "report: kritik seviye altındaki kalem sayısı"
+expect "$out" "  • 90 Gr: 638 adet (kritik 100000 adet)" "report: 15 Ağustos kapanışı"
+out=$("$TOOL" report --data-dir "$WORK/kritik" --from 01.08.2026 --to 31.08.2026)
+expect "$out" "  • 90 Gr: 303 adet (kritik 100000 adet · sayım 30.08.2026)" "report: 31 Ağustos sayılmamış, son sayım 30 Ağustos"
+
+# 2b) Eşlik metrikleri (web paneli): yalnızca envanter alanları
+out=$("$TOOL" metrics --data-dir "$WORK/demo" --date "$END" --from 01.08.2026 --to "$END")
+expect "$out" '"hasSignificantProblems"' "metrics: takip şeridi bayrakları"
+expect "$out" '"shortageQty"' "metrics: fazla çıkış miktarı"
+reject "$out" 'lossValue\|diffValue\|revenue\|labor\|priceAlerts\|stockValue' "metrics: maliyet alanları yok"
 
 # 3) Sipariş listesi
 out=$("$TOOL" orders --data-dir "$WORK/demo" --date "$END")

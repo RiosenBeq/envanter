@@ -7,7 +7,7 @@ import EnvanterCore
 //   EnvanterTool export-excel <çıktı.xlsx> [--from GG.AA.YYYY|yyyy-MM-dd] [--to …]
 //   EnvanterTool orders [--date …] [--days 14] [--cover 3]    Sipariş önerisini yazdırır
 //   EnvanterTool demo --data-dir KLASÖR [--date …] [--days 35] Eğitim/tanıtım için örnek veri kurar
-//   EnvanterTool report [--from …] [--to …]                    Dönem özeti: satış, maliyet %, personel %, prime cost
+//   EnvanterTool report [--from …] [--to …]                    Dönem özeti: sayım, sorunlu kalemler, fazla çıkış, kritik stok
 //   EnvanterTool metrics [--date …] [--from …] [--to …]        Hesap sonuçları JSON (web paneli eşlik testi)
 // Tüm komutlar --data-dir KLASÖR ile başka bir veri klasörüne yönlendirilebilir.
 
@@ -22,7 +22,7 @@ let usage = """
       EnvanterTool export-excel <çıktı.xlsx> [--from TARİH] [--to TARİH]
       EnvanterTool orders [--date TARİH] [--days 14] [--cover 3]
       EnvanterTool demo --data-dir KLASÖR [--date TARİH] [--days 35]
-      EnvanterTool report [--from TARİH] [--to TARİH]
+      EnvanterTool report [--from TARİH] [--to TARİH]                   (sayım, sorunlu kalem, fazla çıkış, kritik stok)
       EnvanterTool metrics [--date TARİH] [--from TARİH] [--to TARİH]   (JSON; web paneli eşlik testi)
     Ortak seçenek: --data-dir KLASÖR
     """
@@ -137,29 +137,11 @@ case "orders":
     print(Exporter.orderText(list, date: date, branch: data.settings.branchName))
 
 case "report":
+    // Envanter dönem özeti: sayılan günler, sorunlu kalemler, fazla çıkış, kritik seviyenin altındakiler, açık siparişler
     let engine = Engine(data: data)
     let to = dateArg(option("--to")) ?? engine.datesWithData.last ?? DateKey.today()
     let from = dateArg(option("--from")) ?? DateKey.startOfMonth(to)
-    let p = engine.periodStats(from: from, to: to)
-    func pct(_ v: Double?) -> String { v.map { "%" + Fmt.number($0 * 100, maxFraction: 1) } ?? "—" }
-    let s = data.settings
-    print("\(s.branchName.isEmpty ? "Dönem özeti" : s.branchName) · \(DateKey.short(from)) – \(DateKey.short(to))")
-    print("Gün: \(p.days.count) (sayım \(p.countedDays), satış \(p.salesDays), tutarlı \(p.revenueDays))")
-    print("Satış tutarı        : \(Fmt.money(p.revenue))")
-    print("Teorik hammadde     : \(Fmt.money(p.theoreticalCost))  \(pct(p.theoreticalCostPct))")
-    print("Fiili hammadde      : \(Fmt.money(p.actualCost))  \(pct(p.actualCostPct))  hedef \(pct(s.targetFoodCostPct))")
-    if p.hasLabor {
-        print("Personel            : \(Fmt.money(p.laborCost))  \(pct(p.laborPct))  hedef \(pct(s.targetLaborPct))")
-        print("Prime cost          : \(Fmt.money(p.primeCost))  \(pct(p.primeCostPct))  hedef \(pct(s.targetPrimeCostPct))")
-    } else {
-        print("Personel            : — (bu dönemde personel kaydı yok)")
-        print("Prime cost          : — (personel maliyeti olmadan hesaplanmaz)")
-    }
-    print("Kayıp (fazla çıkış) : \(Fmt.money(p.lossValue))   Zayi: \(Fmt.money(p.wasteCost))")
-    let alerts = engine.priceAlerts(asOf: to, threshold: s.priceAlertPct)
-    for a in alerts { print("Fiyat artışı        : \(a.item.name) \(Fmt.money(a.from, fraction: 2)) → \(Fmt.money(a.to, fraction: 2)) (\(pct(a.ratio)))") }
-    let open = data.purchaseOrders.filter { $0.status == .open }
-    if !open.isEmpty { print("Açık sipariş        : \(open.count)") }
+    print(InventoryReport(engine: engine, from: from, to: to).text(branch: data.settings.branchName))
 
 case "metrics":
     // Web panelinin hesap motoru için eşlik fikstürü (docs/SYNC.md §4)

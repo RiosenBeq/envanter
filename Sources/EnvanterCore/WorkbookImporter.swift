@@ -197,8 +197,8 @@ public enum WorkbookImporter {
     // MARK: - Uygulama
 
     /// İçe aktarılan günleri veriye ekler. `overwrite` false ise sayım/satış verisi girilmiş mevcut günlere dokunulmaz.
-    /// Yalnızca sayım ve satış alanları aktarılır; günün vardiyaları, diğer personel gideri, notu, sayan kişisi
-    /// ve kilidi (Excel'de bulunmadıkları için) korunur. Kapatılmış günler hiç değiştirilmez.
+    /// Yalnızca sayım ve satış (miktar) alanları aktarılır; Excel'deki maliyet / tutar sütunları okunmaz. Günün notu,
+    /// sayan kişisi ve kilidi (Excel'de bulunmadıkları için) korunur. Kapatılmış günler hiç değiştirilmez.
     @discardableResult
     public static func apply(_ imp: WorkbookImport, to data: inout AppData, overwrite: Bool) -> WorkbookImportReport {
         var report = WorkbookImportReport()

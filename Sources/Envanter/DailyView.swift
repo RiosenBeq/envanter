@@ -188,14 +188,16 @@ struct DailyView: View {
     }
 
     private func legend(rows: [ItemCalc]) -> some View {
-        let loss = rows.compactMap { $0.severity == .shortage ? $0.diffValue : nil }.reduce(0, +)
+        // Tolerans dışı fazla çıkış olan kalem sayısı (miktar kalemin biriminde; tutar gösterilmez)
+        let shortages = rows.filter { $0.severity == .shortage }.count
         return HStack(spacing: 16) {
             Label("Açılış boşsa önceki günün kapanışı kullanılır", systemImage: "arrow.turn.down.right")
             Label("Fark = (Satılan + Zayi) − Fiili Tüketim", systemImage: "function")
-            Label("Kırmızı: fazla stok çıkışı · Mavi: eksik çıkış · Yeşil: tolerans içinde", systemImage: "paintpalette")
+            Label("Kırmızı: fazla çıkış · Mavi: az çıkış · Yeşil: tolerans içinde", systemImage: "paintpalette")
             Spacer()
-            if loss < 0 {
-                Text("Günün kaybı: \(Fmt.money(-loss))").fontWeight(.semibold).foregroundStyle(Brand.negative)
+            if shortages > 0 {
+                Text("\(shortages) kalemde fazla çıkış").fontWeight(.semibold).foregroundStyle(Brand.negative)
+                    .help(Term.shortage.text)
             }
         }
         .font(.caption).foregroundStyle(.secondary)
@@ -237,9 +239,9 @@ private struct DayNotePopover: View {
             HStack {
                 Text("Sayımı yapan").foregroundStyle(.secondary)
                 TextField("Ad Soyad", text: $countedBy).textFieldStyle(.roundedBorder).frame(width: 180)
-                // Ayarlar'daki hızlı seçim listesi + Personel ekranındaki aktif çalışanlar
-                let names = Array(Set(store.settings.staff + store.employees.filter { $0.active }.map { $0.name }))
-                    .sorted { $0.localizedCompare($1) == .orderedAscending }
+                // Ekip ekranındaki aktif üyeler (liste sırasıyla) + eski hızlı seçim listesindeki adlar; yeniden
+                // sıralanmaz. Listede olmayan yeni ad yazılırsa kaydederken ekibe de eklenir (`setCountedBy`).
+                let names = store.counterNames
                 if !names.isEmpty {
                     Menu {
                         ForEach(names, id: \.self) { n in Button(n) { countedBy = n } }
@@ -363,13 +365,12 @@ private struct DailyRow: View {
     private func diffHelp(_ d: Double, _ sev: DiffSeverity) -> String {
         let unit = item.unit.lowercased()
         let amount = Fmt.number(abs(d), maxFraction: item.maxFraction)
-        let value = calc.diffValue.map { " (\(Fmt.money(abs($0))))" } ?? ""
         switch sev {
         case .zero: return "Satışlarla stok hareketi tutuyor"
         case .withinTolerance:
             return "Fark \(amount) \(unit): tolerans (±\(Fmt.number(item.tolerance ?? 0, maxFraction: item.maxFraction))) içinde, normal sayılır"
-        case .shortage: return "Satışlara göre beklenenden \(amount) \(unit) FAZLA stok çıkmış\(value)"
-        case .surplus: return "Satışlara göre beklenenden \(amount) \(unit) AZ stok çıkmış\(value) — sayım veya reçeteyi kontrol edin"
+        case .shortage: return "Satışlara göre beklenenden \(amount) \(unit) FAZLA stok çıkmış"
+        case .surplus: return "Satışlara göre beklenenden \(amount) \(unit) AZ stok çıkmış — sayım veya reçeteyi kontrol edin"
         }
     }
 }
@@ -494,7 +495,6 @@ struct ItemDetailView: View {
                     line("Satılan (reçeteden)", f(calc.sold))
                     line("Zayi", f(calc.waste))
                     line("Fark (Satılan + Zayi − Fiili)", calc.diff.map(f) ?? "—", bold: true)
-                    if let v = calc.diffValue { line("Farkın tutarı", Fmt.money(v), bold: true) }
                     if let t = item.tolerance, t > 0 { line("Tolerans", "± " + f(t)) }
                     if let m = item.minStock, m > 0 { line("Kritik seviye", f(m)) }
                 }

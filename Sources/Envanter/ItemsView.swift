@@ -6,7 +6,6 @@ private enum IW {
     static let unit: CGFloat = 96
     static let recipeUnit: CGFloat = 92
     static let factor: CGFloat = 92
-    static let money: CGFloat = 92
     static let min: CGFloat = 88
     static let tol: CGFloat = 84
     static let delete: CGFloat = 36
@@ -19,16 +18,17 @@ struct ItemsView: View {
     @State private var deleting: Item?
 
     var body: some View {
-        let costed = store.data.items.filter { $0.active && $0.unitCost != nil }.count
         let activeCount = store.data.items.filter { $0.active }.count
+        // Kritik seviyesi girilmiş aktif kalem sayısı (sipariş önerisi ve uyarılar bunlar için çalışır)
+        let withMin = store.data.items.filter { $0.active && ($0.minStock ?? 0) > 0 }.count
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Stok Kalemleri").font(.title2.weight(.semibold))
                     Spacer()
-                    Pill(text: "\(costed) / \(activeCount) kalemde maliyet var", color: costed == activeCount ? Brand.ok : Brand.warn)
+                    Pill(text: "\(activeCount) aktif kalem · \(withMin) kalemde kritik seviye tanımlı", color: Brand.positive)
                 }
-                Text("Günlük Sayım ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Maliyet farkların ₺ karşılığını, kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
+                Text("Günlük Sayım ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !store.canEditCatalog { ReadOnlyNote() }
             }
@@ -40,7 +40,6 @@ struct ItemsView: View {
                 Text("Envanter\nbirimi").frame(width: IW.unit + 10)
                 Text("Reçete\nbirimi").frame(width: IW.recipeUnit + 10)
                 Text("Katsayı").frame(width: IW.factor + 10).explains(.factor)
-                Text("Birim maliyet\n(₺)").frame(width: IW.money + 10).explains(.unitCost)
                 Text("Kritik\nseviye").frame(width: IW.min + 10).explains(.minStock)
                 Text("Tolerans\n(± birim)").frame(width: IW.tol + 10).explains(.tolerance)
                 Color.clear.frame(width: IW.delete, height: 1)
@@ -109,11 +108,6 @@ private struct ItemRow: View {
             DecimalField(value: Binding(get: { item.factor }, set: { v in store.updateItem(item.id) { $0.factor = max(v, 0.000001) } }),
                          maxFraction: 6, width: IW.factor)
                 .padding(.horizontal, 5)
-            OptionalDecimalField(value: Binding(get: { item.unitCost }, set: { v in store.setItemCost(item.id, v) }),
-                                 placeholder: "₺", maxFraction: 2, width: IW.money, amount: true)
-                .padding(.horizontal, 5)
-                .help("1 \(item.unit.lowercased()) \(item.name) maliyeti (₺)")
-                .overlay(alignment: .topTrailing) { priceBadge }
             OptionalDecimalField(value: Binding(get: { item.minStock }, set: { v in store.updateItem(item.id, actionName: "Kritik Seviye") { $0.minStock = v } }),
                                  placeholder: "—", maxFraction: item.maxFraction, width: IW.min)
                 .padding(.horizontal, 5)
@@ -129,22 +123,5 @@ private struct ItemRow: View {
         }
         .padding(.vertical, 3)
         .opacity(item.active ? 1 : 0.55)
-    }
-
-    /// Son fiyat değişimi (▲%13 gibi; Türkçe yüzde biçimi); ipucunda değişim tarihi ve fiyat geçmişi
-    @ViewBuilder private var priceBadge: some View {
-        if let c = item.lastPriceChange, abs(c.ratio) >= 0.001 {
-            let history = (item.costHistory ?? []).suffix(6).map { p in
-                (p.date.map { DateKey.short($0) } ?? "önceki") + ": " + Fmt.money(p.cost, fraction: 2)
-            }.joined(separator: "\n")
-            let when = c.date.map { " (\(DateKey.short($0)))" } ?? ""
-            Text((c.ratio > 0 ? "▲" : "▼") + Fmt.percent(abs(c.ratio), maxFraction: 0))
-                .font(.system(size: 9, weight: .bold)).monospacedDigit()
-                .padding(.horizontal, 4).padding(.vertical, 1)
-                .foregroundStyle(.white)
-                .background(Capsule().fill(c.ratio > 0 ? Brand.negative : Brand.ok))
-                .offset(x: 2, y: -7)
-                .help("Son değişim\(when): \(Fmt.signedPercent(c.ratio))\nFiyat geçmişi:\n" + history)
-        }
     }
 }

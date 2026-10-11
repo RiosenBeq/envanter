@@ -85,7 +85,7 @@ struct EnvanterApp: App {
 
     private func showAbout() {
         let credits = NSAttributedString(
-            string: "Restoran stok, fire ve maliyet takibi.\nModPos satış raporu + reçete motoru, sayım, sipariş önerisi ve istatistikler.\n\nVeri klasörü: \(store.persistence.directory.path)",
+            string: "Restoran stok, fire ve sayım takibi.\nModPos satış raporu + reçete motoru, günlük sayım, sipariş önerisi, raporlar ve ekip; web paneliyle anlık eşitleme.\n\nVeri klasörü: \(store.persistence.directory.path)",
             attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: Brand.appName,

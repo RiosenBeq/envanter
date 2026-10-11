@@ -138,8 +138,6 @@ private struct RecipeEditor: View {
                         .padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Brand.warn.opacity(0.12)))
                     }
 
-                    costCard(p)
-
                     Divider()
                     HStack {
                         Text("Hammadde kullanımı (1 adet satış için)").font(.headline)
@@ -191,35 +189,6 @@ private struct RecipeEditor: View {
                 Button("Vazgeç", role: .cancel) {}
             } message: { Text("Bu ürün satış raporlarında görünürse \"reçete tanımsız\" olarak işaretlenir. Düzen > Geri Al ile geri alınabilir.") }
         }
-    }
-
-    /// Reçete maliyeti ve (son satış raporundan) fiyata göre maliyet yüzdesi
-    @ViewBuilder private func costCard(_ p: Product) -> some View {
-        if p.isTracked {
-            let rc = store.engine.recipeCost(p)
-            let price = store.engine.lastUnitPrice(code: p.code)
-            let limit = store.settings.targetFoodCostPct ?? 0.35
-            StatRow {
-                StatCard(title: "Maliyet", value: rc.cost > 0 || rc.isComplete ? Fmt.money(rc.cost, fraction: 2) : "—",
-                         detail: rc.isComplete ? "1 adet için hammadde maliyeti" : "Maliyeti eksik: " + rc.missing.joined(separator: ", "),
-                         icon: "turkishlirasign.circle", color: rc.isComplete ? Brand.accent : Brand.warn)
-                StatCard(title: "Satış fiyatı", value: price.map { Fmt.money($0.price, fraction: 2) } ?? "—",
-                         detail: price.map { "\(DateKey.short($0.date)) satış raporundan" } ?? "Raporda tutar sütunu yok",
-                         icon: "tag", color: Brand.positive)
-                let pct: Double? = (rc.isComplete && (price?.price ?? 0) > 0) ? rc.cost / price!.price : nil
-                StatCard(title: "Maliyet oranı", value: pct.map { Fmt.percent($0) } ?? "—",
-                         detail: ratioDetail(pct, price: price?.price, cost: rc.cost, limit: limit),
-                         icon: "percent", color: (pct ?? 0) > limit ? Brand.negative : Brand.ok, info: .foodCostPct)
-            }
-        }
-    }
-
-    /// Maliyet oranı kartının açıklaması. Ayarlar'da hedef yoksa %35 sınırı kullanılır; "hedef" denmez.
-    private func ratioDetail(_ pct: Double?, price: Double?, cost: Double, limit: Double) -> String {
-        guard let pct, let price else { return "Maliyet ve fiyat gerekli" }
-        guard pct > limit else { return "Kâr payı: \(Fmt.money(price - cost, fraction: 2))" }
-        let bound = store.settings.targetFoodCostPct == nil ? "\(Fmt.percent(limit)) sınırının" : "Hedefin (\(Fmt.percent(limit)))"
-        return "\(bound) üzerinde: fiyatı veya porsiyonu gözden geçirin"
     }
 
     private func categories(including current: String) -> [String] {

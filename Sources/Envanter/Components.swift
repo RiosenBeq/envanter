@@ -29,6 +29,17 @@ enum Brand {
         case .surplus: return positive
         }
     }
+
+    /// Takip şeridi kutusunun rengi (web paneliyle aynı sınıflar: `DayOverview.trackerState`)
+    static func color(for s: TrackerState) -> Color {
+        switch s {
+        case .ok: return ok.opacity(0.85)
+        case .warn: return warn.opacity(0.85)
+        case .bad: return negative.opacity(0.85)
+        case .salesOnly: return Color.secondary.opacity(0.35)
+        case .empty: return Color.primary.opacity(0.08)
+        }
+    }
 }
 
 /// Günlük tablodaki hücre: satır kalem kimliğiyle tutulur (filtreyle satırlar kaysa da odak doğru kaleme gider)
@@ -62,28 +73,6 @@ struct Pill: View {
     }
 }
 
-/// Değişim rozeti (Tremor "BadgeDelta" deseni): ▲ %4,2 / ▼ %1,3.
-/// `higherIsBetter` false ise (maliyetler) artış kırmızı, azalış yeşil gösterilir.
-struct DeltaBadge: View {
-    var ratio: Double
-    var higherIsBetter = true
-    var body: some View {
-        let up = ratio >= 0
-        let neutral = abs(ratio) < 0.0005
-        let good = neutral ? true : (up == higherIsBetter)
-        let color: Color = neutral ? .secondary : (good ? Brand.ok : Brand.negative)
-        HStack(spacing: 2) {
-            Image(systemName: neutral ? "arrow.right" : (up ? "arrow.up.right" : "arrow.down.right"))
-            Text("%" + Fmt.number(abs(ratio) * 100, maxFraction: 1))
-        }
-        .font(.caption2.weight(.bold)).monospacedDigit()
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .foregroundStyle(color)
-        .background(Capsule().fill(color.opacity(0.12)))
-        .help("Önceki eşit uzunluktaki döneme göre değişim")
-    }
-}
-
 /// Eksensiz küçük eğilim grafiği (sparkline)
 struct Sparkline: View {
     var values: [Double]
@@ -107,33 +96,7 @@ struct Sparkline: View {
     }
 }
 
-/// Hedefe göre durum çubuğu (Tremor "MarkerBar" deseni): dolu kısım gerçekleşen, dikey çizgi hedef.
-struct TargetBar: View {
-    /// Gerçekleşen ve hedef oranları (0–1)
-    var value: Double
-    var target: Double
-    /// Maliyet oranlarında düşük olan iyidir
-    var lowerIsBetter = true
-
-    var body: some View {
-        let scale = max(max(value, target) * 1.25, 0.0001)
-        let ok = lowerIsBetter ? value <= target : value >= target
-        GeometryReader { g in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.08))
-                Capsule().fill((ok ? Brand.ok : Brand.negative).opacity(0.85))
-                    .frame(width: max(4, g.size.width * min(value / scale, 1)))
-                Rectangle().fill(Color.primary.opacity(0.75))
-                    .frame(width: 2, height: g.size.height + 4)
-                    .offset(x: g.size.width * min(target / scale, 1) - 1)
-            }
-        }
-        .frame(height: 6)
-        .help("Gerçekleşen %\(Fmt.number(value * 100, maxFraction: 1)) · hedef %\(Fmt.number(target * 100, maxFraction: 1))")
-    }
-}
-
-/// Pano kartı (Tremor KPI kartı deseni): başlık + ⓘ, büyük değer, değişim rozeti, mini grafik / hedef çubuğu, alt açıklama
+/// Pano kartı (Tremor KPI kartı deseni): başlık + ⓘ, büyük değer, mini grafik, ilerleme çubuğu, alt açıklama
 struct StatCard: View {
     var title: String
     var value: String
@@ -142,13 +105,8 @@ struct StatCard: View {
     var color: Color = Brand.accent
     var progress: Double? = nil
     var info: Term? = nil
-    /// Önceki döneme göre değişim (oran) ve yönün anlamı
-    var delta: Double? = nil
-    var higherIsBetter = true
+    /// Mini eğilim grafiği (ör. son 14 günün sorunlu kalem sayısı)
     var spark: [Double]? = nil
-    /// Hedefli oranlar için: gerçekleşen ve hedef (0–1)
-    var targetValue: Double? = nil
-    var target: Double? = nil
 
     var body: some View {
         Card {
@@ -161,7 +119,6 @@ struct StatCard: View {
                     Text(title).font(.callout.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                     if let info { InfoTip(term: info) }
                     Spacer(minLength: 0)
-                    if let delta { DeltaBadge(ratio: delta, higherIsBetter: higherIsBetter) }
                 }
                 HStack(alignment: .bottom, spacing: 10) {
                     Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
@@ -174,7 +131,6 @@ struct StatCard: View {
                 if let progress {
                     ProgressView(value: min(max(progress, 0), 1)).tint(color)
                 }
-                if let targetValue, let target { TargetBar(value: targetValue, target: target) }
                 if !detail.isEmpty {
                     Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -195,7 +151,8 @@ struct StatRow<Content: View>: View {
     }
 }
 
-/// Gün durum şeridi (Tremor "Tracker" deseni): her kutu bir gün; renk günün durumunu, ipucu ayrıntıyı gösterir.
+/// Gün durum şeridi (Tremor "Tracker" deseni): her kutu bir gün; renk günün sayım durumunu (sayılanların kaçında
+/// tolerans dışı fark var), ipucu ayrıntıyı gösterir. Renk kuralı web paneliyle aynıdır (`DayOverview.trackerState`).
 struct TrackerStrip: View {
     let days: [DayOverview]
     var selected: String? = nil
@@ -215,37 +172,29 @@ struct TrackerStrip: View {
         }
     }
 
-    private func color(_ d: DayOverview) -> Color {
-        if !d.hasAnyCount && !d.hasSales { return Color.primary.opacity(0.08) }
-        if !d.hasAnyCount { return Color.secondary.opacity(0.35) }
-        if d.hasSignificantLoss { return Brand.negative.opacity(0.85) }
-        if d.hasNotableLoss || !d.isFullyCounted { return Brand.warn.opacity(0.85) }
-        return Brand.ok.opacity(0.85)
-    }
+    /// Sayım yok ve satış yok → boş; sayım yok → gri; sayılanların %20'sinde fark → kırmızı; %10'unda fark ya da eksik
+    /// sayım → turuncu; değilse yeşil
+    private func color(_ d: DayOverview) -> Color { Brand.color(for: d.trackerState) }
 
     private func tooltip(_ d: DayOverview) -> String {
         var parts = [DateKey.long(d.date)]
         parts.append(d.hasAnyCount ? "Sayım \(d.countedItems)/\(d.itemCount)" : "Sayım yok")
         parts.append(d.hasSales ? "Satış raporu var" : "Satış raporu yok")
-        if d.problemItems > 0 { parts.append("\(d.problemItems) sorunlu kalem") }
-        if d.lossValue > 0 {
-            let share = d.revenue.flatMap { $0 > 0 ? " (satışın %\(Fmt.number(d.lossValue / $0 * 100, maxFraction: 1)))" : nil } ?? ""
-            parts.append("Kayıp \(Fmt.money(d.lossValue))" + share)
-        }
+        if d.problemItems > 0 { parts.append("\(d.problemItems) kalemde tolerans dışı fark") }
+        if d.shortageItems > 0 { parts.append("\(d.shortageItems) kalemde fazla çıkış") }
+        if d.belowMinimumItems > 0 { parts.append("\(d.belowMinimumItems) kalem kritik seviyenin altında") }
         if d.isLocked { parts.append("Kapatıldı") }
         return parts.joined(separator: " · ")
     }
 }
 
-/// Tracker renk açıklaması
+/// Tracker renk açıklaması (metinler web paneliyle aynı: `TrackerState.label`)
 struct TrackerLegend: View {
     var body: some View {
         HStack(spacing: 12) {
-            item(Brand.ok.opacity(0.85), "Sayım tam, kayıp düşük")
-            item(Brand.warn.opacity(0.85), "Eksik sayım / kayıp ≥ %0,5")
-            item(Brand.negative.opacity(0.85), "Kayıp ≥ satışın %1'i")
-            item(Color.secondary.opacity(0.35), "Yalnızca satış")
-            item(Color.primary.opacity(0.08), "Veri yok")
+            ForEach(TrackerState.legendOrder, id: \.self) { s in
+                item(Brand.color(for: s), s.label)
+            }
         }
         .font(.caption2).foregroundStyle(.secondary)
     }
@@ -304,7 +253,7 @@ struct DateNavigator: View {
                         // Kim, nereden açar: personel açamaz (patron / müdür), diğerleri Günlük Sayım'dan (⌘L)
                         Label("Gün kapatıldı", systemImage: "lock.fill").font(.caption).foregroundStyle(Brand.warn)
                             .help(store.canChangeLockedDays
-                                  ? "Sayım, satış ve vardiya kilitli. Değiştirmek için Günlük Sayım'da \"Kilidi Aç\"a basın (⌘L)."
+                                  ? "Sayım ve satış kilitli. Değiştirmek için Günlük Sayım'da \"Kilidi Aç\"a basın (⌘L)."
                                   : CloudPermission.lockedDayStaffNote)
                     }
                 }
@@ -428,8 +377,6 @@ struct DecimalField: View {
     var width: CGFloat = 80
     /// Formlarda: geçerli her yazımda değeri hemen günceller (düğmeye basıldığında son yazılan kaybolmasın)
     var live = false
-    /// Para tutarı: "35.000" / "1.050" binlik ayırıcılı okunur (Fmt.parseAmount)
-    var amount = false
     @State private var text = ""
     /// Kullanıcı yazdı mı (yalnızca yazılan metin kaydedilir; gösterim yuvarlaması değeri bozmasın)
     @State private var edited = false
@@ -456,7 +403,7 @@ struct DecimalField: View {
     }
 
     private func parsed(_ t: String) -> Double? {
-        guard let v = amount ? Fmt.parseAmount(t) : Fmt.parse(t), v >= 0 else { return nil }
+        guard let v = Fmt.parse(t), v >= 0 else { return nil }
         return (v * 1_000_000).rounded() / 1_000_000
     }
 
@@ -469,7 +416,7 @@ struct DecimalField: View {
     }
 }
 
-/// İsteğe bağlı sayı alanı (boş bırakılabilir): maliyet, kritik seviye, tolerans gibi.
+/// İsteğe bağlı sayı alanı (boş bırakılabilir): kritik seviye, tolerans, teslim alınan miktar gibi.
 struct OptionalDecimalField: View {
     @Binding var value: Double?
     var placeholder: String = "—"
@@ -477,9 +424,6 @@ struct OptionalDecimalField: View {
     var width: CGFloat = 80
     /// Formlarda: geçerli her yazımda değeri hemen günceller (düğmeye basıldığında son yazılan kaybolmasın)
     var live = false
-    /// Para tutarı (birim maliyet, fatura fiyatı, ücret, ek ödeme): ekranda tutarlar binlik ayırıcı noktayla
-    /// gösterildiğinden "35.000" 35000, "1.050" 1050 okunur (Fmt.parseAmount; web paneliyle aynı)
-    var amount = false
     @State private var text = ""
     /// Kullanıcı yazdı mı (yalnızca yazılan metin kaydedilir; gösterim yuvarlaması değeri bozmasın)
     @State private var edited = false
@@ -511,7 +455,7 @@ struct OptionalDecimalField: View {
     private func parsed(_ t: String) -> Double?? {
         let t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.isEmpty { return .some(nil) }
-        guard let v = amount ? Fmt.parseAmount(t) : Fmt.parse(t), v >= 0 else { return nil }
+        guard let v = Fmt.parse(t), v >= 0 else { return nil }
         return .some((v * 1_000_000).rounded() / 1_000_000)
     }
 
@@ -560,7 +504,8 @@ struct CommitTextField: View {
     private func commit() {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if t != value { value = t }
-        text = t
+        // Kaydedilen değer gösterilir: değer reddedildiyse (ör. boş ad) ya da düzeltildiyse alan onunla eşleşir
+        text = value
     }
 }
 

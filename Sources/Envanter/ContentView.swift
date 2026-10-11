@@ -77,12 +77,11 @@ struct ContentView: View {
         case .overview: OverviewView()
         case .daily: DailyView()
         case .sales: SalesView()
-        case .summary: SummaryView()
-        case .analytics: AnalyticsView()
         case .orders: OrdersView()
-        case .labor: LaborView()
+        case .reports: ReportsView(store: store)
         case .recipes: RecipesView()
         case .items: ItemsView()
+        case .team: TeamView(store: store)
         case .backup: BackupView()
         case .help: HelpView()
         }
@@ -98,17 +97,18 @@ struct ContentView: View {
                     Text(" Envanter").foregroundStyle(.primary)
                 }
                 .font(.system(size: 18, weight: .bold, design: .rounded))
-                Text(store.settings.branchName.isEmpty ? "Stok, maliyet ve personel takibi" : store.settings.branchName)
+                Text(store.settings.branchName.isEmpty ? "Stok, sayım ve sipariş takibi" : store.settings.branchName)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
+                    // Yukarıdan aşağı sıra ⌘1…⌘8 kısayollarıyla aynı
                     group("Envanter", [.overview, .daily, .sales, .orders], overview: o)
-                    group("Personel", [.labor], overview: o)
-                    group("Raporlar", [.summary, .analytics], overview: o)
+                    group("Raporlar", [.reports], overview: o)
                     group("Tanımlar", [.recipes, .items], overview: o)
+                    group("Ekip", [.team], overview: o)
                     group("Diğer", [.backup, .help], overview: o)
                 }
                 .padding(.horizontal, 10)
@@ -146,7 +146,7 @@ struct ContentView: View {
         case .sales:
             return o.unknownLines > 0 ? ("\(o.unknownLines)", Brand.warn) : nil
         case .orders:
-            let open = store.data.purchaseOrders.filter { $0.status == .open }.count
+            let open = store.openOrders.count
             return open > 0 ? ("\(open)", Brand.positive) : nil
         default:
             return nil

@@ -33,9 +33,6 @@ struct ImportSheet: View {
                     GridRow { Text("Rapor tarihi").foregroundStyle(.secondary); Text(report.periodText ?? "Belirtilmemiş") }
                     GridRow { Text("Ürün satırı").foregroundStyle(.secondary); Text("\(report.lines.count)") }
                     GridRow { Text("Toplam adet").foregroundStyle(.secondary); Text(Fmt.number(report.totalQty, maxFraction: 0)) }
-                    if let amount = report.totalAmount {
-                        GridRow { Text("Satış tutarı").foregroundStyle(.secondary); Text(Fmt.money(amount)) }
-                    }
                     GridRow {
                         Text("Stoğa yansıyacak").foregroundStyle(.secondary)
                         Text("\(analysis.trackedLines.count) ürün reçeteye göre hammaddeden düşülecek")

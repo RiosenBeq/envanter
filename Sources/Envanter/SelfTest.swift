@@ -16,7 +16,8 @@ private func selfTestExceptionHandler(_ e: NSException) {
 
 /// Uçtan uca sistem testi: ENVANTER_SELFTEST=1 ile açılınca uygulamanın gerçek AppStore'u üzerinden
 /// tipik bir iş gününü baştan sona oynatır, her adımı doğrular ve sonucu çıkış koduyla bildirir (0 = başarılı).
-/// Geçici bir veri klasörü kullanır; gerçek veriye dokunmaz. CI'da macOS üzerinde çalıştırılır.
+/// Geçici bir veri klasörü kullanır; gerçek veriye dokunmaz. Ağ kullanmaz (web eşitlemesi bu modda kapalıdır).
+/// CI'da macOS üzerinde çalıştırılır.
 @MainActor
 enum SelfTest {
     private static var failures: [String] = []
@@ -61,13 +62,32 @@ enum SelfTest {
         let store = AppStore(persistence: persistence)
         /// Adımın adı yalnızca okunabilirlik için
         func step(_ name: String, _ f: () -> Void) { f() }
+        /// Bir günün kapanışlarını tek işlemde yazar (takip şeridi denemesi)
+        func setClosings(_ date: String, _ values: [String: Double]) {
+            store.mutateData("Sayım Girişi") { d in
+                var day = d.days[date] ?? DayRecord(date: date)
+                for (id, v) in values { day.entries[id, default: DayEntry()].closing = v }
+                d.days[date] = day
+            }
+        }
 
-        print("1) Açılış ve varsayılanlar")
+        print("1) Açılış, varsayılanlar ve ekranlar")
         check(store.data.items.count >= 20, "varsayılan stok kalemleri yüklendi")
         check(store.data.products.count >= 300, "varsayılan reçeteler yüklendi")
         check(store.section == .overview, "uygulama Genel Bakış ile açılıyor")
         check(store.isFirstRun, "ilk açılışta Genel Bakış başlangıç seçeneklerini gösteriyor (henüz günlük kayıt yok)")
         check(AppSection.daily.title == "Günlük Sayım", "günlük ekranın adı web paneliyle aynı (Günlük Sayım)")
+        check(AppSection.team.title == "Ekip" && AppSection.reports.title == "Raporlar" && AppSection.orders.title == "Sipariş",
+              "Ekip, Raporlar ve Sipariş ekranları")
+        check(AppSection.allCases.compactMap { $0.shortcut.map { String($0.character) } } == ["1", "2", "3", "4", "5", "6", "7", "8", ","],
+              "⌘1…⌘8 kısayolları yan menü sırasıyla, Ayarlar ⌘,")
+        check(ReportsTab.named("summary") == .summary && ReportsTab.named("item") == .item, "Raporlar sekmelerinin kısa adları")
+        store.openItemAnalysis(itemID: "patates")
+        check(store.section == .reports && store.reportsTab == .item && store.reportItem == "patates",
+              "\"Ayrıntılı analiz\" Raporlar > Kalem Analizi'ni seçili kalemle açıyor")
+        store.section = .overview
+        store.reportsTab = .summary
+        store.reportItem = nil
 
         let d1 = "2026-08-01", d2 = "2026-08-02"
         store.selectedDate = d1
@@ -83,17 +103,19 @@ enum SelfTest {
         check(!store.isFirstRun, "ilk sayım girilince başlangıç kartı kayboluyor")
         check(near(calc?.diff, -30), "satış yokken fark −30")
 
-        print("3) Satış raporu aktarımı (metin + tutar)")
+        print("3) Satış raporu aktarımı (Tutar sütunu yok sayılır)")
         let report = SalesParser.parse(text: "Kodu\tÜrün Tipi\tAdedi\tTutar\n11101\tDUBLEX BURGER\t14\t5460\n17001\tZAYİ 100 GR KÖFTE\t1\n13001\tKOLA\t10\t500\n99999\tYENİ ÜRÜN\t3\t900\n",
                                        sourceName: "selftest")
         check(report.lines.count == 4, "4 satış satırı okundu")
+        check(report.lines.first { $0.code == "11101" }?.qty == 14, "Tutar sütunu ad ya da adet sanılmadı (Dublex 14 adet)")
         store.confirmImport(report: report, date: d1)
         calc = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
         check(near(calc?.sold, 28), "Dublex 14 adet → 90 gr satılan 28")
         check(near(calc?.waste, 1), "ZAYİ köfte → zayi 1")
         check(near(calc?.diff, -1), "fark = 28 + 1 − 30 = −1")
         check(store.engine.overview(date: d1).unknownLines == 1, "reçetesi tanımsız 1 ürün işaretlendi")
-        check(near(store.data.days[d1]?.salesRevenue, 6860), "satış tutarı 6.860 ₺")
+        let json = (try? persistence.encode(store.data)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        check(!json.isEmpty && !json.contains("\"amount\"") && !json.contains("\"salesRevenue\""), "satış tutarı saklanmıyor (yalnızca adet)")
 
         print("4) Geri al / yinele")
         // Pencerenin geri alma yöneticisi gibi: gruplar olay döngüsü turunun sonunda kendiliğinden kapanır
@@ -116,17 +138,11 @@ enum SelfTest {
         check(store.data.days[d1]?.entries["g90"]?.closing == 120, "tekrar geri al: 120")
         store.undoManager = nil
 
-        print("5) Maliyet, tolerans ve fiyat geçmişi")
-        step("maliyet") { store.updateItem("g90") { $0.unitCost = 38 } }
-        step("maliyet artışı") { store.setItemCost("g90", 42) }
-        let g90 = store.engine.itemsByID["g90"]
-        check(g90?.unitCost == 42, "birim maliyet güncellendi")
-        check(near(g90?.lastPriceChange?.ratio, 4.0 / 38), "fiyat geçmişi: %10,5 artış")
-        check(!store.engine.priceAlerts(asOf: DateKey.today(), threshold: 0.05).isEmpty, "fiyat artışı uyarısı üretildi")
+        print("5) Tolerans")
         step("tolerans") { store.updateItem("g90") { $0.tolerance = 2 } }
         check(store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }?.severity == .withinTolerance, "−1 fark tolerans (±2) içinde")
-        // 01.08'de geçerli fiyat 38 ₺ (42 ₺ bugünden itibaren): geçmiş gün o günkü fiyatla değerlenir
-        check(near(store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }?.diffValue, -38), "farkın tutarı o günkü fiyatla −38 ₺")
+        check(store.engine.overview(date: d1).problemItems == store.engine.calc(date: d1).rows.filter { $0.severity?.isProblem == true }.count,
+              "sorunlu kalem sayısı tolerans dışı farklardan")
 
         print("6) Açılış devri ve hareketsiz kalemler")
         let d2row = store.engine.calc(date: d2).rows.first { $0.itemID == "g90" }
@@ -145,37 +161,103 @@ enum SelfTest {
         step("kilit aç") { store.setLocked(d1, false) }
         check(!store.isLocked(d1), "kilit açıldı")
 
-        print("8) Personel maliyeti ve prime cost")
-        let m = Employee(id: "m", name: "Müdür", payType: .monthly, rate: 31_000, costFactor: 1.2)
-        let h = Employee(id: "h", name: "Servis", payType: .hourly, rate: 150, defaultHours: 6)
-        let k = Employee(id: "k", name: "Kurye", payType: .daily, rate: 2_000)
-        step("personel") { store.addEmployee(m); store.addEmployee(h); store.addEmployee(k) }
-        let filledShifts = store.fillDefaultShifts(date: d1)
-        check(filledShifts == 2, "varsayılan vardiyalar dolduruldu (saatlik + yevmiyeli)")
-        step("mesai") { store.shiftBinding("h", date: d1, \.extra).wrappedValue = 100 }
-        step("diğer gider") { store.otherLaborBinding(d1).wrappedValue = 500 }
-        let labor = store.engine.labor(date: d1)
-        // 31.000 × 1,2 ÷ 31 = 1.200 · 6 × 150 + 100 = 1.000 · 2.000 · diğer 500
-        check(near(labor.total, 4_700), "günün personel maliyeti 4.700 ₺")
-        let p = store.engine.periodStats(from: d1, to: d1)
-        check(near(p.laborPct, 4_700.0 / 6_860), "personel oranı = 4.700 / 6.860")
-        check(p.primeCostPct != nil, "prime cost oranı hesaplandı")
-        check(store.fillDefaultShifts(date: d1) == 0, "ikinci doldurmada boş vardiya kalmadı")
-        step("ayrıldı") { store.markEmployeeLeft("k", on: d1) }
-        check(store.engine.labor(date: d2).lines.first { $0.employee.id == "k" } == nil, "ayrılan personel ertesi gün maliyete girmiyor")
-        // Zam 02.08'den itibaren: 01.08 eski maaşla kalır
-        store.changePay("m", payType: .monthly, rate: 62_000, costFactor: 1.2, from: d2)
-        check(near(store.engine.labor(date: d1).lines.first { $0.employee.id == "m" }?.cost, 1_200), "zamdan önceki gün eski maaşla (1.200 ₺)")
-        check(near(store.engine.labor(date: d2).lines.first { $0.employee.id == "m" }?.cost, 2_400), "zam gününden itibaren yeni maaşla (2.400 ₺)")
-        // Yevmiyeli: saat girilince çalıştı sayılır, işaret kaldırılınca saat de silinir
-        let kurye2 = Employee(id: "k2", name: "Kurye 2", payType: .daily, rate: 1_500)
-        store.addEmployee(kurye2)
-        store.shiftBinding("k2", date: d2, \.hours).wrappedValue = 5
-        check(store.workedBinding("k2", date: d2).wrappedValue, "saat girilen yevmiyeli 'çalıştı' görünüyor")
-        store.workedBinding("k2", date: d2).wrappedValue = false
-        check(store.engine.labor(date: d2).lines.first { $0.employee.id == "k2" } == nil, "işaret kaldırılınca yevmiye yazılmıyor")
+        print("8) Ekip: ekleme, düzenleme, pasif yapma, silme (geri alınabilir)")
+        let teamUndo = UndoManager()
+        // Her işlem kendi geri alma adımında (pencerede her tıklama ayrı olay turudur). Olay turuna bağlı gruplama
+        // burada art arda iki işlemi tek adımda birleştirirdi; gruplar elle açılıp kapanır.
+        teamUndo.groupsByEvent = false
+        @discardableResult func act<T>(_ f: () -> T) -> T {
+            teamUndo.beginUndoGrouping()
+            defer { teamUndo.endUndoGrouping() }
+            return f()
+        }
+        store.undoManager = teamUndo
+        await settle()
+        let added = act { store.addEmployee(Employee(id: "m", name: "Ayşe Yılmaz", role: "Müdür", phone: "0555 000 00 00")) }
+        await settle()
+        check(added && store.employees.map { $0.id } == ["m"], "ekip üyesi eklendi")
+        check(teamUndo.undoActionName == "Eleman Ekle", "Düzen menüsünde \"Eleman Ekle Geri Al\"")
+        teamUndo.undo()
+        await settle()
+        check(store.employees.isEmpty, "geri al: eklenen üye kaldırıldı")
+        teamUndo.redo()
+        await settle()
+        check(store.employees.first?.phone == "0555 000 00 00" && store.employees.first?.role == "Müdür", "yinele: üye görevi ve telefonuyla geri geldi")
+        act { store.addEmployee(Employee(id: "u", name: "Mehmet", role: "Usta")) }
+        await settle()
+        act { store.updateEmployee("u") { $0.role = "Kasiyer" } }
+        await settle()
+        check(store.employees.first { $0.id == "u" }?.role == "Kasiyer" && teamUndo.undoActionName == "Eleman Düzenleme",
+              "görev değiştirildi (Eleman Düzenleme)")
+        teamUndo.undo()
+        await settle()
+        check(store.employees.first { $0.id == "u" }?.role == "Usta", "geri al: görev yeniden Usta")
+        let lastAction = teamUndo.undoActionName
+        let unchanged = store.updateEmployee("u") { $0.role = "Usta" }
+        await settle()
+        check(unchanged && teamUndo.undoActionName == lastAction, "değişiklik yoksa geri alma geçmişine boş adım eklenmiyor")
+        check(store.counterNames == ["Ayşe Yılmaz", "Mehmet"], "Sayan listesi aktif üyelerden (liste sırasıyla)")
+        act { store.setEmployeeActive("u", false) }
+        await settle()
+        check(store.employees.first { $0.id == "u" }?.active == false && teamUndo.undoActionName == "Eleman Pasif", "üye pasif yapıldı (Eleman Pasif)")
+        check(store.counterNames == ["Ayşe Yılmaz"], "pasif üye Sayan listesinde görünmüyor")
+        teamUndo.undo()
+        await settle()
+        check(store.employees.first { $0.id == "u" }?.active == true && store.counterNames.contains("Mehmet"), "geri al: üye yeniden aktif")
+        act { store.deleteEmployee("u") }
+        await settle()
+        check(!store.employees.contains { $0.id == "u" } && teamUndo.undoActionName == "Eleman Sil", "üye silindi (Eleman Sil)")
+        teamUndo.undo()
+        await settle()
+        check(store.employees.map { $0.id } == ["m", "u"], "geri al: silinen üye yerine geri geldi")
 
-        print("9) Sipariş oluşturma ve teslim alma")
+        print("9) Sayan alanı ve eski sayım yapanlar listesi (yalnızca bu Mac'te taşınır)")
+        // Eski sürümden kalan hızlı seçim listesi (web eşitlemesi kapalı, şubeyle eşleşmemiş Mac)
+        act { store.updateSettings { $0.staff = ["Ahmet", "ayşe yılmaz", "  İSMAİL  "] } }
+        await settle()
+        check(store.counterNames == ["Ayşe Yılmaz", "Mehmet", "Ahmet", "İSMAİL"],
+              "Sayan: önce aktif üyeler, sonra ekipte olmayan eski adlar (aynı ad bir kez)")
+        let staffBefore = store.settings.staff
+        act { store.setCountedBy(d1, "Zeynep Kaya") }
+        await settle()
+        check(store.data.days[d1]?.countedBy == "Zeynep Kaya", "sayımı yapan güne yazıldı")
+        check(store.employees.contains { $0.id == "staff-zeynep-kaya" && $0.name == "Zeynep Kaya" && $0.active },
+              "ekipte olmayan yeni ad ekibe eklendi (staff-zeynep-kaya)")
+        check(store.settings.staff == staffBefore, "yazılan ad eski hızlı seçim listesine yazılmadı")
+        check(teamUndo.undoActionName == "Sayımı Yapan", "ad ve yeni üye tek adımda geri alınır (Sayımı Yapan)")
+        teamUndo.undo()
+        await settle()
+        check(store.data.days[d1]?.countedBy == nil && !store.employees.contains { $0.id == "staff-zeynep-kaya" },
+              "geri al: ad günden ve ekipten kalktı")
+        let teamBefore = store.employees.count
+        act { store.setCountedBy(d1, "  mehmet ") }
+        await settle()
+        check(store.data.days[d1]?.countedBy == "mehmet" && store.employees.count == teamBefore,
+              "ekipteki ad (büyük/küçük harf farkıyla) yeniden eklenmedi")
+        let actionBefore = teamUndo.undoActionName
+        let migrated = store.applyLegacyStaffMigration()
+        let ids = store.employees.map { $0.id }
+        check(migrated && store.settings.staff.isEmpty, "eski liste ekibe taşındı ve boşaltıldı")
+        check(ids.contains("staff-ahmet") && ids.contains("staff-ismail"), "belirlenimci kimlikler: staff-ahmet, staff-ismail")
+        check(!ids.contains("staff-ayse-yilmaz") && store.employees.filter { TeamID.slug($0.name) == "ayse-yilmaz" }.count == 1,
+              "ekipte aynı adlı üye varken yeniden eklenmedi")
+        check(store.employees.first { $0.id == "staff-ismail" }?.name == "İSMAİL", "taşınan ad kırpıldı")
+        check(store.counterNames == ["Ayşe Yılmaz", "Mehmet", "Ahmet", "İSMAİL"], "Sayan listesi taşımadan sonra da aynı")
+        check(teamUndo.undoActionName == actionBefore, "taşıma geri alma geçmişine eklenmedi (⌘Z eski listeyi geri getirmez)")
+        check(!store.applyLegacyStaffMigration(), "ikinci taşımada değişiklik yok")
+        act { store.linkAccount(employeeID: "m", email: "Ayşe.Yilmaz") }
+        check(store.employees.first { $0.id == "m" }?.account == "ayse.yilmaz@envanter.local", "giriş hesabı kullanıcı adıyla bağlandı (ayse.yilmaz)")
+        check(store.employee(linkedTo: "AYSE.YILMAZ@envanter.local")?.id == "m", "hesaba bağlı üye bulunuyor (Kullanıcılar listesindeki ad)")
+        act { store.linkAccount(employeeID: "staff-ahmet", email: "ayse.yilmaz@envanter.local") }
+        check(store.employees.first { $0.id == "m" }?.account == nil && store.employees.first { $0.id == "staff-ahmet" }?.account == "ayse.yilmaz@envanter.local",
+              "bir hesap tek üyeye bağlanır")
+        act { store.linkAccount(employeeID: "staff-ahmet", email: nil) }
+        act { store.linkAccount(employeeID: "m", email: "ayse.yilmaz") }
+        check(store.employees.first { $0.id == "staff-ahmet" }?.account == nil && store.employees.first { $0.id == "m" }?.account == "ayse.yilmaz@envanter.local",
+              "bağlantı kaldırıldı ve yeniden bağlandı")
+        store.undoManager = nil
+
+        print("10) Sipariş oluşturma ve teslim alma (yalnızca miktar)")
         store.selectedDate = d2
         step("sayım d2") { store.entryBinding(item: "g90", date: d2, \.closing).wrappedValue = 20 }
         let created = store.createOrder(date: d2, supplier: "Et Tedarikçisi")
@@ -186,49 +268,104 @@ enum SelfTest {
             let after = store.orderSuggestions(date: d2).first { $0.item.id == "g90" }
             check(near(after?.onOrder, line?.qty ?? -1) && after?.suggested == 0, "açık siparişteki miktar öneriden düşüldü (çift sipariş yok)")
             let before = store.data.days[d2]?.entries["g90"]?.incoming ?? 0
-            let ok = store.receiveOrder(order.id, on: d2, quantities: ["g90": 100], prices: ["g90": 44])
+            let expectedLines = order.lines.filter { ($0.itemID == "g90" ? 100 : $0.qty) > 0 }.count
+            store.alert = nil
+            let ok = store.receiveOrder(order.id, on: d2, quantities: ["g90": 100])
             check(ok, "sipariş teslim alındı")
+            check(store.alert?.message.hasPrefix("\(expectedLines) kalem") == true, "bildirim işlenen kalem sayısını gösteriyor (\(expectedLines) kalem)")
+            store.alert = nil
             check(near(store.data.days[d2]?.entries["g90"]?.incoming, before + 100), "teslimat Gelen'e işlendi (+100)")
-            // 02.08 tarihli fatura, bugün girilmiş daha yeni fiyatı (42) ezmez; fiyat geçmişine tarih sırasıyla girer
-            let g = store.engine.itemsByID["g90"]
-            check(g?.unitCost == 42, "geçmiş tarihli fatura güncel fiyatı ezmedi")
-            check(g?.cost(on: d2) == 44, "fatura fiyatı 02.08 için fiyat geçmişine işlendi")
-            check(g?.costHistory?.map { $0.date ?? "" } == (g?.costHistory?.map { $0.date ?? "" }.sorted()), "fiyat geçmişi tarih sırasında")
+            check(store.data.purchaseOrders.first { $0.id == order.id }?.lines.first { $0.itemID == "g90" }?.received == 100,
+                  "teslim alınan miktar siparişe yazıldı")
             check(store.openOrders.isEmpty, "sipariş kapandı")
         }
 
-        print("10) Ayarlar ve hedefler")
-        step("hedef") { store.updateSettings { $0.targetLaborPct = 0.25; $0.branchName = "Test Şube" } }
-        check(store.settings.targetLaborPct == 0.25 && store.settings.branchName == "Test Şube", "hedef ve şube adı kaydedildi")
+        print("11) Ayarlar")
+        step("şube adı") { store.updateSettings { $0.branchName = "Test Şube" } }
+        check(store.settings.branchName == "Test Şube", "şube adı kaydedildi")
 
-        print("11) Excel dışa aktarımı")
+        print("12) Excel dışa aktarımı (yalnızca miktarlar)")
         if let x = try? XlsxReader.read(data: Exporter.history(engine: store.engine, from: d1, to: d2)) {
-            check(x.map { $0.name } == ["Alımlar", "Özet", "Günlük Maliyet", "Personel"], "geçmiş Excel'i 4 sayfa")
+            let names = x.map { $0.name }
+            check(names.first == "Alımlar" && names.contains("Özet") && names.contains("Günlük Durum") && names.contains("Ekip"),
+                  "geçmiş Excel'i: Alımlar, Özet, Günlük Durum, Ekip (\(names.joined(separator: ", ")))")
+            check(!names.contains("Günlük Maliyet") && !names.contains("Personel"), "geçmiş Excel'inde maliyet / personel maliyeti sayfası yok")
+            let cells = x.flatMap { $0.rows.values.flatMap { $0.values } }
+            check(!cells.contains { $0.contains("₺") || $0.contains("Maliyet") }, "geçmiş Excel'inde tutar ya da maliyet yok")
         } else { check(false, "geçmiş Excel'i okunabilir") }
         check((try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: d2)))?.first?.name == "Sayım Formu", "sayım formu")
         check((try? XlsxReader.read(data: Exporter.day(engine: store.engine, date: d1)))?.count == 2, "gün Excel'i 2 sayfa")
+        if let o = try? XlsxReader.read(data: Exporter.orders(store.orderSuggestions(date: d2), date: d2)) {
+            let cells = o.flatMap { $0.rows.values.flatMap { $0.values } }
+            check(o.first?.name == "Sipariş" && !cells.contains { $0.contains("₺") || $0.contains("Tutar") }, "sipariş Excel'inde tutar sütunu yok")
+        } else { check(false, "sipariş Excel'i okunabilir") }
 
-        print("12) Diske kayıt ve yeniden yükleme")
+        print("13) Diske kayıt ve yeniden yükleme")
         store.flush()
         switch Persistence(directory: dir).load() {
         case .loaded(let back):
             check(back.days[d1]?.entries["g90"]?.closing == 120, "sayım diske yazıldı")
-            check(back.employees.count == 4 && back.employees.first { $0.id == "m" }?.payHistory?.count == 2, "personel ve ücret geçmişi diske yazıldı")
+            check(back.employees.count == 4 && back.employees.first { $0.id == "m" }?.phone == "0555 000 00 00"
+                  && back.employees.first { $0.id == "m" }?.account == "ayse.yilmaz@envanter.local", "ekip (telefon, giriş hesabı) diske yazıldı")
+            check(back.settings.staff.isEmpty && back.employees.contains { $0.id == "staff-ismail" }, "taşınan eski liste diskte boş, üyeler ekipte")
             check(back.purchaseOrders.first?.status == .received, "sipariş durumu diske yazıldı")
-            check(back.items.first { $0.id == "g90" }?.costHistory?.count ?? 0 >= 2, "fiyat geçmişi diske yazıldı")
             check(back.settings.branchName == "Test Şube", "ayarlar diske yazıldı")
         default:
             check(false, "veri dosyası yeniden yüklenebilir")
         }
+        let raw = (try? Data(contentsOf: persistence.dataFile)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        check(!raw.isEmpty && ["unitCost", "costHistory", "unitPrice", "payType", "salesRevenue", "shifts", "targetFoodCostPct"].allSatisfy { !raw.contains("\"\($0)\"") },
+              "veri dosyasında maliyet, fiyat ya da ücret alanı yok")
         check(!persistence.backups().isEmpty, "günlük yedek alındı")
 
-        print("13) Varsayılanları geri ekleme ve silme")
+        print("14) Varsayılanları geri ekleme ve silme")
         step("ürün sil") { store.deleteProduct("11101") }
         check(store.product("11101") == nil, "ürün silindi")
         let restored = store.restoreMissingDefaults()
         check(restored.products == 1 && store.product("11101") != nil, "silinen varsayılan ürün geri eklendi")
 
-        print("14) Personel hesabı: gün kapatma onayı, kapatılmış gün ve rol değişimi")
+        print("15) Takip şeridi renkleri (sayılanların kaçında fark var; web paneliyle aynı kural)")
+        check(TrackerState.legendOrder.prefix(3).map { $0.label }
+              == ["Sayım tam, fark az", "Eksik sayım ya da sayılanların %10'unda fark", "Sayılanların %20'sinde fark"],
+              "renk açıklaması web paneliyle aynı")
+        let tA = "2026-08-20", tB = "2026-08-21", tC = "2026-08-22", tD = "2026-08-25"
+        setClosings(tA, ["g90": 2])
+        store.entryBinding(item: "g90", date: tA, \.opening).wrappedValue = 10
+        var oA = store.engine.overview(date: tA)
+        check(oA.countedItems == 1 && oA.problemItems == 1 && oA.shortageItems == 1 && oA.hasSignificantProblems && oA.trackerState == .bad,
+              "tek sayılan kalemde fazla çıkış → kırmızı")
+        setClosings(tA, ["g90": 9])
+        oA = store.engine.overview(date: tA)
+        check(oA.problemItems == 0 && !oA.hasNotableProblems && !oA.isFullyCounted && oA.trackerState == .warn, "fark tolerans içinde ama eksik sayım → turuncu")
+        store.confirmImport(report: report, date: tB)
+        check(store.engine.overview(date: tB).trackerState == .salesOnly, "yalnızca satış raporu olan gün gri")
+        check(store.engine.overview(date: tC).trackerState == .empty, "verisi olmayan gün boş")
+        let rowsD = store.engine.calc(date: tD).rows
+        let even = Dictionary(rowsD.map { ($0.itemID, $0.opening) }, uniquingKeysWith: { a, _ in a })
+        setClosings(tD, even)
+        var oD = store.engine.overview(date: tD)
+        let n = oD.countedItems
+        check(oD.isFullyCounted && oD.problemItems == 0 && oD.trackerState == .ok, "tam sayım, fark yok → yeşil (\(n) kalem)")
+        /// İlk `k` kalemde tolerans dışı fark (az çıkış) olan tam sayım
+        func withProblems(_ k: Int) -> DayOverview {
+            var values = even
+            for r in rowsD.prefix(k) { values[r.itemID] = r.opening + (store.engine.itemsByID[r.itemID]?.tolerance ?? 0) + 5 }
+            setClosings(tD, values)
+            return store.engine.overview(date: tD)
+        }
+        let notable = (n + 9) / 10, significant = (n + 4) / 5
+        check(n >= 11 && notable < significant, "eşik denemesi için yeterli kalem (\(n))")
+        oD = withProblems(notable - 1)
+        check(oD.problemItems == notable - 1 && !oD.hasNotableProblems && oD.trackerState == .ok,
+              "\(notable - 1) / \(n) kalemde fark (%10'un altı) → yeşil")
+        oD = withProblems(notable)
+        check(oD.problemItems == notable && oD.hasNotableProblems && !oD.hasSignificantProblems && oD.trackerState == .warn,
+              "\(notable) / \(n) kalemde fark (%10) → turuncu")
+        oD = withProblems(significant)
+        check(oD.problemItems == significant && oD.hasSignificantProblems && oD.trackerState == .bad,
+              "\(significant) / \(n) kalemde fark (%20) → kırmızı")
+
+        print("16) Personel hesabı: gün kapatma onayı, kapatılmış gün, ekip ve rol değişimi")
         // Web eşitlemesi bu modda kapalı; rolü CloudSyncController'ın yaptığı gibi doğrudan veriyoruz
         store.enforcedRole = CloudRole.staff
         check(!store.canEditCatalog && !store.canChangeLockedDays, "personel: tanımlar ve kapatılmış günler salt okunur")
@@ -262,7 +399,17 @@ enum SelfTest {
         check(importMessage.contains("patron veya müdür") && !importMessage.contains("kilidini açın"),
               "kapatılmış gün uyarısı personele başka gün seçmesini söylüyor")
         store.alert = nil
-        // (d) Rol web panelinde müdüre yükseltildi (CloudSyncController şube listesinden günceller): kısıtlar kalkar
+        // (d) Ekip personel hesabıyla salt okunur; yazılan Sayan adı yalnızca güne yazılır
+        let teamCount = store.employees.count
+        let staffAdded = store.addEmployee(Employee(id: "x", name: "Personelin eklediği"))
+        check(!staffAdded && store.employees.count == teamCount && store.alert != nil, "personel: ekip değiştirilemiyor (uyarı gösterildi)")
+        store.alert = nil
+        check(!store.setEmployeeActive("m", false) && store.employees.first { $0.id == "m" }?.active == true, "personel: üye pasif yapılamıyor")
+        store.alert = nil
+        store.setCountedBy(d1, "Yeni Personel")
+        check(store.data.days[d1]?.countedBy == "Yeni Personel" && store.employees.count == teamCount && store.settings.staff.isEmpty,
+              "personel: yazılan Sayan adı yalnızca güne yazıldı (ekibe ve eski listeye eklenmedi)")
+        // (e) Rol web panelinde müdüre yükseltildi (CloudSyncController şube listesinden günceller): kısıtlar kalkar
         store.enforcedRole = CloudRole.manager
         check(store.canEditCatalog && store.canChangeLockedDays, "müdür: tanımlar ve kapatılmış günler düzenlenebilir")
         check(store.lockAction(d2) == .unlock && store.lockMenuTitle(d2) == "Gün Kilidini Aç", "müdür kilidi açabilir")
@@ -272,7 +419,7 @@ enum SelfTest {
         check(store.isLocked(d2) && store.pendingDayClose == nil, "müdür onaysız kapatır")
         store.enforcedRole = nil
 
-        print("15) Eşitleme kayıt noktası arayüzü bekletmez (önce veri, sonra durum)")
+        print("17) Eşitleme kayıt noktası arayüzü bekletmez (önce veri, sonra durum)")
         let year = DemoData.make(endingAt: d2, days: 365)
         store.applyRemote(year)
         let probe = CheckpointProbe()
@@ -287,5 +434,10 @@ enum SelfTest {
         check(mainMs < 40, "kayıt noktasının ana iş parçacığındaki kısmı kısa (\(Int(mainMs)) ms; kodlama arka planda)")
         store.diskQueue.sync {}
         check(probe.stateWritten && probe.dataWasCurrent, "durum yazılırken veri dosyası güncel (365 gün)")
+
+        print("18) Otomatik test modunda web eşitlemesi kapalı")
+        check(!store.cloud.enabled && !store.cloud.isLinked && !store.cloud.isConnected, "web eşitlemesi kapalı (ağ kullanılmıyor)")
+        check(store.cloud.realtimeStatus == .disconnected && !store.cloud.isLive, "canlı bağlantı kurulmadı")
+        check(!store.cloud.canManageMembers, "Kullanıcılar bölümü bağlı değilken kapalı")
     }
 }

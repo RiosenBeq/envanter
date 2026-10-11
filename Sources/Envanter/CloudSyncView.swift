@@ -3,10 +3,13 @@ import AppKit
 import EnvanterCore
 
 /// Ayarlar ve Veri > "Web paneli ile eşitleme" kartı: giriş, şube seçimi, ilk bağlantı kararı, durum ve çıkış.
-/// Durumlar: bağlı değil (giriş formu) · bağlanıyor · şube seçimi · bağlı (hesap, rol, şube, son eşitleme, bekleyen) ·
-/// hata (ne oldu + ne yapılmalı; kartın üstünde tek kutu) · oturum süresi doldu / çıkış yapıldı (şube eşleşmesi korunur).
+/// Durumlar: bağlı değil (giriş formu) · bağlanıyor · şube seçimi · bağlı (hesap, rol, şube, son eşitleme, canlı bağlantı,
+/// bekleyen) · hata (ne oldu + ne yapılmalı; kartın üstünde tek kutu) · oturum süresi doldu / çıkış yapıldı (şube
+/// eşleşmesi korunur). Giriş adı kullanıcı adı ("ayse") ya da e-posta olabilir (`LoginName`).
 struct CloudSyncCard: View {
     @ObservedObject var cloud: CloudSyncController
+    /// Patronun "Kullanıcılar…" düğmesi (verilmezse Ekip ekranına geçilir; Kullanıcılar bölümü orada)
+    var openUsers: (() -> Void)? = nil
     @State private var email = ""
     @State private var password = ""
     @State private var serverURL = CloudDefaults.url
@@ -20,7 +23,7 @@ struct CloudSyncCard: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 header
-                Text(CloudSyncGuide.intro)
+                Text(Self.intro)
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 // Hata kartın üstünde bir kez: ne oldu, ne yapılmalı (bağlıyken değişikliklerin bu Mac'te beklediği)
                 if let issue = cloud.issue { CloudIssueBox(issue: issue) }
@@ -36,7 +39,8 @@ struct CloudSyncCard: View {
         }
         .onAppear {
             if let c = cloud.state.config {
-                if email.isEmpty { email = c.email }
+                // Kullanıcı adı hesabında "@envanter.local" gösterilmez: kişi kullanıcı adını yazar
+                if email.isEmpty { email = LoginName.display(c.email) }
                 serverURL = c.url
                 serverKey = c.publishableKey
             }
@@ -98,12 +102,21 @@ struct CloudSyncCard: View {
             signInIntro
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
                 GridRow {
-                    Text("E-posta").foregroundStyle(.secondary)
-                    TextField("ornek@isletme.com", text: $email)
+                    Text("Kullanıcı adı veya e-posta").foregroundStyle(.secondary)
+                    TextField("ali.veli ya da ornek@isletme.com", text: $email)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                         .frame(width: 300)
                         .onSubmit { passwordFocused = true }
+                }
+                if let preview = loginPreview {
+                    GridRow {
+                        Color.clear.frame(width: 1, height: 1)
+                        Text(preview.text)
+                            .font(.caption).foregroundStyle(preview.isError ? Brand.negative : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: 300, alignment: .leading)
+                    }
                 }
                 GridRow {
                     Text("Şifre").foregroundStyle(.secondary)
@@ -117,7 +130,7 @@ struct CloudSyncCard: View {
             HStack(spacing: 10) {
                 Button(action: connect) { Label("Bağlan", systemImage: "link") }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(cloud.busy || email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    .disabled(cloud.busy || LoginName.email(from: email) == nil || password.isEmpty)
                 if cloud.busy {
                     ProgressView().controlSize(.small)
                     Text("Bağlanıyor…").font(.callout).foregroundStyle(.secondary)
@@ -139,8 +152,8 @@ struct CloudSyncCard: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Web paneli hesabınızın e-posta adresi ve şifresiyle bağlanın.").font(.callout.weight(.medium))
-                Text(CloudSyncGuide.accountHelp + " " + CloudSyncGuide.forgotPassword)
+                Text("Web paneli hesabınızın kullanıcı adı (ya da e-postası) ve şifresiyle bağlanın.").font(.callout.weight(.medium))
+                Text(Self.accountHelp)
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -215,7 +228,7 @@ struct CloudSyncCard: View {
                 GridRow {
                     Text("Hesap").foregroundStyle(.secondary)
                     HStack(spacing: 6) {
-                        Text(cloud.state.userEmail ?? cloud.state.config?.email ?? "—").textSelection(.enabled)
+                        Text(accountText).textSelection(.enabled)
                         Pill(text: CloudRole.title(cloud.role), color: roleColor(cloud.role))
                     }
                 }
@@ -228,12 +241,17 @@ struct CloudSyncCard: View {
                     syncTime
                 }
                 GridRow {
+                    Text("Canlı bağlantı").foregroundStyle(.secondary)
+                    RealtimeStatusLabel(cloud: cloud)
+                }
+                GridRow {
                     Text("Bekleyen").foregroundStyle(.secondary)
                     Text(CloudSyncGuide.pendingText(cloud.pendingChanges, issue: cloud.issue))
                         .foregroundStyle(.secondary)
                 }
             }
-            Label(CloudRole.summary(cloud.role), systemImage: roleIcon(cloud.role))
+            Label(CloudRole.summary(cloud.role) + (cloud.canManageMembers ? " Bu Mac'te de Ekip → Kullanıcılar bölümünden hesap açabilir, yetki ve şifre belirleyebilirsiniz." : ""),
+                  systemImage: roleIcon(cloud.role))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 Button { cloud.syncNow() } label: { Label("Şimdi Eşitle", systemImage: "arrow.triangle.2.circlepath") }
@@ -244,6 +262,13 @@ struct CloudSyncCard: View {
                     .buttonStyle(SoftButtonStyle())
                     .disabled(cloud.busy || cloud.status == .syncing || cloud.pendingChanges > 0)
                     .help(cloud.pendingChanges > 0 ? "Bekleyen değişiklikler gönderildikten sonra şube değiştirilebilir" : "Bu hesabın üye olduğu şubeler")
+                if cloud.canManageMembers {
+                    Button { if let openUsers { openUsers() } else { cloud.showUsers() } } label: {
+                        Label("Kullanıcılar…", systemImage: "person.badge.key")
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .help("Ekip ekranındaki Kullanıcılar bölümü: hesap aç, yetki ve şifre belirle")
+                }
                 Button { confirmSignOut = true } label: { Label("Çıkış Yap", systemImage: "rectangle.portrait.and.arrow.right") }
                     .buttonStyle(SoftButtonStyle())
             }
@@ -253,10 +278,10 @@ struct CloudSyncCard: View {
     private var rolesDisclosure: some View {
         DisclosureGroup("Roller ve yetkiler", isExpanded: $showRoles) {
             VStack(alignment: .leading, spacing: 6) {
-                roleRow("Patron", "Tüm veriler, kullanıcı hesapları (hesap açma, şifre belirleme, davet) ve yetkileri, şube adı. Birden çok şubeyi tek hesaptan karşılaştırır.")
-                roleRow("Müdür", "Tüm verileri görür ve değiştirir: stok kalemleri, reçeteler, personel, siparişler, ayarlar ve günlük kayıtlar. Kapatılmış günün kilidini açabilir.")
-                roleRow("Personel", "Tüm verileri görür; yalnızca günlük kayıtları (sayım, satış, vardiya, not) değiştirebilir ve günü kapatabilir. Kapatılmış günü yalnızca patron veya müdür değiştirebilir ya da kilidini açabilir. Stok kalemi, reçete, personel, sipariş (teslim alma dahil) ve ayar değişiklikleri için müdür yetkisi gerekir.")
-                Text(CloudSyncGuide.accountHelp + " " + CloudSyncGuide.forgotPassword + " E-postayla davet edildiyseniz aynı e-postayla kendiniz hesap açarsınız.")
+                roleRow("Patron", "Tüm veriler, kullanıcı hesapları ve yetkileri (hesap açma, şifre belirleme: Ekip → Kullanıcılar ya da web paneli; e-postayla davet: web paneli), şube adı. Birden çok şubeyi tek hesaptan karşılaştırır.")
+                roleRow("Müdür", "Tüm verileri görür ve değiştirir: stok kalemleri, reçeteler, ekip, siparişler, ayarlar ve günlük kayıtlar. Kapatılmış günün kilidini açabilir.")
+                roleRow("Personel", "Tüm verileri görür; yalnızca günlük kayıtları (sayım, satış, not) değiştirebilir ve günü kapatabilir. Kapatılmış günü yalnızca patron veya müdür değiştirebilir ya da kilidini açabilir. Stok kalemi, reçete, ekip, sipariş (teslim alma dahil) ve ayar değişiklikleri için müdür yetkisi gerekir.")
+                Text(Self.accountHelp + " E-postayla davet edildiyseniz aynı e-postayla kendiniz hesap açarsınız.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, 6)
@@ -274,7 +299,7 @@ struct CloudSyncCard: View {
                 switch cloud.status {
                 case .syncing: Pill(text: "Eşitleniyor", color: Brand.positive)
                 case .error: Pill(text: cloud.issue?.title ?? "Hata", color: issueColor(cloud.issue))
-                case .idle: Pill(text: "Bağlı", color: Brand.ok)
+                case .idle: Pill(text: cloud.isLive ? "Bağlı · Canlı" : "Bağlı", color: Brand.ok)
                 case .off: Pill(text: cloud.isSignedOutWithLink ? "Çıkış yapıldı" : "Bağlı değil", color: .secondary)
                 }
             }
@@ -347,7 +372,7 @@ struct CloudSyncCard: View {
     private func decisionMessage(_ d: InitialDecision) -> String {
         if let from = d.switchingFrom {
             return "Bu Mac'teki veri \"\(from)\" şubesine ait (\(d.localDays) günlük kayıt). \"\(d.workspace.name)\" şubesi web panelinde henüz boş.\n\n"
-                + "Yalnızca Tanımları Kopyala: stok kalemleri, reçeteler ve ayarlar yeni şubeye kopyalanır. Günlük kayıtlar, personel ve siparişler \"\(from)\" şubesinde kalır; bu Mac'te boşalır (önceki hali Yedekler klasörüne kaydedilir).\n\n"
+                + "Yalnızca Tanımları Kopyala: stok kalemleri, reçeteler ve ayarlar yeni şubeye kopyalanır. Günlük kayıtlar, ekip ve siparişler \"\(from)\" şubesinde kalır; bu Mac'te boşalır (önceki hali Yedekler klasörüne kaydedilir).\n\n"
                 + "Her Şeyi Kopyala: günlük kayıtlar dahil bu Mac'teki her şey yeni şubeye yüklenir; iki şubenin raporları aynı günleri gösterir.\n\n"
                 + "Vazgeç: \"\(from)\" şubesiyle eşitleme sürer."
                 + (d.workspace.role == CloudRole.staff ? " Personel hesabıyla tanımlar yüklenemez; yeni şubenin tanımlarını patron ya da müdür girer." : "")
@@ -355,7 +380,28 @@ struct CloudSyncCard: View {
         return "\"\(d.workspace.name)\" şubesinde \(d.remoteDays) günlük kayıt var; bu Mac'te \(d.localDays) günlük kayıt var.\n\n"
             + "Buluttakini İndir: bu Mac'teki veri önce Yedekler klasörüne kaydedilir, sonra web panelindeki veriyle değiştirilir.\n\n"
             + "Bu Mac'tekini Yükle: aynı kayıtlarda bu Mac'teki geçerli olur; yalnızca web panelinde olan günler korunur ve bu Mac'e de gelir. Web panelindeki önceki hal Yedekler klasörüne kaydedilir."
-            + (d.workspace.role == CloudRole.staff ? " Personel hesabıyla yalnızca günlük kayıtlar yüklenir; stok kalemleri, reçeteler, personel, siparişler ve ayarlarda web panelindeki hal geçerli olur. Web panelinde kapatılmış günler değiştirilmez." : "")
+            + (d.workspace.role == CloudRole.staff ? " Personel hesabıyla yalnızca günlük kayıtlar yüklenir; stok kalemleri, reçeteler, ekip, siparişler ve ayarlarda web panelindeki hal geçerli olur. Web panelinde kapatılmış günler değiştirilmez." : "")
+    }
+
+    /// Kartın kısa tanıtımı (canlı bağlantıyla)
+    static let intro = "Sayım ve satışlar birkaç saniye içinde patron ve müdürlerin web paneline gider; web panelinde yapılan düzeltmeler (sayım, stok kalemi, reçete, sipariş, ekip) canlı bağlantıyla anında, bağlantı kurulamazsa en geç bir dakika içinde bu Mac'e gelir. İnternet yokken çalışmaya devam edilir; değişiklikler bağlantı gelince gönderilir."
+
+    /// Hesabı kim açar, şifre unutulunca ne yapılır (web panelinin giriş ekranıyla aynı yollar)
+    static let accountHelp = "Hesabınızı patron açar (web panelinde Yönetim → Kullanıcılar ya da kendi Mac'inde Ekip → Kullanıcılar → “Hesap oluştur”) ve kullanıcı adınızı (ya da e-postanızı) ve geçici şifrenizi size WhatsApp/SMS ile iletir; e-posta gelmesini beklemeyin. Şifrenizi unuttuysanız: kullanıcı adı hesabında patronunuz “Şifre belirle” ile yeni bir geçici şifre verir; e-posta hesabında web panelinin giriş ekranındaki “Şifremi unuttum”u kullanın. Kendi şifrenizi web panelinde Ayarlar → Hesap → “Şifremi değiştir” bölümünden değiştirirsiniz."
+
+    /// Giriş alanının altındaki ipucu: kullanıcı adının hangi adla deneneceği (Türkçe harfler ve boşluklar çevrilir)
+    private var loginPreview: (text: String, isError: Bool)? {
+        guard LoginName.isUsername(email) else { return nil }
+        guard let mapped = LoginName.email(from: email) else {
+            return ("Kullanıcı adında en az bir harf ya da rakam olmalı (harf, rakam, nokta, alt çizgi ve tire kullanılabilir).", true)
+        }
+        return ("Kullanıcı adı olarak “\(LoginName.display(mapped))” ile giriş yapılacak.", false)
+    }
+
+    /// Bağlı hesabın ekrandaki adı (kullanıcı adı hesabında yalnızca kullanıcı adı)
+    private var accountText: String {
+        guard let e = cloud.state.userEmail ?? cloud.state.config?.email, !e.isEmpty else { return "—" }
+        return LoginName.display(e)
     }
 
     private func connect() {
@@ -409,8 +455,8 @@ struct CloudStatusLine: View {
                         .foregroundStyle(cloud.issue?.severity == .temporary ? Brand.warn : Brand.negative)
                     Text(errorTitle)
                 case .idle(let date):
-                    Image(systemName: "checkmark.icloud").foregroundStyle(Brand.ok)
-                    Text(date.map { "Web ile eşitlendi · \(Self.time.string(from: $0))" } ?? "Web ile eşitlenmeyi bekliyor")
+                    Image(systemName: cloud.isLive ? "bolt.horizontal.icloud" : "checkmark.icloud").foregroundStyle(Brand.ok)
+                    Text(date.map { (cloud.isLive ? "Canlı · " : "Web ile eşitlendi · ") + Self.time.string(from: $0) } ?? "Web ile eşitlenmeyi bekliyor")
                 case .off:
                     Image(systemName: "icloud.slash").foregroundStyle(.secondary)
                     Text("Web eşitlemesi kapalı")
@@ -430,6 +476,7 @@ struct CloudStatusLine: View {
         var lines: [String] = []
         if case .error = cloud.status { lines.append(cloud.issue?.text ?? "Eşitleme hatası") }
         if let branch = cloud.state.config?.workspaceName { lines.append("Şube: \(branch)") }
+        if cloud.isConnected { lines.append(RealtimeStatusLabel.text(cloud.realtimeStatus)) }
         if cloud.pendingChanges > 0 {
             lines.append(CloudSyncGuide.pendingText(cloud.pendingChanges, issue: cloud.issue))
         }
@@ -440,4 +487,35 @@ struct CloudStatusLine: View {
     private static let time: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "tr_TR"); f.dateFormat = "HH:mm"; return f
     }()
+}
+
+/// Canlı bağlantının durumu (eşitleme kartı ve kenar çubuğu ipucu): bağlıyken web panelindeki değişiklikler anında
+/// gelir; kurulamazsa 60 sn'lik düzenli eşitleme sürer.
+struct RealtimeStatusLabel: View {
+    @ObservedObject var cloud: CloudSyncController
+
+    var body: some View {
+        HStack(spacing: 6) {
+            switch cloud.realtimeStatus {
+            case .connected:
+                Image(systemName: "bolt.fill").foregroundStyle(Brand.ok)
+            case .connecting:
+                ProgressView().controlSize(.mini)
+            case .disconnected:
+                Image(systemName: "bolt.slash").foregroundStyle(Brand.warn)
+            }
+            Text(Self.text(cloud.realtimeStatus))
+                .foregroundStyle(cloud.realtimeStatus == .connected ? Color.primary : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .help("Canlı bağlantı açıkken web panelinde yapılan değişiklikler bu Mac'e anında gelir. Bağlantı kurulamazsa eşitleme 60 sn'de bir ve uygulama öne gelince yapılır; kendiliğinden yeniden bağlanılır.")
+    }
+
+    static func text(_ status: RealtimeStatus) -> String {
+        switch status {
+        case .connected: return "Canlı · değişiklikler anında gelir"
+        case .connecting: return "Canlı bağlantı kuruluyor…"
+        case .disconnected: return "Canlı bağlantı bekleniyor · bu sırada 60 sn'de bir eşitlenir"
+        }
+    }
 }

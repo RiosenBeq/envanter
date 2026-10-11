@@ -20,51 +20,24 @@ struct BackupView: View {
                                 Text("Şube / işletme adı").foregroundStyle(.secondary)
                                 CommitTextField(title: "ör. Kadıköy Şubesi", value: store.settingsBinding(\.branchName))
                                     .frame(width: 320)
+                                    .disabled(!store.canEditCatalog)
                             }
+                            // Eski hızlı seçim listesinin yerine: Sayan listesi Ekip'teki aktif üyelerden gelir
                             GridRow {
-                                Text("Sayım yapanlar (hızlı seçim)").foregroundStyle(.secondary)
-                                CommitTextField(title: "Virgülle ayırın: Ahmet, Ayşe", value: Binding(
-                                    get: { store.settings.staff.joined(separator: ", ") },
-                                    set: { v in
-                                        let names = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                                        store.updateSettings("Sayım Yapanlar") { $0.staff = names }
-                                    }))
-                                    .frame(width: 320)
+                                Text("Sayım yapanlar").foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    Text("Sayımı yapanlar Ekip ekranından yönetilir.")
+                                    Button("Ekibe git") { store.section = .team }.buttonStyle(.link)
+                                }
                             }
                         }
-                        .disabled(!store.canEditCatalog)
                         Text("Şube adı yan menüde, dışa aktarılan dosya adlarında ve sipariş listesinde görünür. Her şubede ayrı bir Mac kullanılıyorsa farklı ad verin.")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         if !store.canEditCatalog { ReadOnlyNote() }
                     }
                 }
 
-                CloudSyncCard(cloud: store.cloud)
-
-                Card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Hedefler ve uyarılar", systemImage: "target").font(.headline)
-                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
-                            targetRow("Hammadde maliyet oranı", .foodCostPct, \.targetFoodCostPct, hint: "ör. %30")
-                            targetRow("Personel oranı", .laborPct, \.targetLaborPct, hint: "ör. %25")
-                            targetRow("Prime cost oranı", .primeCost, \.targetPrimeCostPct, hint: "ör. %60")
-                            GridRow {
-                                HStack(spacing: 4) { Text("Fiyat artışı uyarısı").foregroundStyle(.secondary); InfoTip(term: .priceAlert) }
-                                HStack {
-                                    Text("%")
-                                    DecimalField(value: Binding(get: { store.settings.priceAlertPct * 100 },
-                                                                set: { v in store.updateSettings("Fiyat Uyarısı") { $0.priceAlertPct = max(v, 0) / 100 } }),
-                                                 maxFraction: 1, width: 70)
-                                    Text("ve üzeri artışlar son 30 gün içinde uyarılır").font(.callout).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .disabled(!store.canEditCatalog)
-                        Text("Hedefler Genel Bakış, Personel ve İstatistikler ekranlarında çubukla gösterilir; aşıldığında kırmızıya döner. Boş bırakılan hedef gösterilmez.")
-                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        if !store.canEditCatalog { ReadOnlyNote() }
-                    }
-                }
+                CloudSyncCard(cloud: store.cloud, openUsers: { store.section = .team })
 
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
@@ -110,7 +83,7 @@ struct BackupView: View {
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Excel").font(.headline)
-                        Text("Tüm günlerin envanteri eski \"Alımlar\" sayfasıyla aynı sütun düzeninde (Tarih, Ürün, Açılış, Gelen, … Fark) dışa aktarılır; ayrıca Özet, Günlük Maliyet ve Notlar sayfaları eklenir. Sayım formu, depoda elle doldurmak için yazdırılabilir bir listedir.")
+                        Text("Tüm günlerin envanteri eski \"Alımlar\" sayfasıyla aynı sütun düzeninde (Tarih, Ürün, Açılış, Gelen, … Fark) dışa aktarılır; ayrıca Özet, Günlük Durum ve (varsa) Notlar ile Ekip sayfaları eklenir. Sayım formu, depoda elle doldurmak için yazdırılabilir bir listedir.")
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         HStack {
                             Button {
@@ -122,7 +95,7 @@ struct BackupView: View {
                                 .buttonStyle(SoftButtonStyle())
                         }
                         Divider()
-                        Text("Eski Excel envanter dosyanızdaki (ör. 01.08.xlsm) geçmiş günlük kayıtları (Alımlar sayfası ve pivot önbelleği), Envanter sayfasındaki güncel sayımı ve yapıştırılmış ModPos satışlarını aktarır. Veri girilmiş günlerin üzerine yazmaz (isterseniz seçebilirsiniz).")
+                        Text("Eski Excel envanter dosyanızdaki (ör. 01.08.xlsm) geçmiş günlük kayıtları (Alımlar sayfası ve pivot önbelleği), Envanter sayfasındaki güncel sayımı ve yapıştırılmış ModPos satışlarını aktarır; yalnızca miktarlar alınır. Veri girilmiş günlerin üzerine yazmaz (isterseniz seçebilirsiniz).")
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         Button { store.pickAndImportWorkbook() } label: { Label("Excel Envanter Dosyası Seç ve Aktar…", systemImage: "tablecells.badge.ellipsis") }
                             .buttonStyle(PrimaryButtonStyle())
@@ -154,21 +127,6 @@ struct BackupView: View {
     }
 }
 
-extension BackupView {
-    /// Yüzde hedef satırı (veride 0–1 oranı, ekranda yüzde)
-    func targetRow(_ title: String, _ term: Term, _ kp: WritableKeyPath<AppSettings, Double?>, hint: String) -> GridRow<some View> {
-        GridRow {
-            HStack(spacing: 4) { Text(title).foregroundStyle(.secondary); InfoTip(term: term) }
-            HStack {
-                Text("%")
-                OptionalDecimalField(value: Binding(get: { store.settings[keyPath: kp].map { $0 * 100 } },
-                                                    set: { v in store.updateSettings("Hedef") { $0[keyPath: kp] = v.map { $0 / 100 } } }),
-                                     placeholder: hint, maxFraction: 1, width: 90)
-            }
-        }
-    }
-}
-
 struct HelpView: View {
     @State private var termFilter = ""
 
@@ -176,7 +134,7 @@ struct HelpView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("\(Brand.appName) — Nasıl Kullanılır?").font(.title2.weight(.semibold))
-                Text("Uygulama, Excel'deki envanter dosyanızın (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar; üstüne maliyet, kayıp, personel, sipariş ve menü analizleri ekler. Terimlerin yanındaki ⓘ işaretinin üzerine gelince ya da tıklayınca açıklaması görünür; tüm terimler en altta sözlükte.")
+                Text("Uygulama, Excel'deki envanter dosyanızın (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar; üstüne fark takibi, sipariş, ekip ve web paneliyle canlı eşitleme ekler. Terimlerin yanındaki ⓘ işaretinin üzerine gelince ya da tıklayınca açıklaması görünür; tüm terimler en altta sözlükte.")
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
                 section("Başlarken")
@@ -188,31 +146,28 @@ struct HelpView: View {
 
                 section("Günlük akış")
                 step(1, "Sayımı girin", "Günlük Sayım ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Genel Bakış'taki hızlı işlemlerden ya da menü çubuğundaki \"Sayım Formu (Excel)…\" komutuyla sayım formu alabilirsiniz.")
-                step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) uygulama penceresine sürükleyip bırakın (hangi ekranda olursanız olun) ya da \"Dosyadan Aktar\"a (⌘O) tıklayın. Kodu / Ürün Tipi / Adedi (varsa Tutar) sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa maliyet oranları ve menü analizi hesaplanır.")
-                step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (kayıp). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
-                step(4, "Vardiyaları girin", "Personel ekranında saatlik çalışanların saatini, yevmiyelilerin \"çalıştı\" işaretini (saat girilirse de çalıştı sayılır), varsa fazla mesai/prim tutarını girin. \"Vardiyaları Doldur\" boş vardiyalara varsayılanları yazar. Aylık maaşlar ayrıca girilmeden günlere dağıtılır. Zam yapınca ücrete tıklayıp \"bir tarihten itibaren\" seçin: önceki günler eski ücretle kalır.")
-                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin; hiç sayım girilmemiş gün kapatılamaz (düğmenin yanında yazar). Kilitli günün sayımı, satışı ve vardiyası değiştirilemez; gerekirse kilit açılır. Web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açabilir (web paneli de kabul etmez); bu yüzden kapatmadan önce günün sayım durumu (ör. \"14 / 21 kalem sayıldı, 7 kalem sayılmadı\") ve satış raporunun aktarılıp aktarılmadığı gösterilip onay istenir. Güne not ve sayımı yapan kişiyi \"Not / Sayan\" düğmesinden ekleyebilirsiniz.")
+                step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) uygulama penceresine sürükleyip bırakın (hangi ekranda olursanız olun) ya da \"Dosyadan Aktar\"a (⌘O) tıklayın. Kodu / Ürün Tipi / Adedi sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa yok sayılır; yalnızca adetler kullanılır.")
+                step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (fazla çıkış). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
+                step(4, "Ekibi tanımlayın", "Ekip ekranında çalışanları ad, görev (ör. Usta, Kasiyer) ve telefonla ekleyin; Günlük Sayım'daki \"Sayan\" listesi buradan gelir. İşten ayrılanı silmek yerine pasif yapın: geçmiş sayımlardaki adı korunur. Patron, web paneline bağlıyken aynı ekrandaki Kullanıcılar bölümünden giriş hesabı açar (kullanıcı adıyla, e-posta gerekmez), yetkisini ve şifresini değiştirir.")
+                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin; hiç sayım girilmemiş gün kapatılamaz (düğmenin yanında yazar). Kilitli günün sayımı ve satışı değiştirilemez; gerekirse kilit açılır. Web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açabilir (web paneli de kabul etmez); bu yüzden kapatmadan önce günün sayım durumu (ör. \"14 / 21 kalem sayıldı, 7 kalem sayılmadı\") ve satış raporunun aktarılıp aktarılmadığı gösterilip onay istenir. Güne not ve sayımı yapan kişiyi \"Not / Sayan\" düğmesinden ekleyebilirsiniz.")
 
                 section("Haftalık / aylık")
-                step(6, "Sipariş verin ve teslim alın", "Sipariş Önerisi son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir; teslim alınmamış siparişlerdeki miktarlar öneriden düşülür (\"Siparişte\" sütunu), böylece aynı mal iki kez sipariş edilmez. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince, teslimatın geldiği güne geçip siparişte \"Teslim al\" deyin: gelen miktarlar o günün Gelen sütununa işlenir, fatura birim fiyatı (1 adet/kg fiyatı) girerseniz birim maliyet güncellenir. Sipariş oluşturma ve teslim alma patron / müdür işidir: web paneline personel hesabıyla bağlı Mac'te bu düğmeler kapalıdır, teslimatı patron ya da müdür işler.")
-                step(7, "Raporları okuyun", "Genel Bakış ayın hammadde, personel ve prime cost oranlarını hedeflerle; Özet dönem toplamlarını; İstatistikler maliyet eğilimini, en çok kayıp veren kalemleri, zayi dağılımını, kalem grafiklerini, ABC analizini ve menü mühendisliğini gösterir. Her şey Excel'e aktarılabilir.")
-                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Maliyet değişiklikleri tarihli olarak fiyat geçmişine yazılır: geçmiş günler o günkü fiyatla değerlenir, kapanmış ayların oranları sonradan değişmez. Artışlar Genel Bakış'ta uyarılır.")
+                step(6, "Sipariş verin ve teslim alın", "Sipariş ekranı son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir; teslim alınmamış siparişlerdeki miktarlar öneriden düşülür (\"Siparişte\" sütunu), böylece aynı mal iki kez sipariş edilmez. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince, teslimatın geldiği güne geçip siparişte \"Teslim al\" deyin: gelen miktarlar o günün Gelen sütununa işlenir. Sipariş oluşturma ve teslim alma patron / müdür işidir: web paneline personel hesabıyla bağlı Mac'te bu düğmeler kapalıdır, teslimatı patron ya da müdür işler.")
+                step(7, "Raporları okuyun", "Genel Bakış seçili günün sayım ilerlemesini, sorunlu kalemleri, fazla çıkışları, kritik seviyenin altındaki stokları ve açık siparişleri; son 30 günün durum şeridini ve 14 günlük sorunlu kalem eğilimini gösterir. Raporlar > Dönem Özeti seçilen dönemde her kalemin açılış, gelen, satılan, zayi, fiili tüketim, fark ve fazla çıkış miktarlarını; Raporlar > Kalem Analizi tek bir kalemin beklenen ve fiili tüketimini, günlük farkını ve stok seviyesini grafikle gösterir. Dönem Excel'e aktarılabilir.")
+                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Reçete değişikliği, satış raporu olan günlerin Satılan ve Fark değerlerini yeni reçeteye göre yeniden hesaplar.")
 
                 section("Notlar ve ipuçları")
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
                         tip("clock", "Sayımı her gün aynı saatte (kapanıştan sonra) yapın. Açılış devri ve fark hesabı, günler arasındaki sayımların tutarlı olmasına dayanır.")
-                        tip("slider.horizontal.3", "Toleransı kalemin kendi biriminde (adet/kg) girin, yüzde değil: başlangıç için günlük tüketimin %1–2'si kadar bir miktar verin (ör. günde 30 kg patates → 0,3–0,6 kg; günde 200 adet 90 gr → 2–4 adet). Birkaç hafta sonra İstatistikler > Kalem Analizi'ndeki \"Tutarlılık\"a bakarak ayarlayın. Çok dar tolerans gereksiz alarm, çok geniş tolerans gözden kaçan kayıp demektir.")
+                        tip("slider.horizontal.3", "Toleransı kalemin kendi biriminde (adet/kg) girin, yüzde değil: başlangıç için günlük tüketimin %1–2'si kadar bir miktar verin (ör. günde 30 kg patates → 0,3–0,6 kg; günde 200 adet 90 gr → 2–4 adet). Birkaç hafta sonra Raporlar > Kalem Analizi'ndeki \"Tutarlılık\"a bakarak ayarlayın. Çok dar tolerans gereksiz alarm, çok geniş tolerans gözden kaçan fazla çıkış demektir.")
                         tip("arrow.triangle.2.circlepath", "Sayım ertesi sabah yapılıyorsa satış raporunu yine satışın olduğu güne aktarın; içe aktarma ekranı rapor tarihini gösterir.")
                         tip("exclamationmark.triangle", "Aynı kalemde her gün aynı yönde fark çıkıyorsa sorun genelde reçetededir (porsiyon, katsayı); farklar rastgele dağılıyorsa sayım hatası olasıdır.")
                         tip("equal.circle", "\"Hareketsizleri Doldur\"u yalnızca o gün gerçekten hiç kullanılmayan kalemlerde kullanın; kapanışa açılışı yazar.")
-                        tip("turkishlirasign.circle", "Birim maliyetleri faturadan güncel tutun; teslim almada fatura fiyatını girmek en kolay yoldur. Maliyeti olmayan kalemler ₺ hesaplarına katılmaz.")
-                        tip("person.2", "Personel oranı satış tutarı bilinen günlerden hesaplanır; kaydı hiç olmayan kapalı günlerin maaşı da eklenir. Aylık maaşlar ayın her gününe eşit dağıtıldığından ay ortasında oran, ay sonundakine göre dalgalanabilir. Personel eklerken işe giriş tarihini doğru verin: önceki günlere maaş yazılmaz.")
-                        tip("percent", "ModPos tutarları genelde KDV dahildir; sektördeki %25–35 hammadde hedefleri ise KDV hariç satışa göredir. Hedefinizi buna göre belirleyin.")
-                        tip("target", "Hedefleri (hammadde %, personel %, prime cost %) Ayarlar'dan girin; kartlardaki çubukta dikey çizgi hedefi gösterir, aşılınca kırmızıya döner.")
+                        tip("person.2", "\"Not / Sayan\"daki listede aktif ekip üyeleri görünür. Listede olmayan bir ad yazarsanız kaydederken ekibe de eklenir (personel hesabıyla ad yalnızca o güne yazılır); görevini ve telefonunu sonra Ekip ekranında tamamlayın.")
                         tip("arrow.uturn.backward", "Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alın. Veriler otomatik kaydedilir, her gün yedek alınır (Ayarlar ve Veri).")
                         tip("arrow.triangle.2.circlepath.icloud", Self.webPanelTip)
-                        tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Maliyet, Personel, Notlar.")
+                        tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Durum ve (varsa) Notlar ile Ekip.")
                     }
                 }
 
@@ -230,8 +185,11 @@ struct HelpView: View {
                         Group {
                             Text("⌘O  Satış raporu içe aktar     ⌘⇧V  Panodan satış yapıştır     ⌘E  Günü Excel'e aktar")
                             Text("⌘[  Önceki gün     ⌘]  Sonraki gün     ⌘T  Bugüne git     ⌘L  Günü kapat / aç")
-                            Text("⌘1…⌘9  Ekranlar arasında geçiş     ⌘,  Ayarlar     ⌘Z / ⇧⌘Z  Geri al / Yinele")
+                            Text("⌘1…⌘8  Ekranlar arasında geçiş     ⌘,  Ayarlar     ⌘Z / ⇧⌘Z  Geri al / Yinele")
                         }.font(.callout.monospaced()).foregroundStyle(.secondary)
+                        // Ekran kısayolları yan menüdeki sırayla (AppSection'dan; yeni ekran eklenince kendiliğinden güncellenir)
+                        Text(Self.screenShortcuts)
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -257,26 +215,33 @@ struct HelpView: View {
         .navigationTitle("Nasıl Kullanılır?")
     }
 
+    /// "⌘1 Genel Bakış · ⌘2 Günlük Sayım · … · ⌘8 Ekip": rakamlı ekran kısayolları (Git menüsüyle aynı)
+    static var screenShortcuts: String {
+        AppSection.allCases.compactMap { s -> String? in
+            guard let key = s.shortcut, key.character.isNumber else { return nil }
+            return "⌘\(key.character) \(s.title)"
+        }.joined(separator: "  ·  ")
+    }
+
     /// "Başlarken": dört başlangıç yolu (Genel Bakış'taki başlangıç kartıyla aynı sıra)
     static let gettingStarted: [(icon: String, text: String)] = [
         ("arrow.triangle.2.circlepath.icloud",
-         "Web paneline bağlanın: şubenin verisi web panelindeyse en kolay yol budur. Ayarlar ve Veri → Web paneli ile eşitleme kartında web paneli e-postanız ve şifrenizle \"Bağlan\"a basın; veriler kendiliğinden gelir. " + CloudSyncGuide.accountHelp),
+         "Web paneline bağlanın: şubenin verisi web panelindeyse en kolay yol budur. Ayarlar ve Veri → Web paneli ile eşitleme kartında web paneli kullanıcı adınız (ya da e-postanız) ve şifrenizle \"Bağlan\"a basın; veriler kendiliğinden gelir, sonra web panelindeki değişiklikler canlı bağlantıyla anında buraya yansır. " + CloudSyncCard.accountHelp),
         ("arrow.counterclockwise",
          "Yedekten geri yükleyin: başka bir Mac'te Ayarlar ve Veri → Yedek Oluştur… ile alınan .json dosyasını Ayarlar ve Veri → Yedekten Geri Yükle… ile yükleyin. Eski Excel envanter dosyanızdaki (.xlsm) geçmiş günleri \"Excel Envanter Dosyası Seç ve Aktar…\" ile aktarabilirsiniz."),
         ("shippingbox",
-         "Tanımları hazırlayın: hazır reçeteler ve stok kalemleri uygulamayla gelir. Stok Kalemleri'nde birim maliyet, kritik seviye ve toleransı girin; Reçeteler'de ürünlerin hammadde miktarlarını kontrol edin."),
+         "Tanımları hazırlayın: hazır reçeteler ve stok kalemleri uygulamayla gelir. Stok Kalemleri'nde kritik seviye ve toleransı girin; Reçeteler'de ürünlerin hammadde miktarlarını kontrol edin; Ekip ekranında sayımı yapanları ekleyin."),
         ("doc.badge.plus",
-         "İlk günü girin: ModPos satış raporunu aktarın, Günlük Sayım'da kapanış sayımını yazın. Genel Bakış'taki başlangıç kartı ilk kayıt (sayım, satış, vardiya, personel ya da sipariş) girilince kendiliğinden kaybolur."),
+         "İlk günü girin: ModPos satış raporunu aktarın, Günlük Sayım'da kapanış sayımını yazın. Genel Bakış'taki başlangıç kartı ilk kayıt (sayım, satış, ekip üyesi ya da sipariş) girilince kendiliğinden kaybolur."),
     ]
 
     /// Web paneli ipucu (hesap ve şifre yolları web panelindeki adlarla aynı)
     static let webPanelTip: String = [
-        "Web paneli: Ayarlar ve Veri → Web paneli ile eşitleme kartından web paneli hesabınızla bağlanın.",
-        CloudSyncGuide.accountHelp,
-        CloudSyncGuide.forgotPassword,
-        "Bağlıyken kart hesabı, rolü, şubeyi, son eşitleme saatini ve bekleyen değişiklikleri gösterir; sorun olursa ne olduğunu ve ne yapılacağını yazar. \"Bağlantı yok\": değişiklikler bu Mac'te saklanır, bağlantı gelince kendiliğinden gönderilir. \"Kurulum eksik\": web panelinin veritabanı henüz kurulmamış; patron kurulum talimatındaki veritabanı dosyasını Supabase SQL Editor'de bir kez çalıştırmalıdır. \"Giriş gerekli\": şifre değişti ya da oturumun süresi doldu; yeniden giriş yapın, bekleyen değişiklikler korunur.",
-        "Sayım, satış ve vardiyalar birkaç saniye içinde patron ve müdürlerin web paneline gider; web panelinde yapılan düzeltmeler (sayım, maliyet, sipariş, hedef) en geç bir dakika içinde buraya gelir. Aynı güne iki yerden farklı kalemler girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son kaydedilen geçerli olur.",
-        "Personel hesabıyla yalnızca günlük kayıtlar değiştirilebilir: stok kalemleri, reçeteler, personel, siparişler ve ayarlar salt okunurdur, kapatılmış günün kilidini yalnızca patron veya müdür açar. Çıkış yapınca şube eşleşmesi korunur; yeniden giriş yaptığınızda kaldığınız yerden devam edilir. Boş bir şubeye geçerken bu şubenin günleri kendiliğinden yüklenmez, ne kopyalanacağı sorulur. Tutar alanlarında (birim maliyet, fatura fiyatı, ücret) \"35.000\" otuz beş bin okunur.",
+        "Web paneli: Ayarlar ve Veri → Web paneli ile eşitleme kartından web paneli hesabınızın kullanıcı adı (ya da e-postası) ve şifresiyle bağlanın.",
+        CloudSyncCard.accountHelp,
+        "Bağlıyken kart hesabı, rolü, şubeyi, son eşitleme saatini, canlı bağlantının durumunu ve bekleyen değişiklikleri gösterir; sorun olursa ne olduğunu ve ne yapılacağını yazar. \"Bağlantı yok\": değişiklikler bu Mac'te saklanır, bağlantı gelince kendiliğinden gönderilir. \"Kurulum eksik\": web panelinin veritabanı henüz kurulmamış; patron kurulum talimatındaki veritabanı dosyasını Supabase SQL Editor'de bir kez çalıştırmalıdır. \"Giriş gerekli\": şifre değişti ya da oturumun süresi doldu; yeniden giriş yapın, bekleyen değişiklikler korunur.",
+        "Sayım, satış ve notlar birkaç saniye içinde patron ve müdürlerin web paneline gider; web panelinde yapılan değişiklikler (sayım, sipariş, ekip, stok kalemi, reçete) canlı bağlantıyla anında, bağlantı koparsa en geç bir dakika içinde buraya gelir. Aynı güne iki yerden farklı kalemler girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son kaydedilen geçerli olur.",
+        "Personel hesabıyla yalnızca günlük kayıtlar değiştirilebilir: stok kalemleri, reçeteler, ekip, siparişler ve ayarlar salt okunurdur, kapatılmış günün kilidini yalnızca patron veya müdür açar. Patron, Ekip ekranındaki Kullanıcılar bölümünden (ya da web panelinden) kullanıcı adıyla hesap açar, yetki ve şifre belirler. Çıkış yapınca şube eşleşmesi korunur; yeniden giriş yaptığınızda kaldığınız yerden devam edilir. Boş bir şubeye geçerken bu şubenin günleri kendiliğinden yüklenmez, ne kopyalanacağı sorulur.",
     ].joined(separator: " ")
 
     private func section(_ title: String) -> some View {

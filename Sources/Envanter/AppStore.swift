@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import EnvanterCore
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case overview, daily, sales, orders, labor, summary, analytics, recipes, items, backup, help
+    case overview, daily, sales, orders, reports, recipes, items, team, backup, help
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,12 +12,11 @@ enum AppSection: String, CaseIterable, Identifiable {
         // Web panelindeki adla aynı ("Günlük Sayım")
         case .daily: return "Günlük Sayım"
         case .sales: return "Satış Dökümü"
-        case .summary: return "Özet ve Raporlar"
-        case .analytics: return "İstatistikler"
-        case .orders: return "Sipariş Önerisi"
-        case .labor: return "Personel"
+        case .orders: return "Sipariş"
+        case .reports: return "Raporlar"
         case .recipes: return "Reçeteler"
         case .items: return "Stok Kalemleri"
+        case .team: return "Ekip"
         case .backup: return "Ayarlar ve Veri"
         case .help: return "Nasıl Kullanılır?"
         }
@@ -27,30 +26,46 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .overview: return "square.grid.2x2"
         case .daily: return "checklist"
         case .sales: return "cart"
-        case .summary: return "tablecells"
-        case .analytics: return "chart.xyaxis.line"
         case .orders: return "shippingbox.and.arrow.backward"
-        case .labor: return "person.2"
+        case .reports: return "chart.bar.xaxis"
         case .recipes: return "fork.knife"
         case .items: return "shippingbox"
+        case .team: return "person.2"
         case .backup: return "gearshape"
         case .help: return "questionmark.circle"
         }
     }
-    /// ⌘1… kısayolu
+    /// ⌘1… kısayolu (yan menüdeki sırayla: ⌘1 Genel Bakış … ⌘8 Ekip)
     var shortcut: KeyEquivalent? {
         switch self {
         case .overview: return "1"
         case .daily: return "2"
         case .sales: return "3"
         case .orders: return "4"
-        case .labor: return "5"
-        case .summary: return "6"
-        case .analytics: return "7"
-        case .recipes: return "8"
-        case .items: return "9"
+        case .reports: return "5"
+        case .recipes: return "6"
+        case .items: return "7"
+        case .team: return "8"
         case .backup: return ","
         case .help: return nil
+        }
+    }
+}
+
+/// Raporlar ekranının sekmeleri: dönem özeti (kalem kalem miktarlar) ve kalem analizi (beklenen / fiili tüketim, fark,
+/// stok seviyesi). Seçili sekme `AppStore.reportsTab`'da tutulur (Özet'teki "Ayrıntılı analiz" bağlantısı sekmeyi değiştirir).
+enum ReportsTab: String, CaseIterable, Identifiable {
+    case summary = "Dönem Özeti", item = "Kalem Analizi"
+    var id: String { rawValue }
+    /// Sekmenin ekrandaki adı
+    var title: String { rawValue }
+
+    /// Ekran görüntüsü aracı için kısa ad ("reports:summary", "reports:item:patates")
+    static func named(_ s: String) -> ReportsTab? {
+        switch s.lowercased() {
+        case "summary", "ozet": return .summary
+        case "item", "kalem": return .item
+        default: return nil
         }
     }
 }
@@ -89,9 +104,10 @@ final class AppStore: ObservableObject {
     @Published var recipeSelection: String?
     /// Satış dökümünden "Reçete tanımla" ile açılan taslak
     @Published var newProductDraft: SaleLine?
-    /// İstatistikler > Kalem analizi ekranında seçili stok kalemi
-    @Published var analyticsItem: String?
-    @Published var analyticsTab: AnalyticsTab = .general
+    /// Raporlar ekranında seçili sekme (Dönem Özeti / Kalem Analizi)
+    @Published var reportsTab: ReportsTab = .summary
+    /// Raporlar > Kalem Analizi'nde seçili stok kalemi (nil: ekran ilk kalemi seçer)
+    @Published var reportItem: String?
     @Published private(set) var saveState: SaveState = .saved
     @Published private(set) var lastSavedAt: Date?
     /// Web eşitlemesinde bu Mac'in şubedeki rolü (CloudSyncController günceller; eşleşme yoksa nil). Personel ise
@@ -123,14 +139,14 @@ final class AppStore: ObservableObject {
 
     var settings: AppSettings { data.settings }
 
-    /// Stok kalemleri, reçeteler, ayarlar, personel ve siparişler değiştirilebilir mi (personel hesabıyla hayır)
+    /// Stok kalemleri, reçeteler, ayarlar, ekip ve siparişler değiştirilebilir mi (personel hesabıyla hayır)
     var canEditCatalog: Bool { CloudRole.canWriteCatalog(enforcedRole) }
     /// Kapatılmış günü değiştirme / kilidini açma yetkisi (personel hesabıyla yok)
     var canChangeLockedDays: Bool { CloudRole.canChangeLockedDay(enforcedRole) }
     /// Gün bu kullanıcı için salt okunur mu: kapatılmış ve kilidi açılamıyor
     func isReadOnlyDay(_ date: String) -> Bool { isLocked(date) && !canChangeLockedDays }
 
-    /// İlk kullanım: bu Mac'te henüz günlük kayıt, personel ve sipariş yok (Genel Bakış başlangıç seçeneklerini gösterir)
+    /// İlk kullanım: bu Mac'te henüz günlük kayıt, ekip üyesi ve sipariş yok (Genel Bakış başlangıç seçeneklerini gösterir)
     var isFirstRun: Bool { Onboarding.isEmpty(data) }
 
     init(persistence: Persistence = Persistence(directory: Persistence.defaultDirectory())) {
@@ -173,6 +189,8 @@ final class AppStore: ObservableObject {
             lastBackupAt = Date()
         }
         cloud.attach(self)
+        // Şubeyle eşleşmemiş Mac: eski sayım yapanlar listesi ekibe taşınır (eşleşmiş Mac'te eşitleme turu yapar)
+        migrateLegacyStaffIfLocal()
     }
 
     // MARK: - Kayıt
@@ -288,7 +306,7 @@ final class AppStore: ObservableObject {
         guard let um = undoManager else { return true }
         // Geri alma yalnızca bu işlemin değiştirdiği belgelere ve onlarda yalnızca bu işlemin değiştirdiği alanlara
         // dokunur: arada web panelinden gelen değişiklikler (ör. aynı günde müdürün düzelttiği başka kalem, not ya da
-        // patronun değiştirdiği maliyet) geri alınmaz.
+        // patronun değiştirdiği kritik seviye) geri alınmaz.
         um.registerUndo(withTarget: self) { store in
             MainActor.assumeIsolated {
                 store.setData(DocCodec.undoing(keys: keys, old: old, new: new, current: store.data), actionName: actionName)
@@ -393,17 +411,19 @@ final class AppStore: ObservableObject {
         updateDay(date, actionName: "Gün Notu") { $0.note = v.isEmpty ? nil : v }
     }
 
+    /// Sayımı yapan kişi. Ekipte olmayan yeni bir ad yazılırsa aynı işlemde ekibe de eklenir (bir sonraki sayımda
+    /// seçilebilsin; `Team.rememberingCounter`). Personel hesabıyla ekip belgesi yazılamadığından ad yalnızca güne yazılır.
+    /// Eski hızlı seçim listesine (`settings.staff`) hiçbir zaman yazılmaz.
     func setCountedBy(_ date: String, _ name: String) {
         let v = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard v != (data.days[date]?.countedBy ?? "") else { return }
-        updateDay(date, actionName: "Sayımı Yapan") { $0.countedBy = v.isEmpty ? nil : v }
-        rememberStaff(v)
-    }
-
-    /// Personel hesabıyla ayarlar yazılamadığından ad listeye eklenmez (her yeni ad reddedilen bir yazma olurdu)
-    private func rememberStaff(_ name: String) {
-        guard let updated = settings.rememberingStaff(name, role: enforcedRole) else { return }
-        mutateData { $0.settings = updated }
+        let role = enforcedRole
+        mutateData("Sayımı Yapan") { d in
+            var day = d.days[date] ?? DayRecord(date: date)
+            day.countedBy = v.isEmpty ? nil : v
+            if day.isEmpty && !day.isLocked { d.days[date] = nil } else { d.days[date] = day }
+            if let team = Team.rememberingCounter(v, in: d, role: role) { d.employees = team }
+        }
     }
 
     /// Sayımı yapılmamış kalemlere önceki günün kapanışını aynen yazar (hareket olmayan kalemler için hızlı doldurma).
@@ -608,137 +628,117 @@ final class AppStore: ObservableObject {
         return applied ? (addedItems, addedProducts) : (0, 0)
     }
 
-    // MARK: - İstatistikler
+    // MARK: - Raporlar
 
-    /// İstatistikler açılırken: seçili gün verilen aralığın dışındaysa seçili günle biten 30 günlük aralık önerir.
-    func analyticsRange(containingSelectedDate from: String, _ to: String) -> (from: String, to: String)? {
+    /// Raporlar açılırken: seçili gün verilen aralığın dışındaysa seçili günle biten 30 günlük aralık önerir (nil: aralık
+    /// seçili günü kapsıyor, değiştirme).
+    func reportRange(containingSelectedDate from: String, _ to: String) -> (from: String, to: String)? {
         guard selectedDate < from || selectedDate > to else { return nil }
         return (DateKey.addDays(-29, to: selectedDate), selectedDate)
     }
 
-    func openItemAnalysis(_ itemID: String) {
-        analyticsItem = itemID
-        analyticsTab = .item
-        section = .analytics
+    /// Raporlar > Kalem Analizi'ni verilen stok kalemiyle açar (Dönem Özeti'ndeki "Ayrıntılı analiz" bağlantısı)
+    func openItemAnalysis(itemID: String) {
+        reportItem = itemID
+        reportsTab = .item
+        section = .reports
     }
 
-    // MARK: - Personel
+    // MARK: - Ekip
 
     var employees: [Employee] { data.employees }
 
-    func addEmployee(_ e: Employee) {
-        mutateData("Personel Ekle") { $0.employees.append(e) }
+    /// "Sayan" seçimindeki adlar: aktif ekip üyeleri (liste sırasıyla), sonra ekipte olmayan eski hızlı seçim adları
+    /// (`Team.counterNames`; yeniden sıralanmaz)
+    var counterNames: [String] { Team.counterNames(data) }
+
+    /// Giriş hesabına (e-posta; kullanıcı adı hesaplarında ad@envanter.local) bağlı ekip üyesi; yoksa nil.
+    /// Büyük/küçük harf farkı yok sayılır.
+    func employee(linkedTo account: String) -> Employee? {
+        let key = TextFold.asciiLowercased(account.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !key.isEmpty else { return nil }
+        return data.employees.first { $0.account.map { TextFold.asciiLowercased($0) } == key }
     }
 
-    func updateEmployee(_ id: String, actionName: String = "Personel Düzenleme", _ mutate: (inout Employee) -> Void) {
-        mutateData(actionName) { d in
-            guard let i = d.employees.firstIndex(where: { $0.id == id }) else { return }
-            mutate(&d.employees[i])
+    /// Yeni ekip üyesi ("Eleman Ekle" ile geri alınır)
+    @discardableResult
+    func addEmployee(_ e: Employee) -> Bool {
+        mutateData("Eleman Ekle") { $0.employees.append(e) }
+    }
+
+    /// Ekip üyesini değiştirir. Değişiklik yoksa geri alma geçmişine boş adım eklenmez.
+    /// - Returns: uygulandı mı (üye yoksa ya da personel hesabıyla reddedilirse false; değişiklik yoksa true)
+    @discardableResult
+    func updateEmployee(_ id: String, actionName: String = "Eleman Düzenleme", _ mutate: (inout Employee) -> Void) -> Bool {
+        guard let i = data.employees.firstIndex(where: { $0.id == id }) else { return false }
+        var e = data.employees[i]
+        mutate(&e)
+        guard e != data.employees[i] else { return true }
+        return mutateData(actionName) { d in
+            if let j = d.employees.firstIndex(where: { $0.id == id }) { d.employees[j] = e }
         }
     }
 
-    /// İşten ayrılış: geçmiş maliyetler korunur, seçili günden sonra maliyet yazılmaz
-    func markEmployeeLeft(_ id: String, on date: String) {
-        updateEmployee(id, actionName: "Personel Ayrıldı") { $0.endDate = date; $0.active = false }
-    }
-
-    /// Ücret değişikliği: `from` verilirse o günden itibaren (zam), nil ise tüm dönem için düzeltme
-    func changePay(_ id: String, payType: PayType, rate: Double, costFactor: Double, from: String?) {
-        updateEmployee(id, actionName: from == nil ? "Ücret Düzeltme" : "Ücret Değişikliği") {
-            $0.setTerms(payType: payType, rate: rate, costFactor: costFactor, from: from)
+    /// "Pasif yap" / "Aktif yap": pasif üye listede kalır ama Sayan seçiminde görünmez (geçmiş sayımlardaki ad korunur).
+    /// Yeniden aktif yapılan üyenin ayrılış tarihi kaldırılır.
+    @discardableResult
+    func setEmployeeActive(_ id: String, _ active: Bool) -> Bool {
+        updateEmployee(id, actionName: active ? "Eleman Aktif" : "Eleman Pasif") { e in
+            e.active = active
+            if active { e.endDate = nil }
         }
     }
 
-    /// Giriş/ayrılış tarihlerini düzenler (ayrılış kaldırılırsa personel yeniden aktif olur)
-    func setEmployeeDates(_ id: String, start: String?, end: String?) {
-        updateEmployee(id, actionName: "Personel Tarihleri") {
-            $0.startDate = start
-            $0.endDate = end
-            if end == nil { $0.active = true }
-        }
+    /// Ekip üyesini siler (yanlış girilen kayıt için). Yalnızca ekip belgesi değişir: geçmiş günlerdeki Sayan adı ve
+    /// bağlı giriş hesabı olduğu gibi kalır (hesap Kullanıcılar bölümünden çıkarılır).
+    @discardableResult
+    func deleteEmployee(_ id: String) -> Bool {
+        guard data.employees.contains(where: { $0.id == id }) else { return false }
+        return mutateData("Eleman Sil") { $0.employees.removeAll { $0.id == id } }
     }
 
-    /// Verilen tarihten itibaren kapatılmış gün sayısı (geriye dönük değişikliklerde uyarı için)
-    func lockedDays(from date: String) -> Int {
-        data.days.filter { $0.key >= date && $0.value.isLocked }.count
-    }
-
-    /// Personeli ve tüm vardiya kayıtlarını siler (yanlış girilen kayıt için)
-    func deleteEmployee(_ id: String) {
-        mutateData("Personel Sil") { d in
-            d.employees.removeAll { $0.id == id }
-            for (k, var day) in d.days where day.shifts?[id] != nil {
-                day.shifts?[id] = nil
-                if day.isEmpty { d.days[k] = nil } else { d.days[k] = day }
+    /// Ekip üyesini giriş hesabına bağlar. `email`: hesabın e-postası ya da kullanıcı adı (`LoginName`; ad@envanter.local
+    /// olarak saklanır); nil ya da boş: bağlantı kaldırılır. Bir hesap tek üyeye bağlanır: başka üyede aynı hesap varsa
+    /// oradan kaldırılır. Hesabın kendisine dokunulmaz.
+    @discardableResult
+    func linkAccount(employeeID: String, email: String?) -> Bool {
+        guard data.employees.contains(where: { $0.id == employeeID }) else { return false }
+        let account = email.flatMap { LoginName.email(from: $0) }
+        var list = data.employees
+        for i in list.indices {
+            let current = list[i].account.map { TextFold.asciiLowercased($0) }
+            if list[i].id == employeeID {
+                list[i].account = account
+            } else if let account, current == account {
+                list[i].account = nil
             }
         }
+        guard list != data.employees else { return true }
+        return mutateData(account == nil ? "Giriş Hesabı Bağlantısını Kaldır" : "Giriş Hesabı Bağla") { $0.employees = list }
     }
 
-    func updateShift(_ employeeID: String, date: String, _ mutate: (inout ShiftEntry) -> Void) {
-        guard !isLocked(date) else { NSSound.beep(); return }
-        updateDay(date, actionName: "Vardiya") { day in
-            var shifts = day.shifts ?? [:]
-            var e = shifts[employeeID] ?? ShiftEntry()
-            mutate(&e)
-            shifts[employeeID] = e.isEmpty ? nil : e
-            day.shifts = shifts.isEmpty ? nil : shifts
-        }
+    /// Eski sayım yapanlar listesi (`settings.staff`) yalnızca bu Mac'te ekibe taşınabilir mi: web eşitlemesi açık
+    /// (otomatik test / ekran görüntüsü modunda değil) ve Mac bir şubeyle eşleşmemiş. Eşleşmiş Mac'te taşımayı eşitleme
+    /// turu yapar (`CloudSyncEngine.syncOnce`, rol tanımları yazabiliyorsa).
+    private var migratesLegacyStaffLocally: Bool { cloud.enabled && !cloud.isLinked }
+
+    /// Açılışta: şubeyle eşleşmemiş Mac'te eski sayan adlarını belirlenimci kimliklerle ekibe taşır.
+    private func migrateLegacyStaffIfLocal() {
+        guard migratesLegacyStaffLocally else { return }
+        applyLegacyStaffMigration()
     }
 
-    func shiftBinding(_ employeeID: String, date: String, _ kp: WritableKeyPath<ShiftEntry, Double?>) -> Binding<Double?> {
-        Binding(get: { self.data.days[date]?.shifts?[employeeID]?[keyPath: kp] },
-                set: { v in self.updateShift(employeeID, date: date) { $0[keyPath: kp] = v } })
-    }
-
-    /// Yevmiyeli için "çalıştı": saat girilmişse de çalışmış sayılır; işaret kaldırılınca saat de silinir
-    /// (yoksa işaret kapalı görünürken yevmiye yazılmaya devam ederdi).
-    func workedBinding(_ employeeID: String, date: String) -> Binding<Bool> {
-        Binding(get: {
-                    let s = self.data.days[date]?.shifts?[employeeID]
-                    return s?.worked == true || (s?.hours ?? 0) > 0
-                },
-                set: { v in
-                    self.updateShift(employeeID, date: date) {
-                        if v { $0.worked = true } else { $0.worked = nil; $0.hours = nil }
-                    }
-                })
-    }
-
-    func otherLaborBinding(_ date: String) -> Binding<Double?> {
-        Binding(get: { self.data.days[date]?.otherLabor },
-                set: { v in
-                    guard !self.isLocked(date) else { NSSound.beep(); return }
-                    self.updateDay(date, actionName: "Diğer Personel Gideri") { $0.otherLabor = (v ?? 0) > 0 ? v : nil }
-                })
-    }
-
-    /// Boş vardiyaları varsayılanla doldurur: saatlikler varsayılan saat, yevmiyeliler "çalıştı"
-    func fillDefaultShifts(date: String) -> Int {
-        guard !isLocked(date) else { return 0 }
-        let existing = data.days[date]?.shifts ?? [:]
-        var fills: [String: ShiftEntry] = [:]
-        for e in data.employees where e.active && e.isEmployed(on: date) && (existing[e.id]?.isEmpty ?? true) {
-            switch e.terms(on: date).payType {
-            case .daily: fills[e.id] = ShiftEntry(worked: true)
-            case .hourly, .monthly: if let h = e.defaultHours, h > 0 { fills[e.id] = ShiftEntry(hours: h) }
-            }
-        }
-        // Doldurulacak bir şey yoksa geri alma geçmişine boş adım eklenmez
-        guard !fills.isEmpty else { return 0 }
-        let applied = updateDay(date, actionName: "Vardiyaları Doldur") { day in
-            var shifts = day.shifts ?? [:]
-            for (id, s) in fills { shifts[id] = s }
-            day.shifts = shifts
-        }
-        return applied ? fills.count : 0
-    }
-
-    // MARK: - Fiyat geçmişi
-
-    /// Birim maliyeti değiştirir ve değişikliği fiyat geçmişine yazar
-    func setItemCost(_ id: String, _ cost: Double?) {
-        let today = DateKey.today()
-        updateItem(id, actionName: "Birim Maliyet") { $0.setCost(cost, on: today) }
+    /// Eski sayan adlarını ekibe taşır (`Team.migratingLegacyStaff`) ve `settings.staff`'ı boşaltır. Geri alma geçmişine
+    /// eklenmez (⌘Z eski listeyi geri getirip taşımayı yinelerdi); kayıt normal değişiklikteki gibi yapılır. Eşleşmemiş
+    /// Mac'te gönderilecek bir şey yoktur. Koşulları çağıran denetler (açılış; kendi kendini sınama doğrudan çağırır).
+    /// - Returns: veri değişti mi
+    @discardableResult
+    func applyLegacyStaffMigration() -> Bool {
+        guard let migrated = Team.migratingLegacyStaff(data) else { return false }
+        let keys = DocCodec.changedKeys(data, migrated)
+        data = migrated
+        cloud.noteLocalChange(keys)
+        return true
     }
 
     // MARK: - Satın alma siparişleri
@@ -755,13 +755,16 @@ final class AppStore: ObservableObject {
         return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
     }
 
-    func receiveOrder(_ id: String, on date: String, quantities: [String: Double], prices: [String: Double]) -> Bool {
+    /// Siparişi teslim alır: gelen miktarlar o günün Gelen sütununa eklenir (yalnızca miktar; fiyat yok).
+    /// - Returns: teslim alındı mı (sipariş açık değilse, gün kapatılmışsa ya da personel hesabıyla false)
+    @discardableResult
+    func receiveOrder(_ id: String, on date: String, quantities: [String: Double]) -> Bool {
         var copy = data
         do {
-            let r = try Purchasing.receive(orderID: id, on: date, quantities: quantities, prices: prices, data: &copy)
+            let lines = try Purchasing.receive(orderID: id, on: date, quantities: quantities, data: &copy)
             guard mutateData("Teslim Al", { $0 = copy }) else { return false }
             alert = AppAlert(title: "Teslim alındı",
-                             message: "\(r.lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi" + (r.priceUpdates > 0 ? "; \(r.priceUpdates) kalemin birim maliyeti fatura fiyatıyla güncellendi." : "."))
+                             message: "\(lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi.")
             return true
         } catch {
             alert = AppAlert(title: "Teslim alınamadı", message: error.localizedDescription)
@@ -847,7 +850,9 @@ final class AppStore: ObservableObject {
             let restored = try Persistence.decode(Data(contentsOf: url))
             // Mevcut hali güvenlik için ayrıca yedekle
             if let current = try? persistence.encode(data) { persistence.snapshot(current, label: "geri-yukleme-oncesi") }
-            guard mutateData("Yedekten Geri Yükleme", { $0 = restored }) else { return }
+            // Şubeyle eşleşmemiş Mac'te eski yedeğin sayan listesi aynı adımda ekibe taşınır (geri alınınca ikisi birden döner)
+            let applied = migratesLegacyStaffLocally ? (Team.migratingLegacyStaff(restored) ?? restored) : restored
+            guard mutateData("Yedekten Geri Yükleme", { $0 = applied }) else { return }
             alert = AppAlert(title: "Yedek geri yüklendi",
                              message: "\(Engine(data: restored).datesWithData.count) günlük kayıt ve \(restored.products.count) ürün reçetesi yüklendi. Önceki hal \"Yedekler\" klasörüne kaydedildi; Düzen > Geri Al ile de dönebilirsiniz.")
         } catch {

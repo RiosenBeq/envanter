@@ -1,7 +1,8 @@
 import SwiftUI
 import EnvanterCore
 
-/// Sipariş önerisi: son günlerin ortalama tüketimine ve kritik seviyeye göre ne kadar sipariş verilmeli.
+/// Sipariş: son günlerin ortalama tüketimine ve kritik seviyeye göre ne kadar sipariş verilmeli (öneri), kaydedilen
+/// satın alma siparişleri ve teslim alma (gelen miktarlar Gelen sütununa işlenir; tutar tutulmaz).
 struct OrdersView: View {
     @EnvironmentObject var store: AppStore
     @State private var onlyNeeded = true
@@ -14,8 +15,6 @@ struct OrdersView: View {
         let date = store.selectedDate
         let all = store.orderSuggestions(date: date)
         let list = onlyNeeded ? all.filter { $0.suggested > 0 } : all
-        let totalCost = all.compactMap { $0.suggested > 0 ? $0.cost : nil }.reduce(0, +)
-        let hasCosts = all.contains { $0.item.unitCost != nil }
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 DateNavigator(compact: true)
@@ -76,9 +75,6 @@ struct OrdersView: View {
                 InfoTip(term: .orderSuggestion)
                 if !store.canEditCatalog { ReadOnlyNote(text: CloudPermission.ordersStaffNote) }
                 Spacer()
-                if hasCosts && totalCost > 0 {
-                    Text("Tahmini tutar: \(Fmt.money(totalCost))").font(.callout.weight(.semibold))
-                }
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
 
@@ -144,10 +140,6 @@ struct OrdersView: View {
                         }
                         .monospacedDigit().frame(maxWidth: .infinity, alignment: .trailing)
                     }.width(130)
-                    TableColumn("Tutar") { s in
-                        Text(s.suggested > 0 ? (s.cost.map { Fmt.money($0) } ?? "—") : "").monospacedDigit().foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }.width(100)
                 }
             }
             if !store.data.purchaseOrders.isEmpty {
@@ -158,13 +150,13 @@ struct OrdersView: View {
             Divider()
             HStack(spacing: 14) {
                 Label("Önerilen = günlük tüketim × gün sayısı + kritik seviye − mevcut stok − siparişte", systemImage: "function")
-                Label("Kritik seviye ve maliyet Stok Kalemleri ekranından girilir", systemImage: "shippingbox")
+                Label("Kritik seviye Stok Kalemleri ekranından girilir", systemImage: "shippingbox")
                 Spacer()
             }
             .font(.caption).foregroundStyle(.secondary)
             .padding(.horizontal, 20).padding(.vertical, 8)
         }
-        .navigationTitle("Sipariş Önerisi")
+        .navigationTitle("Sipariş")
         .sheet(item: $receiving) { o in ReceiveSheet(order: o).environmentObject(store) }
     }
 
@@ -225,7 +217,6 @@ private struct OrderRow: View {
             let q = l.received ?? l.qty
             return "\(item.name) \(Fmt.number(q, maxFraction: item.isKg ? 1 : 0))"
         }.joined(separator: " · ")
-        let cost = Purchasing.estimatedCost(order, items: items)
         var title: String = DateKey.short(order.date)
         if !order.supplier.isEmpty { title += " · " + order.supplier }
         if let r = order.receivedOn { title += " → teslim " + DateKey.short(r) }
@@ -237,7 +228,7 @@ private struct OrderRow: View {
                 Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            if cost > 0 { Text(Fmt.money(cost)).monospacedDigit().foregroundStyle(.secondary) }
+            Text("\(order.lines.count) kalem").font(.callout).foregroundStyle(.secondary)
             if order.status == .open {
                 Button("Teslim al") { receiving = order }.buttonStyle(SoftButtonStyle(tint: Brand.positive))
                     .disabled(!store.canEditCatalog)
@@ -257,28 +248,27 @@ private struct OrderRow: View {
     }
 }
 
-/// Teslim alma: gelen miktar ve (isteğe bağlı) fatura birim fiyatı
+/// Teslim alma: gelen miktarlar (yalnızca miktar; fiyat sorulmaz)
 private struct ReceiveSheet: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
     let order: PurchaseOrder
     @State private var quantities: [String: Double?] = [:]
-    @State private var prices: [String: Double?] = [:]
 
     var body: some View {
         let items = store.engine.itemsByID
         let date = store.selectedDate
         VStack(alignment: .leading, spacing: 14) {
             Text("Teslim al").font(.title2.weight(.semibold))
-            Text("Gelen miktarlar \(DateKey.long(date)) gününün Gelen sütununa eklenecek. Fatura fiyatı girerseniz fiyat geçmişine yazılır ve kalemin birim maliyeti güncellenir (daha yeni tarihli bir fiyat varsa o korunur).")
+            Text("Gelen miktarlar \(DateKey.long(date)) gününün Gelen sütununa eklenecek. Eksik gelen kalemin miktarını düzeltin; hiç gelmediyse 0 yazın.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
                 GridRow {
                     Text("Kalem").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text("Sipariş").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text("Gelen").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text("Fatura fiyatı (₺ / envanter birimi)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        .help("Koli/paket fiyatı değil; 1 adet veya 1 kg'ın KDV hariç fiyatı")
+                    // Birim sütunu (başlıksız)
+                    Color.clear.frame(width: 1, height: 1)
                 }
                 ForEach(order.lines) { l in
                     let item = items[l.itemID]
@@ -287,17 +277,7 @@ private struct ReceiveSheet: View {
                         Text("\(Fmt.number(l.qty, maxFraction: 2)) \(item?.unit.lowercased() ?? "")").monospacedDigit().foregroundStyle(.secondary)
                         OptionalDecimalField(value: Binding(get: { quantities[l.itemID] ?? l.qty }, set: { quantities[l.itemID] = $0 }),
                                              placeholder: "0", maxFraction: 3, width: 100, live: true)
-                        HStack(spacing: 6) {
-                            OptionalDecimalField(value: Binding(get: { prices[l.itemID] ?? nil }, set: { prices[l.itemID] = $0 }),
-                                                 placeholder: item?.unitCost.map { Fmt.number($0, maxFraction: 2) } ?? "—", maxFraction: 2, width: 110, live: true,
-                                                 amount: true)
-                            Text("/ \(item?.unit.lowercased() ?? "birim")").font(.caption).foregroundStyle(.secondary)
-                            // Koli fiyatı gibi yanlış birimle girilen fiyatlara karşı uyarı (güncel maliyetten %50'den fazla sapma)
-                            if let p = prices[l.itemID] ?? nil, let c = item?.unitCost, c > 0, abs(p - c) / c > 0.5 {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.warn)
-                                    .help("Güncel birim maliyetten (\(Fmt.money(c))) çok farklı. Koli/paket fiyatı değil, 1 \(item?.unit.lowercased() ?? "birim") fiyatı girildiğinden emin olun.")
-                            }
-                        }
+                        Text(item?.unit.lowercased() ?? "").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -312,17 +292,14 @@ private struct ReceiveSheet: View {
                 Spacer()
                 Button("Vazgeç") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Teslim Al") {
-                    var q: [String: Double] = [:], p: [String: Double] = [:]
-                    for l in order.lines {
-                        q[l.itemID] = (quantities[l.itemID] ?? l.qty) ?? 0
-                        if let price = prices[l.itemID] ?? nil { p[l.itemID] = price }
-                    }
-                    if store.receiveOrder(order.id, on: date, quantities: q, prices: p) { dismiss() }
+                    var q: [String: Double] = [:]
+                    for l in order.lines { q[l.itemID] = (quantities[l.itemID] ?? l.qty) ?? 0 }
+                    if store.receiveOrder(order.id, on: date, quantities: q) { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                 .disabled(store.isLocked(date) || !store.canEditCatalog)
             }
         }
-        .padding(22).frame(width: 700)
+        .padding(22).frame(width: 520)
     }
 }

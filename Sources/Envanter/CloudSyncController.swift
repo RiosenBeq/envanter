@@ -27,8 +27,10 @@ struct InitialDecision: Identifiable {
 }
 
 /// Mac uygulamasının web paneliyle (Supabase) arka planda eşitlenmesi (docs/SYNC.md).
-/// Değişiklikten 8 sn sonra, 60 sn'de bir ve uygulama öne gelince eşitler. Otomatik test (ENVANTER_SELFTEST)
-/// ve ekran görüntüsü (ENVANTER_SNAPSHOT_DIR) modlarında kapalıdır.
+/// Web panelindeki değişiklik canlı bağlantıyla (Supabase Realtime, `RealtimeClient`) anında çekilir; yerel değişiklik
+/// `CloudDefaults.debounceSeconds` (2 sn) sonra gönderilir. 60 sn'lik düzenli tur ve uygulamanın öne gelişi güvenlik
+/// ağıdır (canlı bağlantı kopukken de çalışır). Otomatik test (ENVANTER_SELFTEST) ve ekran görüntüsü
+/// (ENVANTER_SNAPSHOT_DIR) modlarında kapalıdır; canlı bağlantı da kurulmaz.
 @MainActor
 final class CloudSyncController: ObservableObject {
     @Published private(set) var status: CloudStatus = .off {
@@ -43,7 +45,12 @@ final class CloudSyncController: ObservableObject {
     /// Son eşitleme / bağlanma hatası: ne olduğu ve ne yapılacağı `issue` ile gösterilir
     @Published private(set) var lastError: CloudSyncError?
     @Published private(set) var state: SyncState {
-        didSet { publishRole() }
+        // Tek yaşam döngüsü kancası: rol, canlı bağlantının açılıp kapanması (bağlanma, şube seçimi / değişimi, ilk
+        // bağlantı kararı, çıkış, oturum süresinin dolması) ve yenilenen erişim anahtarı buradan izlenir
+        didSet {
+            publishRole()
+            updateRealtime(tokenChanged: oldValue.accessToken != state.accessToken)
+        }
     }
     /// Birden fazla şube varsa seçim listesi
     @Published private(set) var workspaces: [CloudWorkspace] = []
@@ -55,6 +62,9 @@ final class CloudSyncController: ObservableObject {
     @Published var notice: String?
     /// Gönderim ilerlemesi (çok sayıda belge yüklenirken)
     @Published private(set) var progress: (done: Int, total: Int)?
+    /// Canlı bağlantının (Supabase Realtime) durumu: `.connected` iken web panelindeki değişiklikler anında gelir;
+    /// değilse 60 sn'lik düzenli eşitleme sürer. Bağlı değilken ya da bu modda kapalıyken `.disconnected`.
+    @Published private(set) var realtimeStatus: RealtimeStatus = .disconnected
     /// Kapatılmış gün uyarısı bu oturumda gösterildi mi (bir kez)
     private var lockedDayNoticeShown = false
 
@@ -85,6 +95,16 @@ final class CloudSyncController: ObservableObject {
     private var roleCheckRequested = false
     /// Kayıtlı sunucu eski varsayılan projeydi; açılışta yeni varsayılana geçildi (`SyncState.movingOffRetiredDefault`)
     private var movedOffRetiredDefault = false
+    /// Canlı bağlantı istemcisi (ilk bağlanmada oluşturulur; otomatik test / ekran görüntüsü modunda hiç oluşturulmaz).
+    /// deinit'ten de durdurulabilsin diye Sendable bir kutuda tutulur.
+    private let realtimeBox = RealtimeBox()
+    /// Çalışan canlı bağlantının anahtarı (sunucu | anahtar | şube); nil: kapalı. Değişince bağlantı yeniden kurulur.
+    private var realtimeKey: String?
+    /// Canlı bağlantıdan değişiklik bildirimi geldi ve eşitleme sürüyordu: tur bitince yeni tur 2 sn yerine 0,3 sn sonra
+    private var remotePending = false
+    /// Son "Bağlan" denemesindeki giriş adı (e-posta; kullanıcı adı ad@envanter.local): giriş hatasının metni kullanıcı adı
+    /// hesabına göre seçilir
+    private var lastLogin: String?
 
     init(directory: URL, enabled: Bool, diskQueue: DiskWriteQueue) {
         self.enabled = enabled
@@ -97,6 +117,10 @@ final class CloudSyncController: ObservableObject {
         } else {
             state = loaded
         }
+    }
+
+    deinit {
+        realtimeBox.client?.stop()
     }
 
     // MARK: - Durum
@@ -116,14 +140,59 @@ final class CloudSyncController: ObservableObject {
     var role: String? { state.config?.role }
     var pendingChanges: Int { state.dirty.count }
 
+    /// Bu Mac bir şubeyle eşleşmiş mi (şube seçilmiş ve ilk bağlantı kararı verilmiş; oturum kapalı olsa da). Eşleşmemiş
+    /// Mac'te eski sayan listesi yerelde ekibe taşınır (AppStore); eşleşmişte bunu eşitleme turu yapar.
+    var isLinked: Bool { enabled && state.config?.workspaceID != nil && state.initialized }
+
+    /// Oturumdaki kullanıcının kimliği (erişim anahtarındaki `sub`; oturum yoksa nil). Kullanıcılar panelinde kendi
+    /// satırını tanımak için (kendi şifresi, kendi yetkisi, kendini çıkarma).
+    var currentUserID: String? { state.accessToken.flatMap { JWTClaims.subject($0) } }
+
+    /// Kullanıcı hesaplarını bu Mac'ten yönetebilir mi: web paneline bağlı ve bu şubede patron
+    var canManageMembers: Bool { isConnected && role == CloudRole.owner }
+
+    /// Canlı bağlantı açık mı: web panelindeki değişiklikler anında gelir
+    var isLive: Bool { isConnected && realtimeStatus == .connected }
+
     /// Güncel sorun (yoksa nil): kısa ad, açıklama ve ne yapılacağı. Bağlıyken oluşan hatada değişikliklerin bu Mac'te
     /// beklediği ve kendiliğinden gönderileceği; bağlanırken oluşan hatada yeniden "Bağlan"a basılacağı söylenir.
     var issue: CloudIssue? {
         guard let e = lastError else { return nil }
         switch status {
-        case .error, .syncing: return e.issue(connected: state.isActive)
+        case .error, .syncing:
+            return Self.issue(for: e, connected: state.isActive, login: lastLogin ?? state.userEmail ?? state.config?.email)
         case .idle, .off: return nil
         }
+    }
+
+    /// Hatanın ekrandaki hali. Giriş hatalarında metin web panelinin giriş ekranıyla aynı yolu söyler: kullanıcı adı
+    /// hesabında şifreyi patron "Şifre belirle" ile yeniler (e-postayla sıfırlama yok), e-posta hesabında web panelinin
+    /// giriş ekranındaki "Şifremi unuttum" kullanılır.
+    /// - Parameters:
+    ///   - connected: bu Mac bir şubeyle eşitlenirken mi oldu
+    ///   - login: denenen giriş adı (e-posta; kullanıcı adı hesaplarında ad@envanter.local)
+    nonisolated static func issue(for e: CloudSyncError, connected: Bool, login: String?) -> CloudIssue {
+        var issue = e.issue(connected: connected)
+        let username = login.map { LoginName.isUsernameEmail($0) } ?? false
+        switch e {
+        case .invalidCredentials:
+            if username {
+                issue.message = "Kullanıcı adı veya şifre hatalı."
+                issue.hint = "Büyük/küçük harfe dikkat edin. Şifrenizi unuttuysanız patronunuz web panelinde Yönetim → Kullanıcılar ekranında (ya da kendi Mac'inde Ekip → Kullanıcılar bölümünde) “Şifre belirle” ile size yeni bir geçici şifre verir; kullanıcı adı hesaplarında e-postayla şifre sıfırlama yoktur."
+            } else {
+                issue.message = "E-posta veya şifre hatalı."
+                issue.hint = "Büyük/küçük harfe dikkat edin. Şifrenizi unuttuysanız web panelinin giriş ekranındaki “Şifremi unuttum”u kullanın ya da patronunuzdan Yönetim → Kullanıcılar → “Şifre belirle” ile yeni bir şifre isteyin."
+            }
+        case .emailNotConfirmed:
+            issue.message = "E-posta adresiniz henüz doğrulanmadı."
+            issue.hint = "Kayıt olurken gelen e-postadaki doğrulama bağlantısına tıklayın (gereksiz/spam klasörüne de bakın). E-posta gelmediyse patronunuz Yönetim → Kullanıcılar → “Hesap oluştur” ile aynı e-postayı ve size vereceği geçici şifreyi girerek hesabınızı açabilir; sonra o şifreyle bağlanırsınız."
+        case .network where !connected:
+            issue.message = "Sunucuya ulaşılamıyor."
+            issue.hint = "İnternet bağlantınızı kontrol edip yeniden \"Bağlan\"a basın. Bu sırada uygulamayı kullanmaya devam edebilirsiniz; veriler bu Mac'e kaydedilir."
+        default:
+            break
+        }
+        return issue
     }
 
     // MARK: - Başlatma
@@ -143,7 +212,7 @@ final class CloudSyncController: ObservableObject {
         if movedOffRetiredDefault {
             // Eski projenin oturum anahtarları ve şube eşleşmesi dosyadan da silinsin
             saveState()
-            notice = "Eşitleme sunucusu değişti (yeni Supabase projesi). Bu Mac'teki veriler yerinde duruyor; web paneli e-postanız ve şifrenizle yeniden bağlanıp şubeyi seçin."
+            notice = "Eşitleme sunucusu değişti (yeni Supabase projesi). Bu Mac'teki veriler yerinde duruyor; web paneli kullanıcı adınız (ya da e-postanız) ve şifrenizle yeniden bağlanıp şubeyi seçin."
         }
 
         let nc = NotificationCenter.default
@@ -151,7 +220,10 @@ final class CloudSyncController: ObservableObject {
             MainActor.assumeIsolated { self?.appBecameActive() }
         })
         observers.append(nc.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.saveStateNow() }
+            MainActor.assumeIsolated {
+                self?.stopRealtime()
+                self?.saveStateNow()
+            }
         })
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -160,6 +232,8 @@ final class CloudSyncController: ObservableObject {
                 self.syncNow()
             }
         }
+        // Kayıtlı oturumla açılış: canlı bağlantı hemen kurulur (state didSet başlatıcıda çalışmaz)
+        updateRealtime(tokenChanged: false)
 
         // Uygulama kapanmadan önce durum dosyası yazılamamış değişiklikleri bul (tabandan ayrışan belgeler)
         guard state.config?.workspaceID != nil, state.initialized else { startupCheckDone = true; return }
@@ -203,20 +277,117 @@ final class CloudSyncController: ObservableObject {
         if state.isActive { scheduleSync(after: CloudDefaults.debounceSeconds) }
     }
 
+    // MARK: - Canlı bağlantı
+
+    /// Canlı bağlantıyı duruma göre açar / kapatır: yalnızca bu mod açıkken ve Mac şubeyle eşitlenirken (şube seçilmiş,
+    /// oturum açık, ilk karar verilmiş) çalışır. Sunucu / şube değişince yeniden kurulur; erişim anahtarı yenilenince kanala
+    /// hemen bildirilir. `state` her değiştiğinde çağrılır; anahtar aynıysa iş yapmaz.
+    private func updateRealtime(tokenChanged: Bool) {
+        let want: String? = {
+            guard enabled, state.isActive, let c = state.config, let ws = c.workspaceID else { return nil }
+            return "\(c.url)|\(c.publishableKey)|\(ws)|\(c.workspaceName ?? "")"
+        }()
+        guard want != realtimeKey else {
+            if tokenChanged, want != nil, let token = state.accessToken, !token.isEmpty {
+                realtimeBox.client?.updateToken(token)
+            }
+            return
+        }
+        stopRealtime()
+        guard let want, let config = state.config, let ws = config.workspaceID else { return }
+        realtimeKey = want
+        let presence = RealtimePresence.mac(branch: config.workspaceName ?? "", app: Self.appVersion, since: Date())
+        // Anahtar her katılmada ve kalp atışında sorulur: dolmak üzereyse yenilenir (yenilenen oturum sessionChanged ile
+        // hemen diske yazılır)
+        realtimeClient().start(config: config, workspaceID: ws, deviceKey: Self.deviceKey(), presence: presence,
+                               accessToken: { [weak self] in
+                                   guard let api = await self?.realtimeAPI() else { return nil }
+                                   return try? await api.validAccessToken()
+                               })
+    }
+
+    /// Canlı bağlantıyı kapatır (çıkış, şube değişimi, ilk bağlantı kararı, oturum süresinin dolması, uygulamanın kapanması)
+    private func stopRealtime() {
+        guard realtimeKey != nil else { return }
+        realtimeKey = nil
+        realtimeBox.client?.stop()
+        if realtimeStatus != .disconnected { realtimeStatus = .disconnected }
+    }
+
+    /// Canlı bağlantının anahtar kaynağı için geçerli istemci (oturum yoksa nil)
+    private func realtimeAPI() -> SupabaseAPI? {
+        guard realtimeKey != nil else { return nil }
+        return currentAPI()
+    }
+
+    /// İstemci ilk gerektiğinde oluşturulur; geri çağrılar ana kuyrukta gelir
+    private func realtimeClient() -> RealtimeClient {
+        if let c = realtimeBox.client { return c }
+        let c = RealtimeClient(transport: URLSessionRealtimeTransport())
+        c.onChange = { [weak self] in
+            MainActor.assumeIsolated { self?.remoteChanged() }
+        }
+        c.onStatus = { [weak self] status in
+            MainActor.assumeIsolated { self?.realtimeStatusChanged(status) }
+        }
+        realtimeBox.client = c
+        return c
+    }
+
+    /// Web panelinde (ya da başka bir cihazda) belge değişti: 0,3 sn içinde çek. Eşitleme sürüyorsa tur bitince
+    /// 0,3 sn sonra yeni tur yapılır. Kendi gönderimimizin yankısı da gelir; tek bir hafif çekme turu olur.
+    private func remoteChanged() {
+        guard realtimeKey != nil, isConnected else { return }
+        if isSyncing || !startupCheckDone {
+            remotePending = true
+            rerunRequested = true
+            return
+        }
+        scheduleSync(after: RealtimeClient.coalesceSeconds)
+    }
+
+    private func realtimeStatusChanged(_ status: RealtimeStatus) {
+        // Kapatıldıktan sonra kuyruktan gelen eski bildirim yok sayılır
+        guard realtimeKey != nil else { return }
+        let was = realtimeStatus
+        if was != status { realtimeStatus = status }
+        // Kanala (yeniden) katılındı: kopukken kaçan değişiklikler bir kez çekilir
+        if status == .connected && was != .connected { syncNow() }
+    }
+
+    /// Bu kurulumun kalıcı cihaz anahtarı (canlı bağlantıdaki çevrimiçi bilgisinin anahtarı; kişisel bilgi içermez)
+    private static func deviceKey() -> String {
+        let defaults = UserDefaults.standard
+        if let key = defaults.string(forKey: "envanterDeviceID"), !key.isEmpty { return key }
+        let key = "mac-" + UUID().uuidString.lowercased()
+        defaults.set(key, forKey: "envanterDeviceID")
+        return key
+    }
+
+    /// Çevrimiçi bilgisindeki uygulama sürümü (geliştirme derlemesinde "dev")
+    private static var appVersion: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "dev"
+    }
+
     // MARK: - Bağlanma
 
-    /// E-posta ve şifreyle giriş yapar; şubeleri getirir. Hiç şube yoksa (ilk kurulum) şube adıyla yenisini açar.
+    /// Kullanıcı adı (ya da e-posta) ve şifreyle giriş yapar; şubeleri getirir. Hiç şube yoksa (ilk kurulum) şube adıyla
+    /// yenisini açar. Kullanıcı adı ("@" yok) ad@envanter.local e-postasına çevrilir (`LoginName`) ve öyle saklanır.
     func connect(email rawEmail: String, password: String, url rawURL: String, key rawKey: String) async {
         guard enabled, !busy else { return }
-        let email = rawEmail.trimmingCharacters(in: .whitespacesAndNewlines)
         var url = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         var key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if url.isEmpty { url = CloudDefaults.url }
         if key.isEmpty { key = CloudDefaults.publishableKey }
-        guard !email.isEmpty, !password.isEmpty else {
-            notice = "E-posta adresinizi ve şifrenizi girin."
+        guard !rawEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !password.isEmpty else {
+            notice = "Kullanıcı adınızı (ya da e-postanızı) ve şifrenizi girin."
             return
         }
+        guard let email = LoginName.email(from: rawEmail) else {
+            notice = "Geçerli bir kullanıcı adı ya da e-posta yazın: kullanıcı adında en az bir harf ya da rakam olmalı (harf, rakam, nokta, alt çizgi ve tire kullanılabilir)."
+            return
+        }
+        lastLogin = email
         busy = true
         notice = nil
         // Yeni deneme: önceki denemenin hatası "Bağlanıyor…" sırasında gösterilmesin
@@ -226,7 +397,7 @@ final class CloudSyncController: ObservableObject {
             let api = try SupabaseAPI(url: url, publishableKey: key)
             let session = try await api.signIn(email: email, password: password)
             generation += 1
-            self.api = api
+            install(api)
             // Aynı sunucuda şube eşleşmesi (taban, bekleyen değişiklikler) korunur, hesap farklı olsa da: aynı şube
             // seçilirse kaldığı yerden 3 yollu birleştirmeyle devam edilir. Şube onaylanana kadar eşitleme bekler.
             var s = SyncState.forSignIn(existing: state, url: url, publishableKey: key, email: email)
@@ -446,6 +617,8 @@ final class CloudSyncController: ObservableObject {
     private func performSync(generation gen: Int) async {
         defer { finishSyncCycle() }
         guard let app, let api = currentAPI() else { return }
+        // Bu tur buluttaki son hali çeker: önceki canlı bildirim karşılanmış olur
+        remotePending = false
         status = .syncing
         // Rol önce güncellenir: terfide eskimiş tanımlar geri yüklenir, düşürülmede gönderim yeni rolle yapılır
         await refreshRoleIfDue(api: api, generation: gen)
@@ -523,8 +696,113 @@ final class CloudSyncController: ObservableObject {
         progress = nil
         if rerunRequested {
             rerunRequested = false
-            scheduleSync(after: 2)
+            // Tur sürerken web panelinden değişiklik geldiyse hemen (0,3 sn), yoksa 2 sn sonra yeni tur
+            scheduleSync(after: remotePending ? RealtimeClient.coalesceSeconds : 2)
         }
+    }
+
+    // MARK: - Kullanıcılar (patron)
+
+    /// Şubenin üyeleri ve bekleyen davetleri (envanter_members_list). Davetleri yalnızca patron görür.
+    /// Hatalar Türkçe metinlidir (`CloudMemberError.message`, `CloudSyncError`); metin için `memberErrorText`.
+    func membersList() async throws -> [CloudMember] {
+        let (api, ws) = try memberContext(ownerOnly: false)
+        return try await memberCall { try await api.membersList(workspace: ws) }
+    }
+
+    /// E-posta gerektirmeden hesap açar ve şubeye ekler. `login`: kullanıcı adı ya da e-posta (kullanıcı adı
+    /// ad@envanter.local olur). `role`: `CloudRole.owner` / `.manager` / `.staff`. Şifre `PasswordRule` kuralına uymalı.
+    func createAccount(login: String, password: String, role: String) async throws -> CreateAccountResult {
+        let (api, ws) = try memberContext(ownerOnly: true)
+        guard let email = LoginName.email(from: login) else {
+            throw CloudMemberError(kind: .invalid, message: CloudMembers.accountError(login, members: []) ?? "Kullanıcı adı ya da e-posta yazın.")
+        }
+        return try await memberCall { try await api.createAccount(workspace: ws, email: email, password: password, role: role) }
+    }
+
+    /// Üyenin yetkisini değiştirir (son patron düşürülemez). Kendi yetkisi değişirse rol hemen yeniden okunur.
+    func setRole(_ member: CloudMember, to role: String) async throws {
+        let (api, ws) = try memberContext(ownerOnly: true)
+        guard let user = member.userID else { throw CloudMemberError(kind: .invalid, message: CloudMembers.passwordPendingReason) }
+        try await memberCall { try await api.setRole(workspace: ws, user: user, role: role) }
+        if user == currentUserID { refreshRoleSoon() }
+    }
+
+    /// Üyenin şifresini belirler: eski şifre hemen geçmez, açık oturumları en geç 1 saat içinde kapanır
+    func setMemberPassword(_ member: CloudMember, password: String) async throws {
+        let (api, ws) = try memberContext(ownerOnly: true)
+        guard let user = member.userID else { throw CloudMemberError(kind: .invalid, message: CloudMembers.passwordPendingReason) }
+        try await memberCall { try await api.setMemberPassword(workspace: ws, user: user, password: password) }
+    }
+
+    /// Üyeyi şubeden çıkarır (son patron çıkarılamaz). Bu Mac'te oturumu açık kullanıcı kendini çıkaramaz (eşitleme dururdu).
+    func removeMember(_ member: CloudMember) async throws {
+        let (api, ws) = try memberContext(ownerOnly: true)
+        guard let user = member.userID else { throw CloudMemberError(kind: .invalid, message: CloudMembers.passwordPendingReason) }
+        guard user != currentUserID else {
+            throw CloudMemberError(kind: .invalid, message: "Bu Mac'te oturumu açık hesabı buradan çıkaramazsınız; gerekirse web panelinden yapın.")
+        }
+        try await memberCall { try await api.removeMember(workspace: ws, user: user) }
+    }
+
+    /// Bekleyen daveti iptal eder (bu e-postayla hesap açılsa bile şubeye eklenmez)
+    func cancelInvite(_ member: CloudMember) async throws {
+        let (api, ws) = try memberContext(ownerOnly: true)
+        try await memberCall { try await api.cancelInvite(workspace: ws, email: member.email) }
+    }
+
+    /// Kullanıcı işlemi hatasının ekrandaki metni (ne oldu ve ne yapılmalı)
+    nonisolated static func memberErrorText(_ error: Error) -> String {
+        if let m = error as? CloudMemberError { return m.message }
+        if let e = error as? CloudSyncError {
+            switch e {
+            case .forbidden:
+                return CloudMembers.ownerOnlyReason + " Yetkiniz web panelinde değiştiyse bir sonraki eşitlemede bu Mac'te de güncellenir."
+            case .sessionExpired:
+                return "Oturumun süresi doldu. Ayarlar ve Veri → Web paneli ile eşitleme kartından yeniden giriş yapın."
+            case .network:
+                return "Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin."
+            default:
+                return e.localizedDescription
+            }
+        }
+        return error.localizedDescription
+    }
+
+    /// İşlemin yapılabileceği istemci ve şube; yoksa Türkçe hata
+    private func memberContext(ownerOnly: Bool) throws -> (SupabaseAPI, String) {
+        guard isConnected, let ws = state.config?.workspaceID, let api = currentAPI() else { throw CloudSyncError.notConfigured }
+        if ownerOnly && role != CloudRole.owner {
+            throw CloudMemberError(kind: .forbidden, message: CloudMembers.ownerOnlyReason)
+        }
+        return (api, ws)
+    }
+
+    /// Sunucu çağrısı: oturum süresi dolduysa eşitleme kartı "Giriş gerekli" gösterir; ağ hataları Türkçeye çevrilir
+    private func memberCall<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch let e as CloudMemberError {
+            throw e
+        } catch let e as CloudSyncError {
+            if e == .sessionExpired { report(e) }
+            // Yetki reddi: rol web panelinde değişmiş olabilir
+            if case .forbidden = e { refreshRoleSoon() }
+            throw e
+        } catch {
+            throw CloudSyncError.network(error.localizedDescription)
+        }
+    }
+
+    /// Rolü (şube listesi) bir sonraki turda yeniden oku ve hemen eşitle
+    private func refreshRoleSoon() {
+        roleCheckRequested = true
+        syncNow()
+    }
+
+    /// Ekip ekranına geç (Ayarlar'daki "Kullanıcılar…" düğmesi; Kullanıcılar bölümü orada)
+    func showUsers() {
+        app?.section = .team
     }
 
     // MARK: - Çıkış
@@ -536,8 +814,10 @@ final class CloudSyncController: ObservableObject {
     func signOut(detach: Bool = false) {
         generation += 1
         debounceTask?.cancel()
+        stopRealtime()
         if let api { Task { await api.logout() } }
         api = nil
+        remotePending = false
         // Şube değişimi kararı bekleniyorsa önceki şubenin eşleşmesi korunur
         var s = decision?.previous ?? state
         s.signOut()
@@ -563,9 +843,35 @@ final class CloudSyncController: ObservableObject {
 
     private func currentAPI() -> SupabaseAPI? {
         if let api { return api }
-        guard let c = state.config, let session = state.session else { return nil }
-        api = try? SupabaseAPI(url: c.url, publishableKey: c.publishableKey, session: session)
-        return api
+        guard let c = state.config, let session = state.session,
+              let created = try? SupabaseAPI(url: c.url, publishableKey: c.publishableKey, session: session) else { return nil }
+        install(created)
+        return created
+    }
+
+    /// Bu oturumun istemcisi olur. Yenilenen oturum (yeni yenileme anahtarı; eskisi geçersizleşir) hemen esitleme.json'a
+    /// yazılır: yoksa uygulama tur bitmeden kapanırsa diskteki eski anahtarla yeniden giriş gerekirdi.
+    private func install(_ api: SupabaseAPI) {
+        self.api = api
+        let id = ObjectIdentifier(api)
+        let observer: @Sendable (AuthSession?) -> Void = { [weak self] session in
+            Task { @MainActor [weak self] in self?.sessionChanged(session, api: id) }
+        }
+        Task { await api.setSessionObserver(observer) }
+    }
+
+    /// Oturum değişti (giriş, yenileme ya da yenileme reddi). Eski bir istemcinin bildirimi yok sayılır.
+    private func sessionChanged(_ session: AuthSession?, api id: ObjectIdentifier) {
+        guard enabled, let current = api, ObjectIdentifier(current) == id else { return }
+        guard let session else {
+            // Yenileme anahtarı reddedildi: eşitleme turu "Giriş gerekli" hatasını gösterir ve oturumu kapatır
+            syncNow()
+            return
+        }
+        guard state.config != nil,
+              session.accessToken != state.accessToken || session.refreshToken != (state.refreshToken ?? "") else { return }
+        state.store(session)
+        saveState()
     }
 
     private func storeSession(_ s: AuthSession?) {
@@ -578,6 +884,7 @@ final class CloudSyncController: ObservableObject {
         let e = (error as? CloudSyncError) ?? .network(error.localizedDescription)
         if e == .sessionExpired {
             // Yenileme anahtarı geçersiz: yeniden giriş gerekir (şube eşleşmesi ve bekleyen değişiklikler korunur)
+            stopRealtime()
             api = nil
             var s = state
             s.store(nil)
@@ -613,7 +920,7 @@ final class CloudSyncController: ObservableObject {
                 permissionNoticeShown = true
                 app?.alert = AppAlert(
                     title: "Bu değişiklik için müdür yetkisi gerekir",
-                    message: "Personel hesabıyla yalnızca günlük veriler (sayım, satış, vardiya, not) web paneline gönderilir. \(labels) bölümündeki değişiklik gönderilmedi ve web panelindeki hal geri yüklendi. Bu değişikliği patron ya da müdür web panelinden yapabilir.")
+                    message: "Personel hesabıyla yalnızca günlük veriler (sayım, satış, not) web paneline gönderilir. \(labels) bölümündeki değişiklik gönderilmedi ve web panelindeki hal geri yüklendi. Bu değişikliği patron ya da müdür web panelinden yapabilir.")
             }
         }
         notice = parts.joined(separator: " ")
@@ -672,4 +979,10 @@ final class CloudSyncController: ObservableObject {
             do { try store.save(s) } catch { NSLog("Eşitleme durumu kaydedilemedi: \(error)") }
         }
     }
+}
+
+/// Canlı bağlantı istemcisinin kutusu: denetleyicinin deinit'inden de (ana aktör dışı) durdurulabilsin diye
+/// Sendable bir sabitte tutulur. Yalnızca ana iş parçacığında değiştirilir.
+private final class RealtimeBox: @unchecked Sendable {
+    var client: RealtimeClient?
 }

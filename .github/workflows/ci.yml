@@ -78,16 +78,16 @@ jobs:
           export ENVANTER_SNAPSHOT_DIR="$RUNNER_TEMP/shots"
           export ENVANTER_DATE="$TODAY"
           export ENVANTER_SNAPSHOT_SIZE="1440x1000"
-          export ENVANTER_SECTIONS="overview,daily,sales,orders,labor,summary,analytics:general,analytics:item:patates,analytics:abc,analytics:menu,recipes:11101,items,backup,help"
+          export ENVANTER_SECTIONS="overview,daily,sales,orders,reports:summary,reports:item:patates,recipes:11101,items,team,backup,help"
           export ENVANTER_QUIT_AFTER_SNAPSHOT=1
           # exec { $ARGV[0] } liste biçimi: yol içindeki boşluk ("NextGen Envanter.app") kelimelere bölünmesin
           perl -e 'alarm 300; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
-          # İlk kullanım (boş veri klasörü): Genel Bakış'taki başlangıç kartı → 15-welcome.png
-          ENVANTER_DATA_DIR="$RUNNER_TEMP/empty" ENVANTER_SECTIONS="welcome" ENVANTER_SNAPSHOT_START=15 \
+          # İlk kullanım (boş veri klasörü): Genel Bakış'taki başlangıç kartı → 12-welcome.png
+          ENVANTER_DATA_DIR="$RUNNER_TEMP/empty" ENVANTER_SECTIONS="welcome" ENVANTER_SNAPSHOT_START=12 \
             perl -e 'alarm 120; exec { $ARGV[0] } @ARGV or die "çalıştırılamadı: $!\n"' "$APP/Envanter" || echo "Uygulama çıkış kodu: $?"
           ls -la "$RUNNER_TEMP/shots"
-          test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 14
-          test -f "$RUNNER_TEMP/shots/15-welcome.png" || echo "::warning::İlk kullanım ekran görüntüsü (15-welcome.png) alınamadı"
+          test "$(ls "$RUNNER_TEMP/shots" | wc -l)" -ge 11
+          test -f "$RUNNER_TEMP/shots/12-welcome.png" || echo "::warning::İlk kullanım ekran görüntüsü (12-welcome.png) alınamadı"
       - name: Ekran görüntülerini yükle
         uses: actions/upload-artifact@v4
         with:

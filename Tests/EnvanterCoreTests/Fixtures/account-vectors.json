@@ -1,0 +1,32 @@
+{
+  "loginEmail": [
+    { "input": "ahmet", "email": "ahmet@envanter.local" },
+    { "input": "  Ahmet  ", "email": "ahmet@envanter.local" },
+    { "input": "Ayşe Yılmaz", "email": "ayse.yilmaz@envanter.local" },
+    { "input": "İSMAİL", "email": "ismail@envanter.local" },
+    { "input": "IŞIK", "email": "isik@envanter.local" },
+    { "input": "kasa_1", "email": "kasa_1@envanter.local" },
+    { "input": "Ali@Isletme.com", "email": "ali@isletme.com" },
+    { "input": "çağrı.öz", "email": "cagri.oz@envanter.local" },
+    { "input": "a b  c", "email": "a.b.c@envanter.local" },
+    { "input": "ali-veli", "email": "ali-veli@envanter.local" },
+    { "input": "José", "email": "jose@envanter.local" },
+    { "input": "!!!", "email": null },
+    { "input": "", "email": null }
+  ],
+  "loginDisplay": [
+    { "email": "ali@envanter.local", "display": "ali" },
+    { "email": "ALI@Envanter.Local", "display": "ALI" },
+    { "email": "ali@isletme.com", "display": "ali@isletme.com" }
+  ],
+  "teamID": [
+    { "name": "Ahmet", "id": "staff-ahmet" },
+    { "name": "Ayşe Yılmaz", "id": "staff-ayse-yilmaz" },
+    { "name": "  İSMAİL  ", "id": "staff-ismail" },
+    { "name": "Çağrı Öz.", "id": "staff-cagri-oz" },
+    { "name": "Mehmet (Usta)", "id": "staff-mehmet-usta" },
+    { "name": "ÜMİT", "id": "staff-umit" },
+    { "name": "José", "id": "staff-jose" },
+    { "name": "---", "id": null }
+  ]
+}

@@ -413,6 +413,33 @@ public enum CloudMembers {
     }
 }
 
+// MARK: - Erişim anahtarı
+
+/// Supabase erişim anahtarının (JWT) yükünden okunan bilgiler. İmza doğrulanmaz: yalnızca kendi oturumumuzun
+/// anahtarından kullanıcı kimliği ve bitiş zamanı okunur (yetkiyi sunucu denetler).
+public enum JWTClaims {
+    /// Yük (base64url çözülmüş JSON nesnesi); anahtar JWT değilse nil
+    public static func payload(_ token: String) -> [String: JSONValue]? {
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        var b64 = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let data = Data(base64Encoded: b64) else { return nil }
+        return (try? JSONCoding.parse(data))?.objectValue
+    }
+
+    /// Kullanıcı kimliği (`sub`): Kullanıcılar panelinde kendi satırını tanımak için (kendi şifresi, kendi yetkisi)
+    public static func subject(_ token: String) -> String? {
+        guard let sub = payload(token)?["sub"]?.stringValue, !sub.isEmpty else { return nil }
+        return sub
+    }
+
+    /// Bitiş zamanı (`exp`)
+    public static func expiry(_ token: String) -> Date? {
+        payload(token)?["exp"]?.doubleValue.map { Date(timeIntervalSince1970: $0) }
+    }
+}
+
 // MARK: - Postgres zaman damgası
 
 /// timestamptz metni: "2026-10-09T12:00:00.123456+00:00", "2026-10-09 12:00:00+03", "2026-10-09T12:00:00Z".

@@ -248,6 +248,7 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
     private var session: AuthSession?
     private var refreshTask: Task<AuthSession, Error>?
     private let now: @Sendable () -> Date
+    private var sessionObserver: (@Sendable (AuthSession?) -> Void)?
 
     public init(url: String, publishableKey: String, session: AuthSession? = nil,
                 transport: SyncTransport = URLSessionTransport(), now: @escaping @Sendable () -> Date = { Date() }) throws {
@@ -270,14 +271,21 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
 
     public func setSession(_ s: AuthSession?) { session = s }
 
+    /// Oturum değişince çağrılır: giriş, yenileme (yeni yenileme anahtarı) ve yenileme reddi (nil). Yenileme anahtarı her
+    /// yenilemede değişir (eskisi geçersizleşir); uygulama yenisini hemen diske yazmalı, yoksa kapanınca yeniden giriş gerekir.
+    public func setSessionObserver(_ observer: (@Sendable (AuthSession?) -> Void)?) { sessionObserver = observer }
+
     // MARK: Auth
 
+    /// Giriş: kullanıcı adı ("@" yok) `ad@envanter.local` e-postasına çevrilir (`LoginName`)
     public func signIn(email: String, password: String) async throws -> AuthSession {
-        let body = try JSONEncoder().encode(["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
+        let login = LoginName.email(from: email) ?? email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = try JSONEncoder().encode(["email": login, "password": password])
         let r = try await send(SyncRequest(method: "POST", url: url("auth/v1/token", query: [("grant_type", "password")]),
                                            headers: baseHeaders(json: true), body: body))
-        let s = try parseSession(r, fallbackEmail: email)
+        let s = try parseSession(r, fallbackEmail: login)
         session = s
+        sessionObserver?(s)
         return s
     }
 
@@ -291,6 +299,7 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
         }
         let s = try parseSession(r, fallbackEmail: email)
         session = s
+        sessionObserver?(s)
         return s
     }
 
@@ -311,11 +320,24 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
         do {
             let s = try await task.value
             session = s
+            sessionObserver?(s)
             return s
         } catch CloudSyncError.sessionExpired {
             session = nil
+            sessionObserver?(nil)
             throw CloudSyncError.sessionExpired
         }
+    }
+
+    /// Geçerli erişim anahtarı: `minValidity` saniye içinde doluyorsa önce yenilenir (eşzamanlı yenilemeler birleşir).
+    /// Anlık eşitleme (Realtime) her kalp atışında bunu sorar ve değişen anahtarı kanala bildirir.
+    public func validAccessToken(minValidity: TimeInterval = 120) async throws -> String {
+        guard let s = session else { throw CloudSyncError.sessionExpired }
+        if let exp = s.expiresAt ?? JWTClaims.expiry(s.accessToken), exp.timeIntervalSince(now()) < minValidity,
+           !s.refreshToken.isEmpty {
+            return try await refresh().accessToken
+        }
+        return s.accessToken
     }
 
     public func signOut() { session = nil }
@@ -421,8 +443,9 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
     }
 
     /// Oturumlu istek: süresi dolmak üzereyse önce yenilenir; 401 / JWT süresi dolduysa bir kez yenilenip tekrarlanır.
-    /// (Entegrasyon testi patronun üyelik RPC'lerini de bununla çağırır.)
-    func authorized(_ method: String, _ url: URL, body: JSONValue?) async throws -> SyncResponse {
+    /// (Entegrasyon testi patronun üyelik RPC'lerini de bununla çağırır.) `validate`: hata yanıtlarının eşlemesi.
+    func authorized(_ method: String, _ url: URL, body: JSONValue?,
+                    validate: (SyncResponse) throws -> Void = SupabaseAPI.check) async throws -> SyncResponse {
         guard session != nil else { throw CloudSyncError.sessionExpired }
         if let exp = session?.expiresAt, exp.timeIntervalSince(now()) < 60, !(session?.refreshToken.isEmpty ?? true) {
             _ = try await refresh()
@@ -440,7 +463,7 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
             r = try await send(try request())
             if Self.isAuthExpiry(r) { throw CloudSyncError.sessionExpired }
         }
-        try Self.check(r)
+        try validate(r)
         return r
     }
 
@@ -507,6 +530,7 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
 struct ServerError {
     var code = ""
     var message = ""
+    var hint = ""
 
     init(_ data: Data) {
         guard let obj = try? JSONCoding.parse(data) else {
@@ -516,5 +540,6 @@ struct ServerError {
         code = obj["error_code"]?.stringValue ?? obj["code"]?.stringValue ?? obj["error"]?.stringValue ?? ""
         message = obj["message"]?.stringValue ?? obj["msg"]?.stringValue ?? obj["error_description"]?.stringValue
             ?? obj["error"]?.stringValue ?? ""
+        hint = obj["hint"]?.stringValue ?? ""
     }
 }

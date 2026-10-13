@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# kökteki "build/" kuralı ikonu da dışarıda bırakmasın
+!build/

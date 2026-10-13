@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-UKU8/8xYK/VPqXXafkjBSyLXwux0IJ6rJ03wAD71RJ0='; style-src 'sha256-ZT9N+RS/EBASjzsOpjqoc4LEUeuqlKOtuMnbdox6WrA='; connect-src https: http://127.0.0.1:* http://localhost:*; img-src data:; base-uri 'none'; form-action 'none'" />
+    <title>NextGen Envanter</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --surface: #f5f5f3;
+        --card: rgb(255 255 255 / 0.78);
+        --ink: #1c1c1e;
+        --ink-2: #48484d;
+        --ink-3: #6e6e74;
+        --line: rgb(60 60 67 / 0.14);
+        --brand: #e65c17;
+        --brand-deep: #b8410c;
+        --warn-ink: #9a5b06;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #0f0f11;
+          --card: rgb(30 30 34 / 0.84);
+          --ink: #f2f2f7;
+          --ink-2: #c7c7cc;
+          --ink-3: #98989f;
+          --line: rgb(235 235 245 / 0.12);
+          --brand: #f06a24;
+          --brand-deep: #c2470e;
+          --warn-ink: #f1c27a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(60rem 42rem at 8% -6%, rgb(230 92 23 / 0.17), transparent 62%),
+          radial-gradient(52rem 40rem at 100% 30%, rgb(31 115 217 / 0.12), transparent 60%),
+          var(--surface);
+        color: var(--ink);
+        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        width: min(520px, 100%);
+        padding: 36px 32px 28px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--card);
+        box-shadow:
+          0 1px 1px rgb(0 0 0 / 0.04),
+          0 8px 24px -6px rgb(17 24 39 / 0.12),
+          0 24px 48px -24px rgb(17 24 39 / 0.18);
+        text-align: center;
+      }
+      .mark {
+        display: inline-grid;
+        place-items: center;
+        width: 64px;
+        height: 64px;
+        margin-bottom: 18px;
+        border-radius: 16px;
+        background: linear-gradient(180deg, #ff9433, #cc3814);
+        color: #fff;
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        line-height: 1.25;
+      }
+      p {
+        margin: 0 0 10px;
+        color: var(--ink-2);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      #neden {
+        color: var(--warn-ink);
+        font-weight: 600;
+      }
+      .adres {
+        color: var(--ink-3);
+        font-size: 13px;
+        word-break: break-all;
+      }
+      button {
+        min-height: 44px;
+        margin-top: 14px;
+        padding: 0 28px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--brand);
+        color: #fff;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--brand-deep);
+      }
+      button:focus-visible {
+        outline: 3px solid rgb(31 115 217 / 0.6);
+        outline-offset: 3px;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #durum {
+        min-height: 1.5em;
+        margin: 14px 0 0;
+        color: var(--ink-3);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">NG</div>
+      <h1>Web paneline ulaşılamıyor</h1>
+      <p id="neden">Bağlantı kurulamadı.</p>
+      <p>Bu bilgisayarda yapılan değişiklikler saklanır; bağlantı gelince panel kendiliğinden açılır ve değişiklikler gönderilir.</p>
+      <p class="adres">Adres: <span id="adres">—</span></p>
+      <button id="dene" type="button">Yeniden dene</button>
+      <p id="durum" role="status" aria-live="polite"></p>
+    </main>
+    <script>
+      (() => {
+        const ARALIK = 15;
+        const params = new URLSearchParams(location.search);
+        const kod = Number(params.get("kod") || 0);
+        let hedef = null;
+        try {
+          const u = new URL(params.get("hedef") || "");
+          if (u.protocol === "https:" || u.protocol === "http:") hedef = u;
+        } catch {}
+
+        const neden = document.getElementById("neden");
+        const durum = document.getElementById("durum");
+        const dugme = document.getElementById("dene");
+        document.getElementById("adres").textContent = hedef ? hedef.host : "—";
+
+        // Chromium ağ hata kodları → anlaşılır neden
+        function nedenMetni(k) {
+          if (!navigator.onLine || k === -106) return "Bu bilgisayar internete bağlı değil.";
+          if (k === -105 || k === -137) return "Sunucu adı bulunamadı. İnternet bağlantısını ya da panel adresini kontrol edin.";
+          if (k === -102 || k === -109) return "Sunucu şu anda yanıt vermiyor.";
+          if (k === -7 || k === -118) return "Bağlantı zaman aşımına uğradı.";
+          if (k === -21) return "Ağ bağlantısı değişti.";
+          if (k <= -200 && k > -300) return "Güvenli bağlantı kurulamadı (sertifika sorunu).";
+          return k ? `Bağlantı kurulamadı (hata ${k}).` : "Bağlantı kurulamadı.";
+        }
+        neden.textContent = nedenMetni(kod);
+
+        let kalan = ARALIK;
+        let calisiyor = false;
+
+        function geriSayim() {
+          durum.textContent = `${kalan} saniye sonra kendiliğinden yeniden denenecek.`;
+        }
+
+        async function dene(elle) {
+          if (calisiyor || !hedef) return;
+          calisiyor = true;
+          dugme.disabled = true;
+          durum.textContent = "Deneniyor…";
+          try {
+            // Sunucu yanıt veriyorsa (durum kodu ne olursa olsun) panel yeniden açılır
+            await fetch(hedef.href, { method: "HEAD", mode: "no-cors", cache: "no-store", credentials: "omit" });
+            durum.textContent = "Bağlantı kuruldu, panel açılıyor…";
+            location.replace(hedef.href);
+            return;
+          } catch {
+            if (elle) neden.textContent = navigator.onLine ? "Hâlâ ulaşılamıyor." : "Bu bilgisayar hâlâ internete bağlı değil.";
+          }
+          calisiyor = false;
+          dugme.disabled = false;
+          kalan = ARALIK;
+          geriSayim();
+        }
+
+        dugme.addEventListener("click", () => dene(true));
+        window.addEventListener("online", () => dene(false));
+        window.addEventListener("offline", () => {
+          neden.textContent = nedenMetni(-106);
+        });
+        if (!hedef) {
+          dugme.disabled = true;
+          durum.textContent = "Panel adresi bilinmiyor.";
+          return;
+        }
+        setInterval(() => {
+          if (calisiyor) return;
+          kalan -= 1;
+          if (kalan <= 0) dene(false);
+          else geriSayim();
+        }, 1000);
+        geriSayim();
+        dugme.focus();
+      })();
+    </script>
+  </body>
+</html>

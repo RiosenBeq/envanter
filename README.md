@@ -1,6 +1,6 @@
 # NextGen Envanter
 
-Restoranlar için macOS **envanter yönetimi** uygulaması: stok kalemleri, reçeteler, satış raporu aktarımı, günlük sayım ve fark, sipariş ve ekip. Excel'deki envanter dosyasının (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar: ModPos satış raporunu reçetelerle hammaddeye çevirir, günlük sayımla karşılaştırır ve farkı **miktar olarak** (adet / kg) gösterir. Şirket içi kullanım içindir (App Store'da yayınlanmaz).
+Restoranlar için **envanter yönetimi** uygulaması (macOS; Windows sürümü [`windows/`](windows/README.md)): stok kalemleri, reçeteler, satış raporu aktarımı, günlük sayım ve fark, sipariş ve ekip. Excel'deki envanter dosyasının (Envanter, KOD, Alımlar, Özet sayfaları ve makroları) yaptığı işi otomatik yapar: ModPos satış raporunu reçetelerle hammaddeye çevirir, günlük sayımla karşılaştırır ve farkı **miktar olarak** (adet / kg) gösterir. Şirket içi kullanım içindir (App Store'da yayınlanmaz).
 
 Uygulama şubedeki bilgisayara kurulur; patron ve müdürler aynı veriyi **web panelinden** ([envantersite](https://github.com/RiosenBeq/envantersite)) her yerden, **anlık** izler. Para hesabı (birim maliyet, food cost, personel maliyeti, prime cost, hedefler) yoktur.
 
@@ -75,6 +75,10 @@ Görüntüler CI'da, uygulama `EnvanterTool demo` ile üretilen örnek veriyle �
 Veriler `~/Library/Application Support/Envanter/` altında tutulur (`envanter-verisi.json` ve `Yedekler/`). Uygulamayı silmek veya güncellemek verilere dokunmaz. Başka bir klasör kullanmak için `ENVANTER_DATA_DIR` ortam değişkeni verilebilir.
 
 **Eski sürümden geçiş:** Eski sürümlerin veri dosyası olduğu gibi açılır. Maliyet, fiyat geçmişi, ücret ve vardiya alanları artık kullanılmaz: bu Mac'teki dosyadan ilk kayıtta düşer (önceki hali `Yedekler/` altındaki günlük yedeklerde kalır), bulutta ise silinmez. Eski "sayım yapanlar" listesi kendiliğinden **Ekip**'e taşınır. Yeni sürümün aldığı yedek eski sürümde açılmayabilir.
+
+### Windows
+
+Mağaza bilgisayarı Windows ise [`windows/`](windows/README.md) klasöründeki **NextGen Envanter (Windows)** kurulur: web panelini kendi penceresinde açan, `envanter://` bağlantılarını tanıyan ve bağlantı koduyla tek adımda bağlanan masaüstü uygulaması (Electron). Kurulum dosyası (`NextGen-Envanter-Kurulum-<sürüm>.exe`) GitHub Actions'taki **Windows** iş akışının **NextGen-Envanter-Windows** artifact'ındadır. İmzasız olduğu için Windows "bilgisayarınız korundu" uyarısı verirse **Ek bilgi → Yine de çalıştır** deyin. Ayrıntılar: [windows/README.md](windows/README.md).
 
 ## Web paneli ve anlık eşitleme
 

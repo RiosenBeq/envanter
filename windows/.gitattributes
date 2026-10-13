@@ -1,0 +1,3 @@
+# Satır sonları her ortamda LF (Windows çalıştırıcısında da)
+* text=auto eol=lf
+*.png binary

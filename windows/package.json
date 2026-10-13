@@ -1,0 +1,68 @@
+{
+  "name": "nextgen-envanter-windows",
+  "productName": "NextGen Envanter",
+  "version": "2.1.0",
+  "description": "NextGen Envanter mağaza bilgisayarı uygulaması (Windows): web panelini kendi penceresinde açar.",
+  "author": "NextGen",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "node test/smoke.mjs",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "playwright": "1.56.1"
+  },
+  "build": {
+    "appId": "com.nextgen.envanter",
+    "productName": "NextGen Envanter",
+    "artifactName": "NextGen-Envanter-Kurulum-${version}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "NextGen Envanter",
+        "schemes": [
+          "envanter"
+        ]
+      }
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NextGen Envanter",
+      "installerLanguages": [
+        "tr_TR"
+      ],
+      "language": "1055",
+      "include": "build/installer.nsh"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+name: Windows
+
+# Windows uygulaması (windows/): birim testleri, NSIS kurulum dosyası ve Linux'ta gerçek Electron ile duman testi.
+# PR dalları aynı depoda olduğundan push yeterli (ci.yml gibi; iki kez çalışmasın)
+on:
+  push:
+    branches: ["main", "claude/**"]
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Testler ve kurulum dosyası (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - name: Bağımlılıklar
+        run: npm ci
+      - name: Electron ikili dosyası
+        # Electron 44'ten beri ikili dosya npm ci ile inmez; ayrı indirilir
+        run: npx install-electron --no
+      - name: Birim testleri
+        run: npm test
+      - name: Kurulum dosyası (NSIS, imzasız)
+        run: npm run dist
+      - name: Kurulum dosyasını yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextGen-Envanter-Windows
+          path: windows/dist/NextGen-Envanter-Kurulum-*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  smoke:
+    name: Electron duman testi (Linux, xvfb)
+    runs-on: ubuntu-latest
+    # Takılan bir test 6 saat beklemesin
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - name: Bağımlılıklar
+        run: npm ci
+      - name: Electron ikili dosyası
+        # Electron 44'ten beri ikili dosya npm ci ile inmez; ayrı indirilir
+        run: npx install-electron --no
+      - name: Sanal ekran
+        run: command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
+      - name: Chromium korumalı alanı (setuid yardımcısı)
+        # Ubuntu 24.04 ayrıcalıksız kullanıcı ad alanlarını kısıtlar; korumalı alan setuid yardımcısıyla açılır
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - name: Duman testi
+        run: xvfb-run -a node test/smoke.mjs

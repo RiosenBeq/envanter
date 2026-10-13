@@ -1,0 +1,214 @@
+{
+  "_comment": "Bağlantı kodu (mağaza bilgisayarını — Mac ya da Windows — bağlama) vektörleri. İki depoda birebir aynı dosya: envanter Tests/EnvanterCoreTests/Fixtures/pair-vectors.json ve envantersite test/fixtures/pair-vectors.json. Kural: docs/SYNC.md → Bağlantı kodu.",
+  "alphabet": "23456789ABCDEFGHJKMNPQRSTUVWXYZ",
+  "length": 16,
+  "parse": [
+    {
+      "input": "7KQ2-M9XP-4TRA-HW3D",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "7kq2-m9xp-4tra-hw3d",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "7KQ2M9XP4TRAHW3D",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "  7KQ2 M9XP 4TRA HW3D  ",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "7kq2m9xp-4tra hw3d",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "NextGen Envanter bağlantı kodu: 7KQ2-M9XP-4TRA-HW3D\nMac'te Web'e Bağlan → kodu yazın.",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "Kod:ZZ23-YX98-WVUT-7654.",
+      "code": "ZZ23YX98WVUT7654"
+    },
+    {
+      "input": "(AB2C-D3EF-4GH5-JK6M)",
+      "code": "AB2CD3EF4GH5JK6M"
+    },
+    {
+      "input": "envanter://baglan?kod=7KQ2-M9XP-4TRA-HW3D&sunucu=https%3A%2F%2Fabc.supabase.co&anahtar=sb_publishable_x",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "envanter://baglan?KOD=zz23yx98wvut7654",
+      "code": "ZZ23YX98WVUT7654"
+    },
+    {
+      "input": "envanter://baglan?kod=7KQ2%2DM9XP%2D4TRA%2DHW3D",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "https://envanter.example.com/baglan#kod=AB2C-D3EF-4GH5-JK6M",
+      "code": "AB2CD3EF4GH5JK6M"
+    },
+    {
+      "input": "ABCD EFGH IJKL MNOP ve 7KQ2-M9XP-4TRA-HW3D",
+      "code": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HW3",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HW3DX",
+      "code": null
+    },
+    {
+      "input": "X7KQ2-M9XP-4TRA-HW3D",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HW1D",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HW0D",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HWLD",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HWID",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HWOD",
+      "code": null
+    },
+    {
+      "input": "7KQ2--M9XP-4TRA-HW3D",
+      "code": null
+    },
+    {
+      "input": "7KQ2_M9XP_4TRA_HW3D",
+      "code": null
+    },
+    {
+      "input": "",
+      "code": null
+    },
+    {
+      "input": "   ",
+      "code": null
+    },
+    {
+      "input": "pc-7kq2m9",
+      "code": null
+    },
+    {
+      "input": "kod=",
+      "code": null
+    },
+    {
+      "input": "envanter://baglan?kod=&x=7KQ2-M9XP-4TRA-HW3D",
+      "code": null
+    },
+    {
+      "input": "7ĸQ2-M9XP-4TRA-HW3D",
+      "code": null
+    },
+    {
+      "input": "7KQ2-M9XP-4TRA-HW3D 8KQ2-M9XP-4TRA-HW3D",
+      "code": "7KQ2M9XP4TRAHW3D"
+    }
+  ],
+  "derive": [
+    {
+      "code": "7KQ2M9XP4TRAHW3D",
+      "display": "7KQ2-M9XP-4TRA-HW3D",
+      "username": "pc-7kq2m9",
+      "email": "pc-7kq2m9@envanter.local",
+      "password": "7KQ2M9XP4TRAHW3D"
+    },
+    {
+      "code": "ZZ23YX98WVUT7654",
+      "display": "ZZ23-YX98-WVUT-7654",
+      "username": "pc-zz23yx",
+      "email": "pc-zz23yx@envanter.local",
+      "password": "ZZ23YX98WVUT7654"
+    },
+    {
+      "code": "AB2CD3EF4GH5JK6M",
+      "display": "AB2C-D3EF-4GH5-JK6M",
+      "username": "pc-ab2cd3",
+      "email": "pc-ab2cd3@envanter.local",
+      "password": "AB2CD3EF4GH5JK6M"
+    }
+  ],
+  "link": [
+    {
+      "code": "7KQ2M9XP4TRAHW3D",
+      "url": "https://mnpzjbpwsrscjrjnkkav.supabase.co",
+      "key": "sb_publishable_abc-DEF_123",
+      "link": "envanter://baglan?kod=7KQ2-M9XP-4TRA-HW3D&sunucu=https%3A%2F%2Fmnpzjbpwsrscjrjnkkav.supabase.co&anahtar=sb_publishable_abc-DEF_123"
+    },
+    {
+      "code": "AB2CD3EF4GH5JK6M",
+      "url": "http://127.0.0.1:54321",
+      "key": "eyJhbGciOi.J9+/x=",
+      "link": "envanter://baglan?kod=AB2C-D3EF-4GH5-JK6M&sunucu=http%3A%2F%2F127.0.0.1%3A54321&anahtar=eyJhbGciOi.J9%2B%2Fx%3D"
+    }
+  ],
+  "isDeviceAccount": [
+    {
+      "email": "pc-7kq2m9@envanter.local",
+      "result": true
+    },
+    {
+      "email": "pc-zz23yx@envanter.local",
+      "result": true
+    },
+    {
+      "email": "PC-7KQ2M9@envanter.local",
+      "result": true
+    },
+    {
+      "email": "pc-ali@envanter.local",
+      "result": false
+    },
+    {
+      "email": "pc-7kq2m9x@envanter.local",
+      "result": false
+    },
+    {
+      "email": "pc-7kq2m1@envanter.local",
+      "result": false
+    },
+    {
+      "email": "pc-7kq2m9@gmail.com",
+      "result": false
+    },
+    {
+      "email": "ali@envanter.local",
+      "result": false
+    },
+    {
+      "email": "pc-7kq2ml@envanter.local",
+      "result": false
+    },
+    {
+      "email": " pc-ab2cd3@envanter.local ",
+      "result": true
+    },
+    {
+      "email": "mac-7kq2m9@envanter.local",
+      "result": false
+    },
+    {
+      "email": "",
+      "result": false
+    }
+  ]
+}

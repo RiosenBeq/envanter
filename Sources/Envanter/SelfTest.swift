@@ -81,6 +81,13 @@ enum SelfTest {
               "Ekip, Raporlar ve Sipariş ekranları")
         check(AppSection.allCases.compactMap { $0.shortcut.map { String($0.character) } } == ["1", "2", "3", "4", "5", "6", "7", "8", ","],
               "⌘1…⌘8 kısayolları yan menü sırasıyla, Ayarlar ⌘,")
+        check(AppSection.mainSections + AppSection.definitionSections == AppSection.allCases.filter { $0.shortcut?.character.isNumber == true },
+              "yan menü: günlük işler, sonra Tanımlar (⌘1…⌘8 sırasıyla)")
+        check(AppSection.definitionSections == [.items, .recipes, .team] && AppSection.bottomSections == [.backup, .help],
+              "Tanımlar: Stok Kalemleri, Reçeteler, Ekip; altta Ayarlar ve Yardım")
+        check(AppSection.backup.title == "Ayarlar" && AppSection.help.title == "Yardım", "ekran adları: Ayarlar, Yardım")
+        check(Set(AppSection.mainSections + AppSection.definitionSections + AppSection.bottomSections) == Set(AppSection.allCases),
+              "her ekran yan menüde")
         check(ReportsTab.named("summary") == .summary && ReportsTab.named("item") == .item, "Raporlar sekmelerinin kısa adları")
         store.openItemAnalysis(itemID: "patates")
         check(store.section == .reports && store.reportsTab == .item && store.reportItem == "patates",
@@ -439,5 +446,59 @@ enum SelfTest {
         check(!store.cloud.enabled && !store.cloud.isLinked && !store.cloud.isConnected, "web eşitlemesi kapalı (ağ kullanılmıyor)")
         check(store.cloud.realtimeStatus == .disconnected && !store.cloud.isLive, "canlı bağlantı kurulmadı")
         check(!store.cloud.canManageMembers, "Kullanıcılar bölümü bağlı değilken kapalı")
+
+        print("19) Web'e bağlanma: bağlantı kodu ve envanter:// bağlantısı")
+        store.alert = nil
+        store.connectRequest = nil
+        store.openConnect()
+        check(store.connectRequest?.code == "" && store.connectRequest?.autoConnect == false, "Web'e Bağlan: bağlanma penceresi boş açılıyor")
+        store.connectRequest = nil
+        if let link = URL(string: "envanter://baglan?kod=7KQ2-M9XP-4TRA-HW3D&sunucu=https%3A%2F%2Fornek.supabase.co&anahtar=sb_publishable_x") {
+            store.openConnectLink(link)
+        }
+        let request = store.connectRequest
+        check(request?.code == "7KQ2M9XP4TRAHW3D" && request?.url == "https://ornek.supabase.co" && request?.key == "sb_publishable_x",
+              "bağlantı: pencere kod ve sunucu ayarıyla dolu açılıyor")
+        check(request?.autoConnect == false, "başka sunucuyu gösteren bağlantıda kendiliğinden bağlanılmıyor (Bağlan beklenir)")
+        store.connectRequest = nil
+        if let link = URL(string: "envanter://baglan?kod=7KQ2-M9XP-4TRA-HW3D") { store.openConnectLink(link) }
+        check(store.connectRequest?.autoConnect == true && store.connectRequest?.url == nil,
+              "şubeyle eşleşmemiş Mac'te sunucusuz bağlantıyla hemen bağlanılıyor")
+        store.connectRequest = nil
+        if let link = URL(string: PairLink.make(code: "7KQ2M9XP4TRAHW3D", url: CloudDefaults.url + "/", key: CloudDefaults.publishableKey)) {
+            store.openConnectLink(link)
+        }
+        check(store.connectRequest?.autoConnect == true, "varsayılan sunucuyu gösteren bağlantıyla hemen bağlanılıyor")
+        store.connectRequest = nil
+        if let bad = URL(string: "envanter://baglan?kod=7KQ2-M9XP-4TRA-HW1D") { store.openConnectLink(bad) }
+        check(store.connectRequest == nil && store.alert?.title == "Bağlantı açılamadı", "geçersiz kodlu bağlantıda uyarı")
+        store.alert = nil
+        check(PairCode.formatInput("Bağlantı kodu: 7kq2-m9xp-4tra-hw3d") == "7KQ2-M9XP-4TRA-HW3D" && PairCode.formatInput("7kq2m") == "7KQ2-M",
+              "kod alanı: yapıştırılan mesajdan kod, yazarken 4'erli gruplar")
+        check(PairCode.email("7KQ2M9XP4TRAHW3D") == "pc-7kq2m9@envanter.local" && PairCode.isDeviceAccount("pc-7kq2m9@envanter.local"),
+              "cihaz hesabı: pc-7kq2m9@envanter.local")
+        check(!store.cloud.canReconnectDevice && !store.cloud.isDeviceAccount, "bağlantı koduyla bağlanılmadı: Yeniden Bağlan yok")
+        let issue = CloudSyncController.issue(for: .invalidCredentials, connected: false, login: "pc-7kq2m9@envanter.local")
+        check(issue.message == CloudSyncGuide.invalidPairCode, "yanlış / kullanılmış kod: \"\(CloudSyncGuide.invalidPairCode)\"")
+        check(issue.title == CloudSyncGuide.invalidPairCodeTitle, "yanlış / kullanılmış kodda durum etiketi \"\(CloudSyncGuide.invalidPairCodeTitle)\" (şifre değil)")
+        check(CloudSyncController.issue(for: .invalidCredentials, connected: false, login: "ayse.yilmaz@envanter.local").title == "Şifre yanlış",
+              "kişi hesabında durum etiketi: Şifre yanlış")
+        let removed = CloudSyncController.issue(for: .sessionExpired, connected: false, login: "pc-7kq2m9@envanter.local")
+        let kept = CloudSyncController.issue(for: .sessionExpired, connected: false, login: "pc-7kq2m9@envanter.local", deviceKept: true)
+        check((removed.hint ?? "").contains("yeni bir bağlantı kodu") && !(kept.hint ?? "").contains("yeni bir bağlantı kodu")
+              && (kept.hint ?? "").contains("Yeniden Bağlan"),
+              "oturum düştü: kayıt silindiyse yeni kod, kayıt duruyorsa Yeniden Bağlan")
+        let offline = CloudSyncController.issue(for: .network("timeout"), connected: true, login: "pc-7kq2m9@envanter.local", deviceKept: true)
+        check(offline.title == CloudSyncError.network("timeout").issue(connected: true).title && offline.hint == CloudSyncGuide.offlineKeepsChanges,
+              "sessiz giriş bağlantı yokken: asıl hata (bağlantı yok), değişiklikler bu Mac'te")
+
+        print("20) Genel Bakış: Bugün kartı (satış raporu → sayım → günü kapat)")
+        let o1 = store.engine.overview(date: d1)
+        let steps1 = DaySteps(o1)
+        check(steps1.isDone(.sales) == o1.hasSales && steps1.isDone(.count) == o1.isFullyCounted && steps1.closed == o1.isLocked,
+              "adımların durumu günün özetinden (satış raporu, sayım, kapatma)")
+        let empty = DaySteps(store.engine.overview(date: DateKey.addDays(60, to: d2)))
+        check(empty.next == .sales && store.lockAction(DateKey.addDays(60, to: d2)) == .nothingCounted,
+              "boş gün: sıradaki adım satış raporu, gün kapatılamaz")
     }
 }

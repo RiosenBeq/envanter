@@ -4,8 +4,15 @@ import UniformTypeIdentifiers
 import EnvanterCore
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case overview, daily, sales, orders, reports, recipes, items, team, backup, help
+    // Sıra yan menüdeki ve ⌘1…⌘8 kısayollarındaki sırayla aynı (web paneliyle aynı düzen)
+    case overview, daily, sales, orders, reports, items, recipes, team, backup, help
     var id: String { rawValue }
+
+    /// Yan menü: başlıksız ana grup (günlük işler), "Tanımlar" ve altta ayrı duran Ayarlar / Yardım
+    static let mainSections: [AppSection] = [.overview, .daily, .sales, .orders, .reports]
+    static let definitionSections: [AppSection] = [.items, .recipes, .team]
+    static let bottomSections: [AppSection] = [.backup, .help]
+
     var title: String {
         switch self {
         case .overview: return "Genel Bakış"
@@ -17,8 +24,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .recipes: return "Reçeteler"
         case .items: return "Stok Kalemleri"
         case .team: return "Ekip"
-        case .backup: return "Ayarlar ve Veri"
-        case .help: return "Nasıl Kullanılır?"
+        case .backup: return "Ayarlar"
+        case .help: return "Yardım"
         }
     }
     var icon: String {
@@ -35,7 +42,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .help: return "questionmark.circle"
         }
     }
-    /// ⌘1… kısayolu (yan menüdeki sırayla: ⌘1 Genel Bakış … ⌘8 Ekip)
+    /// ⌘1… kısayolu (yan menüdeki sırayla: ⌘1 Genel Bakış … ⌘6 Stok Kalemleri, ⌘7 Reçeteler, ⌘8 Ekip)
     var shortcut: KeyEquivalent? {
         switch self {
         case .overview: return "1"
@@ -43,8 +50,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .sales: return "3"
         case .orders: return "4"
         case .reports: return "5"
-        case .recipes: return "6"
-        case .items: return "7"
+        case .items: return "6"
+        case .recipes: return "7"
         case .team: return "8"
         case .backup: return ","
         case .help: return nil
@@ -115,6 +122,11 @@ final class AppStore: ObservableObject {
     @Published var enforcedRole: String?
     /// Onay bekleyen gün kapatma (personel: kapatılan günün kilidini yalnızca patron veya müdür açabilir)
     @Published var pendingDayClose: String?
+    /// Açık "Web Paneline Bağlan" penceresi (Web'e Bağlan düğmeleri, menü ya da envanter://baglan… bağlantısı)
+    @Published var connectRequest: ConnectRequest?
+    /// Ekran görüntüsü aracı: bağlanma penceresinin içeriği ana pencerenin üstünde gösterilir (pencere görüntüsüne
+    /// sayfa pencereleri girmez)
+    @Published var previewConnectPanel = false
 
     let persistence: Persistence
     /// Web paneliyle (Supabase) arka planda eşitleme
@@ -172,7 +184,7 @@ final class AppStore: ObservableObject {
             data = AppData.seeded()
             startupAlert = AppAlert(
                 title: "Veri dosyası okunamadı",
-                message: "Veri dosyası bozuk ve kullanılabilir yedek bulunamadı. Dosya \"\(moved)\" adıyla veri klasöründe saklandı; uygulama varsayılan reçetelerle açıldı. Elinizde yedek dosyası varsa Ayarlar ve Veri ekranından geri yükleyin.")
+                message: "Veri dosyası bozuk ve kullanılabilir yedek bulunamadı. Dosya \"\(moved)\" adıyla veri klasöründe saklandı; uygulama varsayılan reçetelerle açıldı. Elinizde yedek dosyası varsa Ayarlar ekranından geri yükleyin.")
         }
         alert = startupAlert
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -325,6 +337,42 @@ final class AppStore: ObservableObject {
     /// Geri alma geçmişini temizler (buluttaki veri indirildikten sonra eski adımlar onun üzerine yazmasın)
     func clearUndoHistory() {
         undoManager?.removeAllActions()
+    }
+
+    // MARK: - Web'e bağlanma
+
+    /// "Web'e Bağlan" (yan menü, başlangıç kartı, menü komutu): bağlanma penceresi açılır. Bağlıyken (ya da şube seçimi
+    /// beklenirken) Ayarlar ekranındaki eşitleme kartına geçilir.
+    func openConnect() {
+        if cloud.isConnected || !cloud.workspaces.isEmpty || cloud.decision != nil {
+            section = .backup
+            return
+        }
+        connectRequest = ConnectRequest()
+    }
+
+    /// envanter://baglan?kod=…&sunucu=…&anahtar=… bağlantısı (web panelinin "Bu bilgisayardaki uygulamada aç" düğmesi):
+    /// bağlanma penceresi kod (ve sunucu ayarı) dolu açılır. Bu Mac henüz bir şubeyle eşleşmemişse ve bağlantının
+    /// sunucusu bilinen bir sunucuysa (yok, varsayılan ya da bu Mac'te kayıtlı: `PairLink.isKnownServer`) hemen
+    /// bağlanılır; değilse "Bağlan"a basılması beklenir (başka sunucu uyarısı ve şube değişiminin kuralları geçerli).
+    /// Bu Mac zaten bu kodun cihaz hesabıyla bağlıysa Ayarlar'daki eşitleme kartına geçilir.
+    func openConnectLink(_ url: URL) {
+        guard url.scheme?.lowercased() == PairLink.scheme else { return }
+        guard let link = PairLink.parse(url) else {
+            alert = AppAlert(title: "Bağlantı açılamadı",
+                             message: "Bağlantıda geçerli bir bağlantı kodu yok. Patronunuzdan yeni bir kod isteyin ya da kodu Web'e Bağlan penceresine yazın.")
+            return
+        }
+        let saved = cloud.state.config
+        if cloud.isConnected, let saved,
+           TextFold.asciiLowercased(saved.email) == TextFold.asciiLowercased(PairCode.email(link.code)),
+           link.url.map({ CloudDefaults.sameServer($0, saved.url) }) ?? true {
+            section = .backup
+            cloud.notice = "Bu Mac bu bağlantı koduyla zaten bağlı; yeniden bağlanmak gerekmez."
+            return
+        }
+        let auto = !cloud.isLinked && PairLink.isKnownServer(link.url, saved: saved?.url)
+        connectRequest = ConnectRequest(code: link.code, url: link.url, key: link.key, autoConnect: auto)
     }
 
     // MARK: - Gün gezinme

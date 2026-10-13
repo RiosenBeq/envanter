@@ -34,7 +34,7 @@ struct OverviewView: View {
                             trendCard(Array(trend30.suffix(14)))
                         }
                         .frame(maxWidth: .infinity)
-                        actions(o).frame(width: 290)
+                        todayCard(o).frame(width: 300)
                     }
                     attention(rows: rows, analysis: analysis, overview: o)
                 }
@@ -169,22 +169,114 @@ struct OverviewView: View {
         HStack(spacing: 4) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 10, height: 10); Text(t) }
     }
 
-    // MARK: Hızlı işlemler
+    // MARK: Bugün
 
-    private func actions(_ o: DayOverview) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Hızlı işlemler").font(.headline)
-                quick(o.hasAnyCount ? "Sayıma devam et" : "Sayıma başla", "checklist", primary: true) { store.section = .daily }
-                quick("Satış raporu aktar…", "doc.badge.plus") { store.pickAndImportFile() }
-                quick("Panodan satış yapıştır", "doc.on.clipboard") { store.beginPasteImport() }
-                quick("Sipariş önerisi", "shippingbox.and.arrow.backward") { store.section = .orders }
-                quick("Dönem raporu", "chart.bar.xaxis") { store.section = .reports }
-                quick("Ekip", "person.2") { store.section = .team }
-                quick("Sayım formu (Excel)…", "printer") { store.exportCountSheet() }
-                quick("Günü Excel'e aktar…", "square.and.arrow.up") { store.exportDayExcel() }
+    /// Günün üç adımı (web panelindeki "Bugün" kartıyla aynı sıra): ① satış raporunu aktar ② sayımı tamamla ③ günü kapat.
+    /// Sıradaki adımın düğmesi vurgulu; diğer işlemler altta tek bir menüde.
+    private func todayCard(_ o: DayOverview) -> some View {
+        let steps = DaySteps(o)
+        let lock = store.lockAction(o.date)
+        return Card {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text(o.date == DateKey.today() ? "Bugün" : DateKey.short(o.date)).font(.headline)
+                    Spacer()
+                    if let next = steps.next {
+                        Text("Sıradaki: \(next.rawValue). adım").font(.caption).foregroundStyle(.secondary)
+                    } else if steps.closed {
+                        Label("Gün kapatıldı", systemImage: "lock.fill").font(.caption).foregroundStyle(Brand.ok)
+                    }
+                }
+                todayStep(.sales, steps: steps, title: "Satış raporunu aktar", status: salesStatus(o),
+                          warning: o.unknownLines > 0) {
+                    // ⌘O gibi: aktarımdan sonra sayımın girileceği Günlük Sayım açık olsun
+                    quick("Satış Raporu Aktar…", "doc.badge.plus", primary: steps.next == .sales) {
+                        store.section = .daily
+                        store.pickAndImportFile()
+                    }
+                }
+                todayStep(.count, steps: steps, title: "Sayımı tamamla",
+                          status: steps.isDone(.count) ? "Tüm kalemler sayıldı (\(steps.countText))" : "\(steps.countText) kalem sayıldı") {
+                    quick(o.hasAnyCount ? "Sayıma Devam Et" : "Sayıma Başla", "checklist", primary: steps.next == .count) {
+                        store.section = .daily
+                    }
+                }
+                todayStep(.close, steps: steps, title: "Günü kapat", status: closeStatus(steps, lock)) {
+                    if steps.closed {
+                        quick("Günlük Sayımı Aç", "lock", primary: false) { store.section = .daily }
+                    } else {
+                        // Gün menüsü (⌘L) ve Günlük Sayım düğmesiyle aynı kural: personel onaylar, boş gün kapatılmaz
+                        quick(lock == .confirmClose ? "Günü Kapat…" : "Günü Kapat", "lock", primary: steps.next == .close) {
+                            store.requestLockToggle(o.date)
+                        }
+                        .disabled(!lock.isAvailable)
+                        .help(lock.isAvailable ? Term.lock.text : DayLockAction.nothingCountedNote)
+                    }
+                }
+                Divider()
+                otherActions
             }
         }
+    }
+
+    /// Adım satırı: numara (yapıldıysa yeşil onay), başlık, durum ve tek düğme
+    private func todayStep<Action: View>(_ step: DaySteps.Step, steps: DaySteps, title: String, status: String,
+                                         warning: Bool = false, @ViewBuilder action: () -> Action) -> some View {
+        let done = steps.isDone(step)
+        let current = steps.next == step
+        let button = action()
+        return HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                Circle().fill(done ? Brand.ok.opacity(0.15) : (current ? Brand.accent.opacity(0.15) : Color.primary.opacity(0.06)))
+                if done {
+                    Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Brand.ok)
+                } else {
+                    Text("\(step.rawValue)").font(.callout.weight(.bold)).foregroundStyle(current ? Brand.accent : Color.secondary)
+                }
+            }
+            .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.callout.weight(.semibold))
+                    Text(status).font(.caption).foregroundStyle(warning ? Brand.warn : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                button
+            }
+        }
+    }
+
+    /// "121 satır aktarıldı" / "3 ürünün reçetesi tanımsız" / "ModPos raporu henüz aktarılmadı"
+    private func salesStatus(_ o: DayOverview) -> String {
+        guard o.hasSales else { return "ModPos satış raporu henüz aktarılmadı" }
+        if o.unknownLines > 0 { return "\(o.unknownLines) ürünün reçetesi tanımsız" }
+        return o.salesLines > 0 ? "\(o.salesLines) satır aktarıldı" : "Excel'den aktarıldı"
+    }
+
+    private func closeStatus(_ steps: DaySteps, _ lock: DayLockAction) -> String {
+        if steps.closed { return "Gün kapatıldı; sayım ve satış kilitli" }
+        switch lock {
+        case .nothingCounted: return DayLockAction.nothingCountedNote
+        case .confirmClose: return "Kapatınca kilidi yalnızca patron veya müdür açabilir"
+        case .close, .unlock, .unlockNotAllowed: return "Sayım bitince günü kapatın; sayım ve satış kilitlenir"
+        }
+    }
+
+    /// Diğer işlemler: tek menüde (Bugün kartının altında)
+    private var otherActions: some View {
+        Menu {
+            Button { store.beginPasteImport() } label: { Label("Panodan satış yapıştır", systemImage: "doc.on.clipboard") }
+            Button { store.section = .orders } label: { Label("Sipariş önerisi", systemImage: "shippingbox.and.arrow.backward") }
+            Button { store.section = .reports } label: { Label("Dönem raporu", systemImage: "chart.bar.xaxis") }
+            Button { store.section = .team } label: { Label("Ekip", systemImage: "person.2") }
+            Divider()
+            Button { store.exportCountSheet() } label: { Label("Sayım formu (Excel)…", systemImage: "printer") }
+            Button { store.exportDayExcel() } label: { Label("Günü Excel'e aktar…", systemImage: "square.and.arrow.up") }
+        } label: {
+            Label("Diğer işlemler", systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("Panodan satış, sipariş önerisi, dönem raporu, ekip, sayım formu ve Excel'e aktarım")
     }
 
     @ViewBuilder
@@ -353,7 +445,7 @@ private struct LiveSyncLine: View {
             .font(.callout).foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .glassSurface(in: Capsule())
-            .help(RealtimeStatusLabel.text(cloud.realtimeStatus) + "\nAyrıntı: Ayarlar ve Veri → Web paneli ile eşitleme")
+            .help(RealtimeStatusLabel.text(cloud.realtimeStatus) + "\nAyrıntı: Ayarlar → Web paneli ile eşitleme")
         }
     }
 }
@@ -361,9 +453,9 @@ private struct LiveSyncLine: View {
 // MARK: - İlk kullanım
 
 /// Bu Mac'te henüz günlük kayıt yokken Genel Bakış'ın başındaki başlangıç kartı (web panelindeki "Bu şubede henüz veri
-/// yok" kartının karşılığı): verisi başka yerde olan için web paneline bağlanma ve yedekten geri yükleme, sıfırdan
-/// başlayan için tanımlar ve ilk satış / sayım. İlk kayıt (günlük kayıt, ekip üyesi ya da sipariş) girilince kendiliğinden
-/// kaybolur (`Onboarding.isEmpty`).
+/// yok" kartının karşılığı): verisi web panelinde olan için bağlantı koduyla bağlanma, yedeği olan için geri yükleme,
+/// sıfırdan başlayan için tanımlar ve ilk satış raporu. İlk kayıt (günlük kayıt, ekip üyesi ya da sipariş) girilince
+/// kendiliğinden kaybolur (`Onboarding.isEmpty`).
 private struct WelcomeCard: View {
     @EnvironmentObject var store: AppStore
     @ObservedObject var cloud: CloudSyncController
@@ -379,16 +471,12 @@ private struct WelcomeCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     connectTile
                     backupTile
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                HStack(alignment: .top, spacing: 12) {
-                    catalogTile
-                    salesTile
+                    freshTile
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Text("Bu kart ilk kayıt (sayım, satış, ekip üyesi ya da sipariş) girilince kendiliğinden kaybolur.")
-                    Button("Adım adım anlatım: Nasıl Kullanılır?") { store.section = .help }
+                    Button("Adım adım anlatım: Yardım") { store.section = .help }
                         .buttonStyle(.link)
                 }
                 .font(.caption).foregroundStyle(.secondary)
@@ -401,18 +489,22 @@ private struct WelcomeCard: View {
         let name = cloud.state.config?.workspaceName ?? ""
         let text: String = connected
             ? "Bu Mac \"\(name)\" şubesiyle eşitleniyor (\(CloudRole.title(cloud.role))). Web panelindeki veriler kendiliğinden buraya gelir."
-            : "Şubenin verisi web panelindeyse en kolay yol: Ayarlar ve Veri → Web paneli ile eşitleme kartında web paneli kullanıcı adınız (ya da e-postanız) ve şifrenizle bağlanın; veriler kendiliğinden gelir, sonraki değişiklikler anında eşitlenir. Hesabınızı patron web panelinde Yönetim → Kullanıcılar ekranında ya da kendi Mac'inde Ekip → Kullanıcılar bölümünde açar."
+            : "Patronunuzdan aldığınız bağlantı koduyla tek adımda bağlanın; veriler kendiliğinden gelir."
         return StartTile(icon: "arrow.triangle.2.circlepath.icloud", title: "Web paneline bağlanın", text: text, done: connected) {
-            Button { store.section = .backup } label: {
-                Label(connected ? "Eşitleme Durumu" : "Web Paneline Bağlan", systemImage: "link")
+            if connected {
+                Button { store.section = .backup } label: { Label("Eşitleme Durumu", systemImage: "link") }
+                    .buttonStyle(SoftButtonStyle())
+            } else {
+                // Web panelinin bağlantı adımlarındaki adla aynı: "Web'e Bağlan"
+                Button { store.openConnect() } label: { Label("Web'e Bağlan", systemImage: "link") }
+                    .buttonStyle(PrimaryButtonStyle())
             }
-            .buttonStyle(SoftButtonStyle())
         }
     }
 
     private var backupTile: some View {
         StartTile(icon: "arrow.counterclockwise", title: "Yedekten geri yükleyin",
-                  text: "Başka bir Mac'te Ayarlar ve Veri → Yedek Oluştur… ile alınmış bir yedek dosyası (.json) varsa tüm veriyi tek seferde yükleyin. Eski Excel envanter dosyanızdaki (.xlsm) geçmiş günler de aktarılabilir.") {
+                  text: "Başka bir Mac'te Ayarlar → Yedek Oluştur… ile alınmış bir yedek dosyası (.json) varsa tüm veriyi tek seferde yükleyin. Eski Excel envanter dosyanızdaki (.xlsm) geçmiş günler de aktarılabilir.") {
             Button { store.restoreBackup() } label: { Label("Yedek Dosyası Seç…", systemImage: "doc") }
                 .buttonStyle(SoftButtonStyle())
                 .disabled(!store.canEditCatalog)
@@ -423,25 +515,18 @@ private struct WelcomeCard: View {
         }
     }
 
-    private var catalogTile: some View {
+    /// Sıfırdan başlayan için: hazır tanımlar ve ilk satış raporu
+    private var freshTile: some View {
         let active = store.engine.activeItems
-        var text = "\(store.data.products.count) hazır reçete ve \(active.count) stok kalemi yüklü. Stok Kalemleri'nde kritik seviye ve toleransı girin; Reçeteler'de ürünlerin hammaddelerini kontrol edin."
-        if !store.canEditCatalog { text += " Personel hesabıyla bu ekranlar salt okunurdur." }
-        return StartTile(icon: "shippingbox", title: "Stok kalemlerini ve reçeteleri hazırlayın", text: text) {
+        var text = "\(store.data.products.count) hazır reçete ve \(active.count) stok kalemi yüklü. Stok Kalemleri'nde kritik seviye ve toleransı girin, Reçeteler'i kontrol edin; gün sonunda ModPos satış raporunu aktarıp Günlük Sayım'da kapanışı yazın."
+        if !store.canEditCatalog { text += " Personel hesabıyla tanımlar salt okunurdur." }
+        return StartTile(icon: "shippingbox", title: "Sıfırdan başlayın", text: text) {
             Button { store.section = .items } label: { Label("Stok Kalemleri", systemImage: "shippingbox") }
                 .buttonStyle(SoftButtonStyle())
             Button { store.section = .recipes } label: { Label("Reçeteler", systemImage: "fork.knife") }
                 .buttonStyle(SoftButtonStyle())
-        }
-    }
-
-    private var salesTile: some View {
-        StartTile(icon: "doc.badge.plus", title: "Satış raporunu aktarıp sayıma başlayın",
-                  text: "Gün sonunda ModPos satış raporunu aktarın (dosyayı pencereye sürükleyip bırakabilirsiniz), sonra Günlük Sayım ekranında kapanış sayımını girin. Satılan miktarlar ve fark kendiliğinden hesaplanır.") {
             // ⌘O gibi: aktarımdan sonra sayımın girileceği Günlük Sayım açık olsun
             Button { store.section = .daily; store.pickAndImportFile() } label: { Label("Satış Raporu Aktar…", systemImage: "doc.badge.plus") }
-                .buttonStyle(PrimaryButtonStyle())
-            Button { store.section = .daily } label: { Label("Sayıma Başla", systemImage: "checklist") }
                 .buttonStyle(SoftButtonStyle())
         }
     }
@@ -467,7 +552,11 @@ private struct StartTile<Actions: View>: View {
             }
             Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            HStack(spacing: 8) { actions }
+            // Dar pencerede düğmeler alt alta iner (kesilmesin)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { actions }
+                VStack(alignment: .leading, spacing: 8) { actions }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

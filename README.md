@@ -12,16 +12,18 @@ Uygulama şubedeki bilgisayara kurulur; patron ve müdürler aynı veriyi **web 
 
 | Ekran | Ne işe yarar |
 | --- | --- |
-| **Genel Bakış** | İlk açılışta (henüz günlük kayıt yokken) **başlangıç kartı**: web paneline bağlanma, yedekten (ya da eski Excel dosyasından) geri yükleme, stok kalemleri ve reçeteler, ilk satış raporu ve sayım. Seçili günün sayım ilerlemesi, satış raporu durumu, tolerans dışı ve **fazla çıkış** olan kalemler, kritik seviyenin altındakiler ve açık siparişler. Son 30 günün **takip şeridi** (yeşil: sayım tam, fark az · sarı: eksik sayım ya da sayılanların %10'unda fark · kırmızı: sayılanların %20'sinde fark) ve son 14 günün sorunlu kalem grafiği. *Dikkat* listeleri: tolerans dışı farklar, kritik seviyenin altındaki stoklar, açık siparişler ve reçetesi tanımsız satışlar. |
+| **Genel Bakış** | İlk açılışta (henüz günlük kayıt yokken) **başlangıç kartı** üç yolla: **bağlantı koduyla web paneline bağlanma**, yedekten (ya da eski Excel dosyasından) geri yükleme, sıfırdan başlama (stok kalemleri, reçeteler, ilk satış raporu). **Bugün** kartı günün üç adımını sırayla gösterir (① satış raporunu aktar ② sayımı tamamla, ör. `14/21` ③ günü kapat), her adımın durumu ve tek düğmesiyle; diğer işlemler (panodan satış, sipariş önerisi, dönem raporu, ekip, sayım formu, günü Excel'e aktarma) tek bir **Diğer işlemler** menüsünde. Seçili günün sayım ilerlemesi, satış raporu durumu, tolerans dışı ve **fazla çıkış** olan kalemler, kritik seviyenin altındakiler ve açık siparişler. Son 30 günün **takip şeridi** (yeşil: sayım tam, fark az · sarı: eksik sayım ya da sayılanların %10'unda fark · kırmızı: sayılanların %20'sinde fark) ve son 14 günün sorunlu kalem grafiği. *Dikkat* listeleri: tolerans dışı farklar, kritik seviyenin altındaki stoklar, açık siparişler ve reçetesi tanımsız satışlar. |
 | **Günlük Sayım** | Açılış (önceki günden otomatik), Gelen, Transfer, Kapanış girişi. Satılan/Zayi reçeteden otomatik gelir; Fiili Tüketim ve Fark hesaplanır. Tolerans ve kritik seviyeye göre renkler, *Sayılmayan / Sorunlu* filtresi. Gün notu, sayımı yapan kişi (*Sayan*: ekipten seçilir), **günü kapatma kilidi** (sayım girilmemiş gün kapatılamaz), hareketsiz kalemleri tek tıkla doldurma ve satır bazında hesap dökümü. |
 | **Satış Dökümü** | ModPos satırlarını *reçeteli / stok etkisi yok / reçete tanımsız* olarak ayırır. Her satırın stoktan düşürdüğü miktarlar görünür; reçete tek tıkla tanımlanır. |
 | **Sipariş** | Öneri = son 7/14/30 günün ortalama tüketimi × istenen gün + kritik seviye − mevcut stok − **siparişte bekleyen**. Mevcut stok, son sayıma sonraki günlerin gelen/transfer ve satışları eklenerek tahmin edilir. Öneriden **satın alma siparişi** oluşturulur; teslim alınınca miktarlar o günün *Gelen* sütununa işlenir. Liste WhatsApp için kopyalanabilir veya Excel'e aktarılabilir. |
 | **Raporlar** | *Dönem Özeti:* dönem toplamları (ilk açılış, gelen, net transfer, satılan, zayi, fiili tüketim, fark, **fazla çıkış**) ve kalem bazında günlük fark grafiği (tolerans bandıyla). *Kalem Analizi:* beklenen ve fiili tüketim, günlük fark ve stok seviyesi. |
-| **Reçeteler** | Hazır reçeteler; hammadde ekleme/çıkarma, başka üründen kopyalama. |
 | **Stok Kalemleri** | Birim, reçete birimi ve katsayı, **kritik seviye**, **tolerans (± adet/kg)**; sıralama ve gizleme. |
+| **Reçeteler** | Hazır reçeteler; hammadde ekleme/çıkarma, başka üründen kopyalama. |
 | **Ekip** | **Eleman ekleme**, düzenleme, pasif yapma ve silme (ad, görev, telefon, işe giriş/çıkış, not). Sayımı yapan kişi ekipten seçilir. Patron web paneline bağlıyken **Kullanıcılar** bölümünden **hesap oluşturur** (e-posta ya da yalnızca kullanıcı adıyla, geçici şifreyle), yetki değiştirir, şifre belirler ve şubeden çıkarır; hesap bir ekip üyesine bağlanabilir. |
-| **Ayarlar ve Veri** | Şube adı, sipariş varsayılanları, **web paneli ile eşitleme** (bkz. aşağıda), otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu** ve eski Excel dosyasından içe aktarım. |
-| **Nasıl Kullanılır?** | Başlarken, adım adım günlük iş akışı, notlar ve ipuçları, kısayollar ve aranabilir **terimler sözlüğü**. |
+| **Ayarlar** | Şube adı, sipariş varsayılanları, **web paneli ile eşitleme** (bkz. aşağıda), otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu** ve eski Excel dosyasından içe aktarım. |
+| **Yardım** | Başlarken, adım adım günlük iş akışı, notlar ve ipuçları, kısayollar ve aranabilir **terimler sözlüğü**. |
+
+Yan menü sade tutulur: üstte günlük işler (Genel Bakış, Günlük Sayım, Satış Dökümü, Sipariş, Raporlar), **Tanımlar** başlığı altında Stok Kalemleri, Reçeteler ve Ekip; altta ayrı olarak Ayarlar ve Yardım. Web paneline bağlı değilken menünün altında **Web'e Bağlan** düğmesi, bağlıyken eşitleme durumu görünür (oturumun süresi dolduysa ikisi birlikte). Sıra web paneliyle aynıdır.
 
 Diğer:
 - **Terim açıklamaları:** tolerans, fazla çıkış, fiili tüketim gibi terimlerin yanındaki ⓘ işaretinin üzerine gelince kısa açıklama çıkar, tıklayınca ayrıntılı açıklama açılır.
@@ -39,22 +41,22 @@ Diğer:
 | ⌘E | Günü Excel'e aktar |
 | ⌘[ / ⌘] / ⌘T | Önceki gün / sonraki gün / bugün |
 | ⌘L | Günü kapat / kilidi aç |
-| ⌘1 … ⌘8 | Genel Bakış, Günlük Sayım, Satış Dökümü, Sipariş, Raporlar, Reçeteler, Stok Kalemleri, Ekip |
-| ⌘, | Ayarlar ve Veri |
+| ⌘1 … ⌘8 | Genel Bakış, Günlük Sayım, Satış Dökümü, Sipariş, Raporlar, Stok Kalemleri, Reçeteler, Ekip |
+| ⌘, | Ayarlar |
 | ⌘Z / ⇧⌘Z | Geri al / yinele |
 
 ## Ekran görüntüleri
 
-Görüntüler CI'da, uygulama `EnvanterTool demo` ile üretilen örnek veriyle çalıştırılarak otomatik alınır; *İlk açılış* görüntüsü boş bir veri klasörüyle alınır.
+Görüntüler CI'da, uygulama `EnvanterTool demo` ile üretilen örnek veriyle çalıştırılarak otomatik alınır; *İlk açılış* görüntüsü boş bir veri klasörüyle alınır; *Web Paneline Bağlan* görüntüsü bağlanma penceresini örnek bir kodla gösterir.
 
 | | |
 | --- | --- |
 | ![Günlük Sayım](docs/screenshots/02-daily.png) **Günlük Sayım** | ![Satış Dökümü](docs/screenshots/03-sales.png) **Satış Dökümü** |
 | ![Sipariş](docs/screenshots/04-orders.png) **Sipariş** | ![Raporlar](docs/screenshots/05-reports-summary.png) **Raporlar · Dönem Özeti** |
-| ![Kalem Analizi](docs/screenshots/06-reports-item-patates.png) **Raporlar · Kalem Analizi** | ![Reçeteler](docs/screenshots/07-recipes-11101.png) **Reçeteler** |
-| ![Stok Kalemleri](docs/screenshots/08-items.png) **Stok Kalemleri** | ![Ekip](docs/screenshots/09-team.png) **Ekip** |
-| ![Ayarlar](docs/screenshots/10-backup.png) **Ayarlar ve Veri** | ![Nasıl Kullanılır](docs/screenshots/11-help.png) **Nasıl Kullanılır?** |
-| ![İlk açılış](docs/screenshots/12-welcome.png) **İlk açılış (boş veri): başlangıç kartı** | |
+| ![Kalem Analizi](docs/screenshots/06-reports-item-patates.png) **Raporlar · Kalem Analizi** | ![Stok Kalemleri](docs/screenshots/07-items.png) **Stok Kalemleri** |
+| ![Reçeteler](docs/screenshots/08-recipes-11101.png) **Reçeteler** | ![Ekip](docs/screenshots/09-team.png) **Ekip** |
+| ![Ayarlar](docs/screenshots/10-backup.png) **Ayarlar** | ![Yardım](docs/screenshots/11-help.png) **Yardım** |
+| ![Web Paneline Bağlan](docs/screenshots/12-connect.png) **Web Paneline Bağlan (bağlantı kodu)** | ![İlk açılış](docs/screenshots/13-welcome.png) **İlk açılış (boş veri): başlangıç kartı** |
 
 ## Kurulum (şirket içi)
 
@@ -80,7 +82,11 @@ Mac uygulaması, patron ve müdürlerin kullandığı **web paneliyle** ([envant
 
 - **Kim ne kullanır:** Personel günlük işleri (sayım, satış raporu aktarımı, gün notu) bu uygulamada yapar. Patron ve müdürler web panelinden her yerden izler (pano, raporlar, uyarılar, şube karşılaştırması, kimin neyi değiştirdiği, **Mac'in şu an açık olup olmadığı**) ve gerektiğinde müdahale eder (sayım düzeltme, sipariş onayı ve teslim alma, stok kalemleri ve reçeteler, ekip, kullanıcılar ve yetkiler).
 - **Anlık:** Mac'te yapılan değişiklik 2 sn içinde gönderilir; web panelinde yapılan değişiklik Mac'e Supabase Realtime ile hemen gelir (bağlantı kurulamazsa 60 sn'de bir eşitlenir). Web panelinde "Mac çevrimiçi" göstergesi Mac açıkken yanar.
-- **Bağlanma:** *Ayarlar ve Veri > Web paneli ile eşitleme* kartında web paneli hesabının **e-postası ya da kullanıcı adı** ve şifresiyle **Bağlan**. Hesabı patron *Ekip > Kullanıcılar* bölümünde (Mac) ya da web panelinde *Yönetim → Kullanıcılar* ekranında **Hesap oluştur** ile açar: e-posta gerekmez, kullanıcı adı yeter (ör. "Ayşe Yılmaz" → giriş adı `ayse.yilmaz`). Şifre unutulursa aynı yerde **Şifre belirle** ile yeni geçici şifre verilir. Sunucu adresi ve publishable key uygulamada hazırdır (publishable key herkese açık bir anahtardır; yetkiyi veritabanındaki RLS kuralları uygular). Farklı bir Supabase projesi için *Gelişmiş* bölümünden değiştirilebilir.
+- **Bağlanma (bağlantı kodu):** Patron web panelinde *Yönetim → Kullanıcılar → **Bilgisayar Bağla*** ile bir kod üretir (ör. `7KQ2-M9XP-4TRA-HW3D`) ve WhatsApp ile gönderir ya da kopyalar. Mac'te yan menüdeki (ya da başlangıç kartındaki, uygulama menüsündeki) **Web'e Bağlan** → kodu yazın ya da mesajı **Yapıştır** ile yapıştırın → **Bağlan**; *Ayarlar > Web paneli ile eşitleme* kartında kod alanı doğrudan görünür. Kullanıcı adı, şifre, şube ya da sunucu ayarı sorulmaz: kod, bu bilgisayara ayrılmış bir cihaz hesabının (`pc-xxxxxx`) giriş bilgisidir ve rolünü (müdür ya da personel) patron kodu üretirken seçer.
+  - Web panelindeki **Bu bilgisayardaki uygulamada aç** bağlantısı (`envanter://baglan?kod=…&sunucu=…&anahtar=…`) uygulamayı öne getirir ve bağlanma penceresini kod (ve sunucu ayarı) dolu açar; bu Mac henüz bir şubeyle eşleşmemişse ve bağlantının sunucusu varsayılan (ya da bu Mac'te kayıtlı) sunucuysa hemen bağlanır. Başka bir sunucuyu gösteren bağlantıda uyarı çıkar ve **Bağlan**'a basılması beklenir; eşleşmiş Mac'te de **Bağlan** beklenir (şube değişimi kuralları geçerlidir, başka sunucuya geçilirken eşleşmenin bırakılacağı söylenir). Bu Mac zaten aynı kodla bağlıysa eşitleme kartı açılır.
+  - **Kod tek kullanımlıktır:** Mac kodla girdikten hemen sonra cihaz hesabına kendi ürettiği rastgele bir şifre verir; kod bir daha geçmez. Bu şifre gösterilmez, günlüğe yazılmaz ve oturum anahtarlarıyla aynı dosyada (`esitleme.json`, 0600) durur. Oturumun süresi dolarsa Mac bu şifreyle sessizce yeniden girer. *Çıkış Yap*'tan (ya da ilk bağlantı kararından / şube seçiminden vazgeçtikten) sonra **Yeniden Bağlan** yeni kod istemez; kullanılmış kod yeniden yazılırsa da bu Mac kayıtlı şifresiyle girer. *Çıkış Yap ve Bu Mac'i Şubeden Ayır* ya da patronun web panelinde **Bağlantıyı kaldır** demesi sonrasında yeni kod gerekir. Şifre değiştirme isteği başarısız olursa (ya da durum diske yazılamazsa) kod geçerli kalır ve Mac bağlıyken birkaç dakikada bir yeniden dener. Oturum geçici bir sunucu ya da bağlantı hatasıyla açılamazsa asıl hata gösterilir ve beklemeyle yeniden denenir. Yanlış ya da kullanılmış kodda: "Kod geçersiz ya da daha önce kullanılmış. Patronunuzdan yeni bir kod isteyin."
+  - Web panelinin *Yönetim → Kullanıcılar* ekranı, Mac açıkken bu bilgisayarı *Çevrimiçi* gösterir (çevrimiçi bilgisinde yalnızca cihaz adı `pc-xxxxxx` gider). Mac'teki *Ekip → Kullanıcılar* bölümünde cihaz hesabı "Bağlantı koduyla bağlanan bilgisayar" olarak görünür; ekip üyesine bağlanmaz, şifresi belirlenmez.
+- **Bağlanma (kullanıcı adı ve şifre):** Aynı pencerede **Kullanıcı adı ve şifreyle bağlan** ile web paneli hesabının **e-postası ya da kullanıcı adı** ve şifresiyle de bağlanılır. Hesabı patron *Ekip > Kullanıcılar* bölümünde (Mac) ya da web panelinde *Yönetim → Kullanıcılar* ekranında **Hesap oluştur** ile açar: e-posta gerekmez, kullanıcı adı yeter (ör. "Ayşe Yılmaz" → giriş adı `ayse.yilmaz`). Şifre unutulursa aynı yerde **Şifre belirle** ile yeni geçici şifre verilir. Sunucu adresi ve publishable key uygulamada hazırdır (publishable key herkese açık bir anahtardır; yetkiyi veritabanındaki RLS kuralları uygular). Farklı bir Supabase projesi için bu formdaki *Gelişmiş* bölümünden değiştirilebilir.
   - Hesap birden çok şubeye üyeyse şube seçilir. Hiç şube yoksa (ilk kurulum) işletme adıyla yeni bir şube açılır ve hesap patron olur. Şubeye eklenmemiş bir hesapla bağlanılırsa patronun eklemesi gerektiği söylenir.
   - **İlk bağlantı:** Bulut boşsa bu Mac'teki her şey yüklenir. Bu Mac yalnızca varsayılan reçetelerle duruyorsa buluttaki veri indirilir. İki tarafta da veri varsa sorulur: *Buluttakini İndir* (bu Mac'teki veri önce `Yedekler/bulut-indirme-oncesi-….json` olarak saklanır) ya da *Bu Mac'tekini Yükle* (buluttaki önceki hal `Yedekler/bulut-yukleme-oncesi-….json` olarak saklanır).
   - **Şube değiştirme:** *Şube Değiştir…* ile başka şube seçilir. Şube boşsa sorulur: *Yalnızca Tanımları Kopyala* ya da *Her Şeyi Kopyala*.
@@ -89,14 +95,16 @@ Mac uygulaması, patron ve müdürlerin kullandığı **web paneliyle** ([envant
 - **Çakışmalar:** Veri belgelere bölünür (stok kalemleri, reçeteler, ayarlar, ekip, siparişler ve her gün ayrı bir belge). Aynı belge iki yerde değiştirilirse alan bazında birleştirilir: aynı güne farklı kalemlerin sayımı girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son gönderilen geçerli olur. Mac'in bilmediği alanlar (eski sürümlerin maliyet ve vardiya alanları dahil) kaybolmaz.
 - **Değişiklik geçmişi:** Her gönderim web panelindeki geçmişe kısa bir özetle yazılır, ör. "09.10.2026 sayımı: 90 Gr kapanış 120 → 110", "09.10.2026 satış raporu aktarıldı (121 satır)", "Ekip: Ayşe eklendi".
 - **Geri al:** ⌘Z yalnızca kendi yaptığınız değişikliğin alanlarını geri alır; arada web panelinden gelen değişiklikler korunur.
-- **Oturum ve gizlilik:** Şifre saklanmaz. Oturum anahtarları ve eşitleme durumu veri klasöründeki `esitleme.json` dosyasında yalnızca kullanıcının okuyabileceği izinle (0600) tutulur; yedeklere girmez. *Çıkış Yap* eşitlemeyi durdurur, bu Mac'teki veriyi silmez ve şube eşleşmesini korur. *Çıkış Yap ve Bu Mac'i Şubeden Ayır* eşleşmeyi de siler.
+- **Oturum ve gizlilik:** Kişi hesaplarının şifresi saklanmaz (bağlantı koduyla bağlanan Mac'in cihaz hesabı şifresi, Mac'in kendi ürettiği rastgele şifredir; yukarıya bakın). Oturum anahtarları ve eşitleme durumu veri klasöründeki `esitleme.json` dosyasında yalnızca kullanıcının okuyabileceği izinle (0600) tutulur; yedeklere girmez. *Çıkış Yap* eşitlemeyi durdurur, bu Mac'teki veriyi silmez ve şube eşleşmesini korur. *Çıkış Yap ve Bu Mac'i Şubeden Ayır* eşleşmeyi de siler.
 - Otomatik test (`ENVANTER_SELFTEST`) ve ekran görüntüsü (`ENVANTER_SNAPSHOT_DIR`) modlarında eşitleme kapalıdır.
 
-İki istemcinin uyduğu sözleşme (tablolar, roller, RPC'ler, eşitleme algoritması, merge3, anlık bağlantı, kullanıcı adı) [docs/SYNC.md](docs/SYNC.md) dosyasındadır. Eşitleme kodu `Sources/EnvanterCore` altında platformdan bağımsızdır (`CloudSync.swift`, `CloudSyncEngine.swift`, `SupabaseAPI.swift`, `CloudMembersAPI.swift`, `Realtime.swift`, `Accounts.swift`, `Team.swift`, `JSONValue.swift`, `ChangeSummary.swift`); uygulama tarafı `CloudSyncController.swift`, `CloudSyncView.swift` ve `TeamView.swift`'tir.
+İki istemcinin uyduğu sözleşme (tablolar, roller, RPC'ler, eşitleme algoritması, merge3, anlık bağlantı, kullanıcı adı) [docs/SYNC.md](docs/SYNC.md) dosyasındadır. Eşitleme kodu `Sources/EnvanterCore` altında platformdan bağımsızdır (`CloudSync.swift`, `CloudSyncEngine.swift`, `SupabaseAPI.swift`, `CloudMembersAPI.swift`, `Realtime.swift`, `Accounts.swift`, `PairCode.swift`, `DeviceLogin.swift`, `Team.swift`, `JSONValue.swift`, `ChangeSummary.swift`); uygulama tarafı `CloudSyncController.swift`, `CloudSyncView.swift`, `ConnectView.swift` ve `TeamView.swift`'tir. Bağlantı kodunun ortak test vektörleri `Tests/EnvanterCoreTests/Fixtures/pair-vectors.json` dosyasındadır (web deposundakiyle birebir aynı).
 
 ```bash
 swift test --filter CloudSyncTests    # merge3 vektörleri, belge dönüşümü, bellek içi sunucuyla iki istemci, istekler ve oturum yenileme
 swift test --filter RealtimeTests     # anlık bağlantı protokolü (sahte soketle)
+swift test --filter PairCodeTests     # bağlantı kodu ve envanter:// bağlantısı (web ile ortak vektörler)
+swift test --filter DeviceLoginTests  # tek kullanımlık kod (şifre değiştirme), sessiz yeniden giriş, durum dosyası
 # Gerçek Supabase bileşenleriyle (envantersite/scripts/local-supabase ortamı çalışırken):
 ENVANTER_SUPABASE_TEST_URL=http://127.0.0.1:54321 swift test --filter IntegrationTests
 ```

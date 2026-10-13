@@ -2,22 +2,16 @@ import SwiftUI
 import AppKit
 import EnvanterCore
 
-/// Ayarlar ve Veri > "Web paneli ile eşitleme" kartı: giriş, şube seçimi, ilk bağlantı kararı, durum ve çıkış.
-/// Durumlar: bağlı değil (giriş formu) · bağlanıyor · şube seçimi · bağlı (hesap, rol, şube, son eşitleme, canlı bağlantı,
-/// bekleyen) · hata (ne oldu + ne yapılmalı; kartın üstünde tek kutu) · oturum süresi doldu / çıkış yapıldı (şube
-/// eşleşmesi korunur). Giriş adı kullanıcı adı ("ayse") ya da e-posta olabilir (`LoginName`).
+/// Ayarlar > "Web paneli ile eşitleme" kartı: bağlanma, şube seçimi, ilk bağlantı kararı, durum ve çıkış.
+/// Durumlar: bağlı değil (bağlanma formu: önce bağlantı kodu, istenirse kullanıcı adı ve şifre — `CloudConnectForm`) ·
+/// bağlanıyor · şube seçimi · bağlı (hesap, rol, şube, son eşitleme, canlı bağlantı, bekleyen) · hata (ne oldu + ne
+/// yapılmalı; kartın üstünde tek kutu) · oturum süresi doldu / çıkış yapıldı (şube eşleşmesi korunur).
 struct CloudSyncCard: View {
     @ObservedObject var cloud: CloudSyncController
     /// Patronun "Kullanıcılar…" düğmesi (verilmezse Ekip ekranına geçilir; Kullanıcılar bölümü orada)
     var openUsers: (() -> Void)? = nil
-    @State private var email = ""
-    @State private var password = ""
-    @State private var serverURL = CloudDefaults.url
-    @State private var serverKey = CloudDefaults.publishableKey
-    @State private var showAdvanced = false
     @State private var showRoles = false
     @State private var confirmSignOut = false
-    @FocusState private var passwordFocused: Bool
 
     var body: some View {
         Card {
@@ -37,14 +31,6 @@ struct CloudSyncCard: View {
                 rolesDisclosure
             }
         }
-        .onAppear {
-            if let c = cloud.state.config {
-                // Kullanıcı adı hesabında "@envanter.local" gösterilmez: kişi kullanıcı adını yazar
-                if email.isEmpty { email = LoginName.display(c.email) }
-                serverURL = c.url
-                serverKey = c.publishableKey
-            }
-        }
         .alert(decisionTitle, isPresented: Binding(get: { cloud.decision != nil }, set: { _ in }),
                presenting: cloud.decision) { d in
             if d.switchingFrom != nil {
@@ -61,13 +47,11 @@ struct CloudSyncCard: View {
             Text(decisionMessage(d))
         }
         .confirmationDialog("Web panelinden çıkış yapılsın mı?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-            Button("Çıkış Yap") { cloud.signOut(); password = "" }
-            Button("Çıkış Yap ve Bu Mac'i Şubeden Ayır", role: .destructive) { cloud.signOut(detach: true); password = "" }
+            Button("Çıkış Yap") { cloud.signOut() }
+            Button("Çıkış Yap ve Bu Mac'i Şubeden Ayır", role: .destructive) { cloud.signOut(detach: true) }
             Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text(cloud.pendingChanges > 0
-                 ? "Henüz gönderilmemiş \(cloud.pendingChanges) değişiklik var; yeniden giriş yaptığınızda gönderilir. Bu Mac'teki veriler silinmez. Bu Mac'i şubeden ayırırsanız bekleyen değişiklikler gönderilmez."
-                 : "Eşitleme durur; bu Mac'teki veriler silinmez. Yeniden giriş yaptığınızda kaldığınız yerden devam edilir. Bu Mac'i şubeden ayırırsanız yeniden bağlanırken ilk bağlantıdaki gibi sorulur.")
+            Text(signOutMessage)
         }
     }
 
@@ -84,7 +68,7 @@ struct CloudSyncCard: View {
     @ViewBuilder private var content: some View {
         if !cloud.enabled {
             // Otomatik test / ekran görüntüsü modu: form görünür ama bağlantı kurulmaz
-            signInForm.disabled(true)
+            CloudConnectForm(cloud: cloud).disabled(true)
             Text("Bu çalışma modunda (otomatik test / ekran görüntüsü) web eşitlemesi kapalıdır.")
                 .font(.caption).foregroundStyle(.tertiary)
         } else if !cloud.workspaces.isEmpty {
@@ -93,98 +77,8 @@ struct CloudSyncCard: View {
         } else if cloud.isConnected {
             connectedSection
         } else {
-            signInForm
+            CloudConnectForm(cloud: cloud)
         }
-    }
-
-    private var signInForm: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            signInIntro
-            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
-                GridRow {
-                    Text("Kullanıcı adı veya e-posta").foregroundStyle(.secondary)
-                    TextField("ali.veli ya da ornek@isletme.com", text: $email)
-                        .textFieldStyle(.roundedBorder)
-                        .autocorrectionDisabled()
-                        .frame(width: 300)
-                        .onSubmit { passwordFocused = true }
-                }
-                if let preview = loginPreview {
-                    GridRow {
-                        Color.clear.frame(width: 1, height: 1)
-                        Text(preview.text)
-                            .font(.caption).foregroundStyle(preview.isError ? Brand.negative : Color.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(width: 300, alignment: .leading)
-                    }
-                }
-                GridRow {
-                    Text("Şifre").foregroundStyle(.secondary)
-                    SecureField("Şifre", text: $password)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 300)
-                        .focused($passwordFocused)
-                        .onSubmit(connect)
-                }
-            }
-            HStack(spacing: 10) {
-                Button(action: connect) { Label("Bağlan", systemImage: "link") }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(cloud.busy || LoginName.email(from: email) == nil || password.isEmpty)
-                if cloud.busy {
-                    ProgressView().controlSize(.small)
-                    Text("Bağlanıyor…").font(.callout).foregroundStyle(.secondary)
-                }
-            }
-            if !cloud.needsSignIn && !cloud.isSignedOutWithLink {
-                Text(CloudSyncGuide.firstBranchNote)
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            advancedSettings
-        }
-    }
-
-    /// Giriş formunun üstündeki açıklama: oturum süresi doldu / çıkış yapıldı (şube eşleşmesi korunuyor) ya da
-    /// hesabın nereden açıldığı
-    @ViewBuilder private var signInIntro: some View {
-        if cloud.needsSignIn || cloud.isSignedOutWithLink {
-            Label(linkedText, systemImage: "building.2")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Web paneli hesabınızın kullanıcı adı (ya da e-postası) ve şifresiyle bağlanın.").font(.callout.weight(.medium))
-                Text(Self.accountHelp)
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var advancedSettings: some View {
-        DisclosureGroup("Gelişmiş", isExpanded: $showAdvanced) {
-            VStack(alignment: .leading, spacing: 8) {
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-                    GridRow {
-                        Text("Sunucu adresi").foregroundStyle(.secondary)
-                        TextField(CloudDefaults.url, text: $serverURL).textFieldStyle(.roundedBorder).frame(width: 380)
-                    }
-                    GridRow {
-                        Text("Publishable key").foregroundStyle(.secondary)
-                        TextField(CloudDefaults.publishableKey, text: $serverKey).textFieldStyle(.roundedBorder).frame(width: 380)
-                    }
-                }
-                HStack {
-                    Button("Varsayılana Dön") {
-                        serverURL = CloudDefaults.url
-                        serverKey = CloudDefaults.publishableKey
-                    }
-                    .buttonStyle(SoftButtonStyle())
-                    Text("Yalnızca farklı bir Supabase projesi kullanılıyorsa değiştirin. Publishable key herkese açık bir anahtardır; yetkiyi sunucudaki kurallar uygular.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.top, 6)
-        }
-        .font(.callout)
     }
 
     private var workspacePicker: some View {
@@ -347,14 +241,6 @@ struct CloudSyncCard: View {
         issue?.severity == .temporary ? Brand.warn : Brand.negative
     }
 
-    /// Oturum süresi dolduğunda ya da çıkış yapıldığında: şube eşleşmesi korunuyor
-    private var linkedText: String {
-        let name = cloud.state.config?.workspaceName ?? ""
-        var text = "Bu Mac \"\(name)\" şubesiyle eşleşmiş durumda. Yeniden giriş yaptığınızda kaldığınız yerden devam edilir"
-        text += cloud.pendingChanges > 0 ? "; \(cloud.pendingChanges) değişiklik gönderilmeyi bekliyor." : "."
-        return text
-    }
-
     /// Şube listesinde, bu Mac bir şubeyle eşleşmişken gösterilen açıklama
     private var switchHelpText: String {
         var text = "Başka bir şube seçerseniz: şubede veri varsa o şubenin verisi bu Mac'e indirilir (bu Mac'in hali önce Yedekler klasörüne kaydedilir); şube boşsa ne kopyalanacağı sorulur."
@@ -389,34 +275,29 @@ struct CloudSyncCard: View {
     /// Hesabı kim açar, şifre unutulunca ne yapılır (web panelinin giriş ekranıyla aynı yollar)
     static let accountHelp = "Hesabınızı patron açar (web panelinde Yönetim → Kullanıcılar ya da kendi Mac'inde Ekip → Kullanıcılar → “Hesap oluştur”) ve kullanıcı adınızı (ya da e-postanızı) ve geçici şifrenizi size WhatsApp/SMS ile iletir; e-posta gelmesini beklemeyin. Şifrenizi unuttuysanız: kullanıcı adı hesabında patronunuz “Şifre belirle” ile yeni bir geçici şifre verir; e-posta hesabında web panelinin giriş ekranındaki “Şifremi unuttum”u kullanın. Kendi şifrenizi web panelinde Ayarlar → Hesap → “Şifremi değiştir” bölümünden değiştirirsiniz."
 
-    /// Giriş alanının altındaki ipucu: kullanıcı adının hangi adla deneneceği (Türkçe harfler ve boşluklar çevrilir)
-    private var loginPreview: (text: String, isError: Bool)? {
-        guard LoginName.isUsername(email) else { return nil }
-        guard let mapped = LoginName.email(from: email) else {
-            return ("Kullanıcı adında en az bir harf ya da rakam olmalı (harf, rakam, nokta, alt çizgi ve tire kullanılabilir).", true)
-        }
-        return ("Kullanıcı adı olarak “\(LoginName.display(mapped))” ile giriş yapılacak.", false)
-    }
-
-    /// Bağlı hesabın ekrandaki adı (kullanıcı adı hesabında yalnızca kullanıcı adı)
+    /// Bağlı hesabın ekrandaki adı (kullanıcı adı hesabında yalnızca kullanıcı adı; bağlantı koduyla bağlanan Mac'te
+    /// cihaz hesabının adıyla "Bağlantı kodu")
     private var accountText: String {
         guard let e = cloud.state.userEmail ?? cloud.state.config?.email, !e.isEmpty else { return "—" }
+        if PairCode.isDeviceAccount(e) { return "Bağlantı kodu (\(LoginName.display(e)))" }
         return LoginName.display(e)
     }
 
-    private func connect() {
-        guard !cloud.busy else { return }
-        let e = email, p = password, u = serverURL, k = serverKey
-        Task { @MainActor in
-            await cloud.connect(email: e, password: p, url: u, key: k)
-            if cloud.isConnected || !cloud.workspaces.isEmpty || cloud.decision != nil { password = "" }
+    /// Çıkış onayının metni: bekleyen değişiklikler; bağlantı koduyla bağlanan Mac'te "Yeniden Bağlan"
+    private var signOutMessage: String {
+        var text = cloud.pendingChanges > 0
+            ? "Henüz gönderilmemiş \(cloud.pendingChanges) değişiklik var; yeniden giriş yaptığınızda gönderilir. Bu Mac'teki veriler silinmez. Bu Mac'i şubeden ayırırsanız bekleyen değişiklikler gönderilmez."
+            : "Eşitleme durur; bu Mac'teki veriler silinmez. Yeniden giriş yaptığınızda kaldığınız yerden devam edilir. Bu Mac'i şubeden ayırırsanız yeniden bağlanırken ilk bağlantıdaki gibi sorulur."
+        if cloud.isDeviceAccount {
+            text += " Bağlantı koduyla bağlanan bu Mac, çıkıştan sonra \"Yeniden Bağlan\" ile kod sorulmadan bağlanır; şubeden ayırırsanız yeni bir kod gerekir."
         }
+        return text
     }
 }
 
 /// Eşitleme sorunu kutusu: ne oldu (kalın) ve ne yapılmalı. Geçici sorunlar (bağlantı, sunucu) turuncu, birinin bir
 /// şey yapması gereken sorunlar (şifre, veritabanı kurulumu, şube üyeliği) kırmızı.
-private struct CloudIssueBox: View {
+struct CloudIssueBox: View {
     let issue: CloudIssue
 
     var body: some View {
@@ -480,7 +361,7 @@ struct CloudStatusLine: View {
         if cloud.pendingChanges > 0 {
             lines.append(CloudSyncGuide.pendingText(cloud.pendingChanges, issue: cloud.issue))
         }
-        lines.append("Ayrıntı: Ayarlar ve Veri → Web paneli ile eşitleme")
+        lines.append("Ayrıntı: Ayarlar → Web paneli ile eşitleme")
         return lines.joined(separator: "\n")
     }
 

@@ -1,8 +1,8 @@
 import Foundation
 
 // Web eşitlemesinin kullanıcıya gösterilen metinleri: hesap açma / şifre yolları (web panelindeki adlarla aynı),
-// hataların ne anlama geldiği ve ne yapılacağı, rol özetleri, son eşitleme zamanı. Mac'te Ayarlar ve Veri >
-// "Web paneli ile eşitleme" kartı, yan menüdeki durum satırı ve Nasıl Kullanılır? ekranı bunları kullanır.
+// hataların ne anlama geldiği ve ne yapılacağı, rol özetleri, son eşitleme zamanı. Mac'te "Web Paneline Bağlan"
+// penceresi, Ayarlar > "Web paneli ile eşitleme" kartı, yan menüdeki durum satırı ve Yardım ekranı bunları kullanır.
 
 /// Web eşitlemesindeki bir sorunun ekrandaki hali
 public struct CloudIssue: Equatable, Sendable {
@@ -38,6 +38,15 @@ public enum CloudSyncGuide {
 
     /// Şifre unutulunca / değiştirilirken (web paneli: "Şifre belirle", Ayarlar → Hesap → "Şifremi değiştir")
     public static let forgotPassword = "Şifrenizi unuttuysanız patronunuz web panelinde Yönetim → Kullanıcılar ekranında \"Şifre belirle\" ile yeni bir geçici şifre verir. Patron hesaplarında (ve başka bir patronun şubesinde de çalışanlarda) bu yol kapalıdır: web panelinin giriş ekranındaki \"Şifremi unuttum\" bağlantısını kullanın. Kendi şifrenizi web panelinde Ayarlar → Hesap → \"Şifremi değiştir\" bölümünden değiştirirsiniz."
+
+    /// Bağlantı kodunun nereden alındığı (bağlanma penceresi ve Ayarlar kartı)
+    public static let pairCodeHelp = "Kodu patronunuz web panelinde Yönetim → Kullanıcılar → Bilgisayar Bağla'dan üretir."
+
+    /// Bağlantı kodu reddedildi: yanlış yazıldı, daha önce kullanıldı ya da bilgisayarın bağlantısı kaldırıldı
+    public static let invalidPairCode = "Kod geçersiz ya da daha önce kullanılmış. Patronunuzdan yeni bir kod isteyin."
+
+    /// Bağlantı kodu reddedildiğinde sorunun kısa adı (durum etiketi; kişi şifre yazmadı)
+    public static let invalidPairCodeTitle = "Kod geçersiz"
 
     /// İlk kurulum: web panelinde hiç şube yoksa
     public static let firstBranchNote = "İlk kurulum: web panelinde hiç şube yoksa bu hesapla, işletme adıyla yeni bir şube açılır ve hesap patron olur."
@@ -86,7 +95,7 @@ public enum CloudSyncGuide {
 }
 
 extension CloudRole {
-    /// Rolün bu Mac'te neye izin verdiği (Ayarlar ve Veri kartında rol rozetinin yanında)
+    /// Rolün bu Mac'te neye izin verdiği (Ayarlar > Web paneli ile eşitleme kartında rol rozetinin yanında)
     public static func summary(_ role: String?) -> String {
         switch role {
         case owner:

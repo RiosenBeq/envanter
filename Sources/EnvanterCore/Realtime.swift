@@ -277,13 +277,17 @@ public struct RealtimeSession: Sendable {
     }
 }
 
-/// Mac'in çevrimiçi bilgisi (presence): istemci, şube adı, uygulama sürümü, bağlanma zamanı. E-posta ya da kişisel
-/// bilgi yoktur (kanal herkese açıktır; değişiklik içeriği RLS ile korunur).
+/// Mac'in çevrimiçi bilgisi (presence): istemci, şube adı, uygulama sürümü, bağlanma zamanı; bağlantı koduyla bağlanan
+/// bilgisayarda cihaz hesabının kullanıcı adı (`device`, ör. "pc-7kq2m9": web panelindeki bağlı bilgisayarlar listesi
+/// çevrimiçi olanı tanır). E-posta ya da kişisel bilgi yoktur (kanal herkese açıktır; değişiklik içeriği RLS ile korunur).
 public enum RealtimePresence {
-    public static func mac(branch: String, app: String, since: Date) -> [String: JSONValue] {
+    public static func mac(branch: String, app: String, since: Date, device: String? = nil) -> [String: JSONValue] {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
-        return ["client": .string(CloudDefaults.client), "branch": .string(branch), "app": .string(app), "since": .string(f.string(from: since))]
+        var meta: [String: JSONValue] = ["client": .string(CloudDefaults.client), "branch": .string(branch), "app": .string(app),
+                                         "since": .string(f.string(from: since))]
+        if let device, !device.isEmpty { meta["device"] = .string(device) }
+        return meta
     }
 }
 

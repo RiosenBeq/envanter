@@ -491,9 +491,9 @@ private struct UsersInfoCard: View {
                 Label("Kullanıcılar (giriş hesapları)", systemImage: "person.badge.key").font(.headline)
                 Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if cloud.enabled && !cloud.isConnected {
-                    Button { store.section = .backup } label: { Label("Ayarlar ve Veri…", systemImage: "gearshape") }
+                    Button { store.openConnect() } label: { Label("Web'e Bağlan…", systemImage: "link.icloud") }
                         .buttonStyle(SoftButtonStyle())
-                        .help("Ayarlar ve Veri → Web paneli ile eşitleme")
+                        .help("Web paneline bağlanın (patron hesabıyla: Kullanıcı adı ve şifreyle bağlan)")
                 }
             }
         }
@@ -503,7 +503,7 @@ private struct UsersInfoCard: View {
         if cloud.isConnected {
             return "Giriş hesaplarını (kullanıcı adı ve şifre) patron açar ve yetkilerini belirler: web panelinde Yönetim → Kullanıcılar ya da patron hesabıyla bağlı bir Mac'te bu ekranın Kullanıcılar bölümü. Şifresini unutan çalışana patron “Şifre belirle” ile yeni geçici şifre verir."
         }
-        return "Patron, bu Mac web paneline patron hesabıyla bağlıyken burada çalışanlara kullanıcı adıyla (e-posta gerekmez) giriş hesabı açar, yetki ve şifre belirler. Bağlanmak için: Ayarlar ve Veri → Web paneli ile eşitleme. Hesaplar web panelinde Yönetim → Kullanıcılar ekranından da yönetilir."
+        return "Patron, bu Mac web paneline patron hesabıyla bağlıyken burada çalışanlara kullanıcı adıyla (e-posta gerekmez) giriş hesabı açar, yetki ve şifre belirler. Bağlanmak için: yan menüde Web'e Bağlan → “Kullanıcı adı ve şifreyle bağlan” (patron hesabıyla). Hesaplar web panelinde Yönetim → Kullanıcılar ekranından da yönetilir."
     }
 }
 
@@ -601,8 +601,11 @@ private struct UsersCard: View {
         let perms = CloudMembers.memberPermissions(m, in: members, myRole: cloud.role)
         let pw = CloudMembers.passwordPermission(m, myRole: cloud.role, myUserID: me)
         let linked = store.employee(linkedTo: m.email)
+        // Bağlantı koduyla bağlanan bilgisayarın cihaz hesabı (web panelindeki "Bilgisayar Bağla"): ekibe bağlanmaz,
+        // şifresini bilgisayar kendisi belirler
+        let device = PairCode.isDeviceAccount(m.email)
         HStack(spacing: 10) {
-            Image(systemName: m.pending ? "envelope" : (LoginName.isUsernameEmail(m.email) ? "person.crop.circle" : "at.circle"))
+            Image(systemName: m.pending ? "envelope" : (device ? "desktopcomputer" : (LoginName.isUsernameEmail(m.email) ? "person.crop.circle" : "at.circle")))
                 .foregroundStyle(.secondary).frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -613,6 +616,8 @@ private struct UsersCard: View {
                 Group {
                     if m.pending {
                         Text("Davetler web panelinden yönetilir; hesap açılınca şubeye eklenir.")
+                    } else if device {
+                        Text("Bağlantı koduyla bağlanan bilgisayar")
                     } else if let linked {
                         Text("Ekip: \(linked.name)" + (linked.role.isEmpty ? "" : " · \(linked.role)"))
                     } else {
@@ -623,7 +628,7 @@ private struct UsersCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if busyID == m.id { ProgressView().controlSize(.small) }
-            if !m.pending {
+            if !m.pending && !device {
                 linkMenu(m, linked: linked)
             }
             Picker("", selection: Binding(get: { m.role }, set: { requestRole(m, $0) })) {
@@ -636,8 +641,9 @@ private struct UsersCard: View {
             .help(m.pending ? "Davetin yetkisi web panelinden değiştirilir" : (perms.reason ?? "Yetkiyi değiştir"))
             Button("Şifre belirle") { actionError = nil; info = nil; sheet = .setPassword(m) }
                 .buttonStyle(SoftButtonStyle())
-                .disabled(!pw.can || busyID != nil)
-                .help(pw.reason ?? "Yeni geçici şifre belirle (eski şifre hemen geçmez olur)")
+                .disabled(!pw.can || device || busyID != nil)
+                .help(device ? "Bilgisayar hesabının şifresini bilgisayar kendisi belirler. Yeniden bağlamak için web panelinde Yönetim → Kullanıcılar → Bilgisayar Bağla ile yeni kod üretin."
+                      : (pw.reason ?? "Yeni geçici şifre belirle (eski şifre hemen geçmez olur)"))
             Button { confirm = .remove(m) } label: { Image(systemName: m.pending ? "xmark.circle" : "person.crop.circle.badge.minus") }
                 .buttonStyle(.plain).foregroundStyle(Brand.negative.opacity(0.85)).frame(width: 28)
                 .disabled(!perms.canRemove || isSelf || busyID != nil)
@@ -1089,7 +1095,7 @@ private enum AccountMessage {
     }
 
     private static func macLine(_ email: String) -> String {
-        "Mac'te: NextGen Envanter → Ayarlar ve Veri → Web paneli ile eşitleme → aynı \(noun(email)) ve şifreyle \"Bağlan\"a basın, listeden şubeyi seçin."
+        "Mac'te: NextGen Envanter → Web'e Bağlan → \"Kullanıcı adı ve şifreyle bağlan\" → aynı \(noun(email)) ve şifreyle \"Bağlan\"a basın, listeden şubeyi seçin."
     }
 
     private static func webLine(_ email: String) -> String {

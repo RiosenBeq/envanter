@@ -27,13 +27,20 @@ public enum CloudDefaults {
 
     /// Adres eski varsayılan projelerden biri mi (baştaki/sondaki boşluk, sondaki "/" ve büyük-küçük harf yok sayılır)
     public static func isRetired(_ url: String) -> Bool {
-        func norm(_ s: String) -> String {
-            var u = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            while u.hasSuffix("/") { u.removeLast() }
-            return u
-        }
-        let u = norm(url)
-        return retiredURLs.contains { norm($0) == u }
+        let u = normalizedURL(url)
+        return retiredURLs.contains { normalizedURL($0) == u }
+    }
+
+    /// Karşılaştırma için adres: baştaki/sondaki boşluk ve sondaki "/" atılır, küçük harfe çevrilir
+    public static func normalizedURL(_ url: String) -> String {
+        var u = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while u.hasSuffix("/") { u.removeLast() }
+        return u
+    }
+
+    /// İki adres aynı sunucu mu (`normalizedURL` ile)
+    public static func sameServer(_ a: String, _ b: String) -> Bool {
+        normalizedURL(a) == normalizedURL(b)
     }
 }
 
@@ -224,18 +231,22 @@ public struct SyncState: Codable, Equatable, Sendable {
     /// Kullanıcı çıkış yaptı ya da yeniden girişte şube henüz onaylanmadı: şube eşleşmesi (taban, bekleyen
     /// değişiklikler) korunur ama eşitleme, şube yeniden seçilene (rol güncellenene) kadar çalışmaz.
     public var signedOut: Bool
+    /// Bağlantı koduyla bağlanan bilgisayarın cihaz hesabı ve şifreleri (DeviceLogin.swift); kişi hesabıyla bağlıyken nil.
+    /// Çıkışta korunur ("Yeniden Bağlan"), "Bu Mac'i Şubeden Ayır" ile silinir. Eski sürümlerin dosyasında yoktur.
+    public var deviceLogin: DeviceLogin?
 
     public init(config: CloudConfig? = nil, lastRev: Int64 = 0, base: [String: BaseDoc] = [:], dirty: Set<String> = [],
                 accessToken: String? = nil, refreshToken: String? = nil, expiresAt: Date? = nil, lastSyncAt: Date? = nil,
-                userEmail: String? = nil, initialized: Bool = false, signedOut: Bool = false) {
+                userEmail: String? = nil, initialized: Bool = false, signedOut: Bool = false, deviceLogin: DeviceLogin? = nil) {
         self.config = config; self.lastRev = lastRev; self.base = base; self.dirty = dirty
         self.accessToken = accessToken; self.refreshToken = refreshToken; self.expiresAt = expiresAt
         self.lastSyncAt = lastSyncAt; self.userEmail = userEmail; self.initialized = initialized
-        self.signedOut = signedOut
+        self.signedOut = signedOut; self.deviceLogin = deviceLogin
     }
 
     enum CodingKeys: String, CodingKey {
         case config, lastRev, base, dirty, accessToken, refreshToken, expiresAt, lastSyncAt, userEmail, initialized, signedOut
+        case deviceLogin
     }
 
     public init(from decoder: Decoder) throws {
@@ -251,6 +262,7 @@ public struct SyncState: Codable, Equatable, Sendable {
         userEmail = try c.decodeIfPresent(String.self, forKey: .userEmail)
         initialized = try c.decodeIfPresent(Bool.self, forKey: .initialized) ?? false
         signedOut = try c.decodeIfPresent(Bool.self, forKey: .signedOut) ?? false
+        deviceLogin = try c.decodeIfPresent(DeviceLogin.self, forKey: .deviceLogin)
     }
 
     /// Oturum var mı (erişim ya da yenileme anahtarı)
@@ -281,7 +293,7 @@ public struct SyncState: Codable, Equatable, Sendable {
 
     /// Çıkış: oturum anahtarları silinir; şube eşleşmesi (şube, rol, taban, bekleyen değişiklikler) korunur. Yeniden
     /// girişte aynı şube seçilirse kaldığı yerden (3 yollu birleştirmeyle) devam edilir; web panelinde arada yapılan
-    /// değişiklikler bu Mac'in eski haliyle ezilmez.
+    /// değişiklikler bu Mac'in eski haliyle ezilmez. Cihaz hesabı kaydı (`deviceLogin`) da korunur: "Yeniden Bağlan".
     public mutating func signOut() {
         store(nil)
         userEmail = nil

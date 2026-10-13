@@ -5,7 +5,9 @@ import EnvanterCore
 /// Geliştirme aracı: ENVANTER_SNAPSHOT_DIR tanımlıysa pencere içeriğini PNG olarak kaydeder (CI'da ekran görüntüleri için).
 ///   ENVANTER_SECTIONS="overview,daily,team,reports:item:patates,recipes:11101"  ekranlar sırayla gezilir
 ///     (iki noktadan sonrası: Raporlar sekmesi — summary/item, "reports:item:patates" ile kalem seçimi —
-///      ya da Reçeteler'de seçilecek ürün kodu; "welcome": Genel Bakış, boş veri klasörüyle ilk kullanım kartı için)
+///      ya da Reçeteler'de seçilecek ürün kodu; "welcome": Genel Bakış, boş veri klasörüyle ilk kullanım kartı için;
+///      "connect": Genel Bakış'ın üstünde "Web Paneline Bağlan" penceresinin içeriği, örnek kodla — sayfa pencereleri
+///      pencere görüntüsüne girmediği için içerik ana pencerede gösterilir)
 ///   ENVANTER_SNAPSHOT_START=12                                        ilk dosyanın sıra numarası (varsayılan 1)
 ///   ENVANTER_DATE=2026-08-15                                          seçili gün
 ///   ENVANTER_SNAPSHOT_SIZE=1440x1000                                  pencere boyutu (ekrandan büyük olabilir)
@@ -46,7 +48,8 @@ enum DebugSnapshot {
                     if sub.count > 1 { store.reportItem = sub[1] }
                 }
                 if name == "recipes", let arg { store.recipeSelection = arg }
-                if name == "welcome" { store.section = .overview }
+                if name == "welcome" || name == "connect" { store.section = .overview }
+                store.previewConnectPanel = name == "connect"
                 if let s = AppSection(rawValue: name) { store.section = s }
                 try? await Task.sleep(nanoseconds: 1_800_000_000)
                 let file = "\(dir)/\(String(format: "%02ld", i + firstIndex))-\(spec.replacingOccurrences(of: ":", with: "-")).png"

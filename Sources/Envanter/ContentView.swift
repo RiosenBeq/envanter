@@ -56,6 +56,26 @@ struct ContentView: View {
         } message: { date in
             Text(store.dayCloseConfirmMessage(date))
         }
+        // "Web Paneline Bağlan" penceresi (Web'e Bağlan düğmeleri, menü komutu, envanter://baglan… bağlantısı)
+        .sheet(item: $store.connectRequest) { request in
+            ConnectPanel(cloud: store.cloud, request: request,
+                         close: { store.connectRequest = nil },
+                         openSettings: { store.section = .backup })
+        }
+        // Ekran görüntüsü aracı: pencere görüntüsüne sayfa pencereleri girmediği için aynı içerik pencerenin üstünde
+        .overlay { if store.previewConnectPanel { connectPreview } }
+    }
+
+    /// Bağlanma penceresinin ekran görüntüsü için önizlemesi (örnek kodla; yalnızca ENVANTER_SNAPSHOT_DIR modunda)
+    private var connectPreview: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+            ConnectPanel(cloud: store.cloud, request: ConnectRequest(code: "7KQ2M9XP4TRAHW3D"),
+                         close: { store.previewConnectPanel = false }, openSettings: {}, isPreview: true)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
+                .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 10)
+        }
+        .ignoresSafeArea()
     }
 
     private var dropOverlay: some View {
@@ -104,31 +124,40 @@ struct ContentView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
-                    // Yukarıdan aşağı sıra ⌘1…⌘8 kısayollarıyla aynı
-                    group("Envanter", [.overview, .daily, .sales, .orders], overview: o)
-                    group("Raporlar", [.reports], overview: o)
-                    group("Tanımlar", [.recipes, .items], overview: o)
-                    group("Ekip", [.team], overview: o)
-                    group("Diğer", [.backup, .help], overview: o)
+                    // Yukarıdan aşağı sıra ⌘1…⌘8 kısayollarıyla aynı: günlük işler başlıksız, sonra tanımlar
+                    group(nil, AppSection.mainSections, overview: o)
+                    group("Tanımlar", AppSection.definitionSections, overview: o)
                 }
                 .padding(.horizontal, 10)
             }
             Spacer(minLength: 0)
+            // Ayarlar ve Yardım altta, ayrı
+            group(nil, AppSection.bottomSections, overview: o)
+                .padding(.horizontal, 10).padding(.bottom, 8)
             Divider()
-            VStack(alignment: .leading, spacing: 3) {
-                SaveStatusView()
-                Text("\(Brand.appName) \(Brand.version)").font(.caption2).foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 8) {
+                // Web paneline bağlı değilken "Web'e Bağlan"; bağlıyken eşitleme satırı (kayıt durumunun altında)
+                SidebarConnectButton(cloud: store.cloud) { store.openConnect() }
+                VStack(alignment: .leading, spacing: 3) {
+                    SaveStatusView()
+                    Text("\(Brand.appName) \(Brand.version)").font(.caption2).foregroundStyle(.tertiary)
+                }
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
         }
     }
 
-    private func group(_ title: String, _ items: [AppSection], overview: DayOverview) -> some View {
+    /// Yan menü grubu; başlık yoksa (ana grup, Ayarlar / Yardım) yalnızca boşluk
+    private func group(_ title: String?, _ items: [AppSection], overview: DayOverview) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            // Türkçe büyük harf: "DİĞER" (uppercased() "DIĞER" yazardı)
-            Text(Fmt.upper(title))
-                .font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.tertiary)
-                .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 4)
+            if let title {
+                // Türkçe büyük harf (Fmt.upper; uppercased() "i"yi "I" yazardı)
+                Text(Fmt.upper(title))
+                    .font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.tertiary)
+                    .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 4)
+            } else {
+                Color.clear.frame(height: 8)
+            }
             ForEach(items) { s in
                 SidebarRow(section: s, selected: (store.section ?? .overview) == s, badge: badge(for: s, overview)) {
                     store.section = s

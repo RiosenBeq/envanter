@@ -342,6 +342,13 @@ public actor SupabaseAPI: SupabaseAPIProtocol {
 
     public func signOut() { session = nil }
 
+    /// Oturumdaki kullanıcının şifresini değiştirir (PUT auth/v1/user). Bağlantı koduyla bağlanan bilgisayar girişten hemen
+    /// sonra cihaz hesabına kendi ürettiği şifreyi verir; kod bir daha geçmez (DeviceLogin.swift). Hata yanıtları
+    /// `CloudSyncError` olur (ör. 422 → invalidRequest); sonucun kesin olup olmadığı: `PasswordChangeOutcome(error:)`.
+    public func updatePassword(_ password: String) async throws {
+        _ = try await authorized("PUT", url("auth/v1/user"), body: .object(["password": .string(password)]))
+    }
+
     /// Oturumu sunucuda da kapatır (yenileme anahtarı geçersizleşir). Ağ hatası yok sayılır.
     public func logout() async {
         guard let token = session?.accessToken else { return }

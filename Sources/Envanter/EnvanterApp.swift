@@ -36,6 +36,15 @@ struct EnvanterApp: App {
                     SelfTest.runIfRequested()
                     DebugSnapshot.installIfRequested(store: store)
                 }
+                // envanter://baglan?kod=… (web panelinin "Bu bilgisayardaki uygulamada aç" bağlantısı; Info.plist
+                // CFBundleURLTypes): uygulama öne gelir, bağlanma penceresi kodla dolu açılır. Bağlantı açık pencerede
+                // işlenir (handlesExternalEvents: her bağlantıda yeni pencere açılmaz); uygulama kapalıyken bağlantıyla
+                // açılırsa da bu pencereye gelir.
+                .onOpenURL { url in
+                    NSApp.activate(ignoringOtherApps: true)
+                    store.openConnectLink(url)
+                }
+                .handlesExternalEvents(preferring: Set(["*"]), allowing: Set(["*"]))
         }
         .defaultSize(width: 1440, height: 920)
         // Başlık çubuğu içerikle birleşir (cam yüzeyler pencerenin tepesine kadar ortam ışığını gösterir)
@@ -46,6 +55,7 @@ struct EnvanterApp: App {
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Ayarlar…") { store.section = .backup }.keyboardShortcut(",")
+                Button("Web'e Bağlan…") { store.openConnect() }
             }
             CommandGroup(replacing: .newItem) {
                 Button("Satış Raporu İçe Aktar…") { store.section = .daily; store.pickAndImportFile() }

@@ -105,6 +105,18 @@ final class CloudSyncController: ObservableObject {
     /// Son "Bağlan" denemesindeki giriş adı (e-posta; kullanıcı adı ad@envanter.local): giriş hatasının metni kullanıcı adı
     /// hesabına göre seçilir
     private var lastLogin: String?
+    /// Bu oturum süresi dolmasında cihaz hesabıyla sessiz giriş denendi mi: her süre dolmasında bir kez (geçici hatada
+    /// beklemeyle yeniden denenir: `DeviceSignIn.retryDelay`)
+    private var silentSignInAttempted = false
+    /// Sessiz girişin art arda geçici hatayla başarısız olma sayısı (bekleme süresi buna göre uzar)
+    private var silentSignInFailures = 0
+    /// Bu zamandan önce sessiz giriş denenmez: geçici hatadan sonra bekleme; başarılı girişten sonra, yeni oturumla bir
+    /// eşitleme başarılı olana kadar (`DeviceSignIn.cooldownAfterSuccess`)
+    private var silentSignInNotBefore: Date?
+    /// Sessiz giriş geçici bir hatayla başarısız oldu ve kendiliğinden yeniden denenecek (hata metni buna göre seçilir)
+    private var silentRetryScheduled = false
+    /// Bağlıyken yarım kalan şifre değiştirme (kayıtta hâlâ kod var) bu zamandan önce yeniden denenmez
+    private var rotationRetryNotBefore: Date?
 
     init(directory: URL, enabled: Bool, diskQueue: DiskWriteQueue) {
         self.enabled = enabled
@@ -154,13 +166,22 @@ final class CloudSyncController: ObservableObject {
     /// Canlı bağlantı açık mı: web panelindeki değişiklikler anında gelir
     var isLive: Bool { isConnected && realtimeStatus == .connected }
 
+    /// Bu Mac bağlantı koduyla (cihaz hesabıyla) bağlandı mı
+    var isDeviceAccount: Bool { PairCode.isDeviceAccount(state.config?.email ?? "") }
+
+    /// Bağlantı koduyla bağlanmış ve çıkış yapılmış (ya da oturumu düşmüş) Mac: kod yeniden sorulmadan "Yeniden Bağlan"
+    var canReconnectDevice: Bool { enabled && state.reconnectableDevice != nil }
+
     /// Güncel sorun (yoksa nil): kısa ad, açıklama ve ne yapılacağı. Bağlıyken oluşan hatada değişikliklerin bu Mac'te
     /// beklediği ve kendiliğinden gönderileceği; bağlanırken oluşan hatada yeniden "Bağlan"a basılacağı söylenir.
     var issue: CloudIssue? {
         guard let e = lastError else { return nil }
         switch status {
         case .error, .syncing:
-            return Self.issue(for: e, connected: state.isActive, login: lastLogin ?? state.userEmail ?? state.config?.email)
+            // Sessiz girişi kendiliğinden yeniden denenecek cihaz hesabında da değişiklikler bu Mac'te bekler
+            let linked = state.isActive || (state.silentSignIn != nil && silentRetryScheduled)
+            return Self.issue(for: e, connected: linked, login: lastLogin ?? state.userEmail ?? state.config?.email,
+                              deviceKept: state.reconnectableDevice != nil)
         case .idle, .off: return nil
         }
     }
@@ -171,12 +192,20 @@ final class CloudSyncController: ObservableObject {
     /// - Parameters:
     ///   - connected: bu Mac bir şubeyle eşitlenirken mi oldu
     ///   - login: denenen giriş adı (e-posta; kullanıcı adı hesaplarında ad@envanter.local)
-    nonisolated static func issue(for e: CloudSyncError, connected: Bool, login: String?) -> CloudIssue {
+    ///   - deviceKept: bağlantı koduyla bağlanan bu Mac'in cihaz kaydı duruyor ("Yeniden Bağlan" yeni kod istemez)
+    nonisolated static func issue(for e: CloudSyncError, connected: Bool, login: String?, deviceKept: Bool = false) -> CloudIssue {
         var issue = e.issue(connected: connected)
         let username = login.map { LoginName.isUsernameEmail($0) } ?? false
+        // Bağlantı koduyla bağlanan bilgisayarın cihaz hesabı (pc-…@envanter.local): şifre yerine kod konuşulur
+        let device = login.map { PairCode.isDeviceAccount($0) } ?? false
         switch e {
         case .invalidCredentials:
-            if username {
+            if device {
+                // Kişi şifre yazmadı: durum etiketi de kodu söyler
+                issue.title = CloudSyncGuide.invalidPairCodeTitle
+                issue.message = CloudSyncGuide.invalidPairCode
+                issue.hint = CloudSyncGuide.pairCodeHelp + " Bu bilgisayarın bağlantısı web panelinden kaldırıldıysa da yeni bir kod gerekir."
+            } else if username {
                 issue.message = "Kullanıcı adı veya şifre hatalı."
                 issue.hint = "Büyük/küçük harfe dikkat edin. Şifrenizi unuttuysanız patronunuz web panelinde Yönetim → Kullanıcılar ekranında (ya da kendi Mac'inde Ekip → Kullanıcılar bölümünde) “Şifre belirle” ile size yeni bir geçici şifre verir; kullanıcı adı hesaplarında e-postayla şifre sıfırlama yoktur."
             } else {
@@ -189,6 +218,13 @@ final class CloudSyncController: ObservableObject {
         case .network where !connected:
             issue.message = "Sunucuya ulaşılamıyor."
             issue.hint = "İnternet bağlantınızı kontrol edip yeniden \"Bağlan\"a basın. Bu sırada uygulamayı kullanmaya devam edebilirsiniz; veriler bu Mac'e kaydedilir."
+        case .sessionExpired where device:
+            if deviceKept {
+                // Kayıtlı şifre reddedilmedi (ör. sunucu yeni oturumu hemen reddetti): yeni kod gerekmez
+                issue.hint = "Bu bilgisayarın kayıtlı bağlantısı duruyor; yeni kod gerekmez. Birkaç dakika içinde kendiliğinden yeniden girilmeye çalışılır; hemen denemek için yan menüdeki Web'e Yeniden Bağlan'a (ya da Ayarlar → Web paneli ile eşitleme kartındaki “Yeniden Bağlan”a) basın. Bekleyen değişiklikler bu Mac'te korunuyor."
+            } else {
+                issue.hint = "Bu bilgisayarın web paneli bağlantısı geçersiz oldu (patron bağlantıyı kaldırmış olabilir). Patronunuzdan yeni bir bağlantı kodu isteyip Web'e Bağlan'dan girin; bekleyen değişiklikler bu Mac'te korunuyor."
+            }
         default:
             break
         }
@@ -204,8 +240,8 @@ final class CloudSyncController: ObservableObject {
         if state.isActive {
             status = .idle(state.lastSyncAt)
         } else if needsSignIn {
-            lastError = .sessionExpired
-            status = .error(CloudSyncError.sessionExpired.localizedDescription)
+            // Bağlantı koduyla bağlanan bilgisayar kayıtlı şifresiyle sessizce yeniden girer; değilse "Giriş gerekli"
+            if !startSilentSignIn() { showSignInNeeded() }
         } else {
             status = .off
         }
@@ -229,7 +265,7 @@ final class CloudSyncController: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(CloudDefaults.intervalSeconds * 1_000_000_000))
                 guard !Task.isCancelled, let self else { return }
-                self.syncNow()
+                self.tick()
             }
         }
         // Kayıtlı oturumla açılış: canlı bağlantı hemen kurulur (state didSet başlatıcıda çalışmaz)
@@ -257,7 +293,10 @@ final class CloudSyncController: ObservableObject {
     }
 
     private func appBecameActive() {
-        guard isConnected else { return }
+        guard isConnected else {
+            if needsSignIn { startSilentSignIn() }
+            return
+        }
         // Rol web panelinde değişmiş olabilir (ör. personel müdüre yükseltildi): öne gelişte şube listesi de okunur
         roleCheckRequested = true
         let now = Date()
@@ -283,9 +322,12 @@ final class CloudSyncController: ObservableObject {
     /// oturum açık, ilk karar verilmiş) çalışır. Sunucu / şube değişince yeniden kurulur; erişim anahtarı yenilenince kanala
     /// hemen bildirilir. `state` her değiştiğinde çağrılır; anahtar aynıysa iş yapmaz.
     private func updateRealtime(tokenChanged: Bool) {
+        // Bağlantı koduyla bağlanan bilgisayarın cihaz adı ("pc-7kq2m9"): web panelindeki bağlı bilgisayarlar listesi
+        // çevrimiçi olanı tanır. Kişi hesabında nil (çevrimiçi bilgisinde gönderilmez).
+        let device = state.config.flatMap { PairCode.deviceName(forEmail: $0.email) }
         let want: String? = {
             guard enabled, state.isActive, let c = state.config, let ws = c.workspaceID else { return nil }
-            return "\(c.url)|\(c.publishableKey)|\(ws)|\(c.workspaceName ?? "")"
+            return "\(c.url)|\(c.publishableKey)|\(ws)|\(c.workspaceName ?? "")|\(device ?? "")"
         }()
         guard want != realtimeKey else {
             if tokenChanged, want != nil, let token = state.accessToken, !token.isEmpty {
@@ -296,7 +338,7 @@ final class CloudSyncController: ObservableObject {
         stopRealtime()
         guard let want, let config = state.config, let ws = config.workspaceID else { return }
         realtimeKey = want
-        let presence = RealtimePresence.mac(branch: config.workspaceName ?? "", app: Self.appVersion, since: Date())
+        let presence = RealtimePresence.mac(branch: config.workspaceName ?? "", app: Self.appVersion, since: Date(), device: device)
         // Anahtar her katılmada ve kalp atışında sorulur: dolmak üzereyse yenilenir (yenilenen oturum sessionChanged ile
         // hemen diske yazılır)
         realtimeClient().start(config: config, workspaceID: ws, deviceKey: Self.deviceKey(), presence: presence,
@@ -387,15 +429,66 @@ final class CloudSyncController: ObservableObject {
             notice = "Geçerli bir kullanıcı adı ya da e-posta yazın: kullanıcı adında en az bir harf ya da rakam olmalı (harf, rakam, nokta, alt çizgi ve tire kullanılabilir)."
             return
         }
+        await signIn(email: email, passwords: [password], url: url, key: key)
+    }
+
+    /// Bağlantı koduyla bağlanır (patronun web panelinde "Bilgisayar Bağla" ile ürettiği kod; kodu içeren mesaj ya da
+    /// envanter:// bağlantısı da olur). Sunucu verilmezse bu Mac'te kayıtlı sunucu, o da yoksa varsayılan kullanılır.
+    /// Girişten hemen sonra cihaz hesabına yeni şifre verilir: kod bir daha kullanılamaz (`rotateDevicePassword`). Kod bu
+    /// Mac'in kayıtlı cihaz hesabınınsa (kullanılmış kod yeniden yazıldı ya da bağlantı yeniden açıldı) önce kayıtlı
+    /// şifreler denenir: bilgisayar yeni kod istemeden girer, kayıt silinmez.
+    func connect(code rawCode: String, url rawURL: String? = nil, key rawKey: String? = nil) async {
+        guard enabled, !busy else { return }
+        guard let code = PairCode.parse(rawCode) else {
+            notice = "Bağlantı kodunu yazın: XXXX-XXXX-XXXX-XXXX biçiminde 16 karakter. " + CloudSyncGuide.pairCodeHelp
+            return
+        }
+        var url = rawURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var key = rawKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if url.isEmpty { url = state.config?.url ?? CloudDefaults.url }
+        // Kayıtlı sunucuyla aynı adres (sondaki "/" ya da büyük/küçük harf farkı): kayıtlı hali kullanılır, şube
+        // eşleşmesi korunur (`SyncState.forSignIn` adresleri birebir karşılaştırır)
+        let saved = state.config
+        if let saved, CloudDefaults.sameServer(url, saved.url) { url = saved.url }
+        if key.isEmpty { key = url == saved?.url ? (saved?.publishableKey ?? CloudDefaults.publishableKey) : CloudDefaults.publishableKey }
+        await signIn(email: PairCode.email(code), passwords: state.devicePasswords(forCode: code, url: url), url: url, key: key)
+    }
+
+    /// "Yeniden Bağlan": bağlantı koduyla bağlanmış bu Mac, çıkıştan sonra kayıtlı şifresiyle (kod sorulmadan) yeniden girer
+    func reconnectDevice() async {
+        guard enabled, !busy, let login = state.reconnectableDevice, let c = state.config else { return }
+        await signIn(email: login.email, passwords: login.passwords, url: c.url, key: c.publishableKey)
+    }
+
+    /// Ortak giriş: şifreler sırayla denenir (`DeviceSignIn`; kişi hesabında tek şifre). Cihaz hesabında geçen şifre
+    /// saklanır, şifre hâlâ bağlantı koduysa hesaba yeni şifre verilir; kişi hesabıyla girişte eski cihaz kaydı silinir.
+    /// Sonra şubeler getirilir (şube seçimi, ilk bağlantı kararı ve şube değişimi her girişte aynı).
+    private func signIn(email: String, passwords: [String], url: String, key: String) async {
         lastLogin = email
         busy = true
         notice = nil
+        silentSignInAttempted = false
+        silentSignInFailures = 0
+        silentSignInNotBefore = nil
+        silentRetryScheduled = false
         // Yeni deneme: önceki denemenin hatası "Bağlanıyor…" sırasında gösterilmesin
         if case .error = status { status = .off }
         defer { busy = false }
+        let device = PairCode.isDeviceAccount(email)
         do {
             let api = try SupabaseAPI(url: url, publishableKey: key)
-            let session = try await api.signIn(email: email, password: password)
+            let result = await DeviceSignIn.attempt(DeviceLogin(email: email, passwords: passwords)) { e, p in
+                try await api.signIn(email: e, password: p)
+            }
+            guard let session = result.session else {
+                // Cihaz hesabının kayıtlı şifrelerinin hepsi denendi ve reddedildi (bağlantı kaldırıldı): kayıt silinir,
+                // yeni kod gerekir. Yalnızca başka bir şifre ya da kullanılmış bir kod reddedildiyse kayıt korunur.
+                if device, result.login == nil, state.shouldForgetDeviceLogin(email: email, tried: passwords, url: url) {
+                    state.deviceLogin = nil
+                    saveState()
+                }
+                throw result.error ?? CloudSyncError.invalidCredentials
+            }
             generation += 1
             install(api)
             // Aynı sunucuda şube eşleşmesi (taban, bekleyen değişiklikler) korunur, hesap farklı olsa da: aynı şube
@@ -403,12 +496,177 @@ final class CloudSyncController: ObservableObject {
             var s = SyncState.forSignIn(existing: state, url: url, publishableKey: key, email: email)
             s.store(session)
             s.userEmail = session.email ?? email
+            s.deviceLogin = device ? result.login : nil
             state = s
             saveState()
+            if device, result.needsNewPassword, let code = result.password {
+                await rotateDevicePassword(api: api, email: email, code: code)
+            }
             try await loadWorkspaces(api: api, autoSelect: true)
         } catch {
             report(error)
         }
+    }
+
+    /// Bağlantı koduyla girişten sonra: cihaz hesabına rastgele yeni şifre verilir, kod bir daha geçmez. İstekten önce
+    /// [yeni, kod] diske yazılır (istek sunucuda uygulanıp uygulama kapanırsa da yeni şifre bilinsin); yazılamazsa istek
+    /// gönderilmez (kod geçerli kalır). Sonra kabul edildiyse [yeni], kesin olarak reddedildiyse [kod], sonuç
+    /// bilinmiyorsa (ağ hatası) ikisi de saklanır. Kabul edilmediyse bağlıyken yeniden denenir
+    /// (`retryDeviceRotationIfDue`). Şifreler gösterilmez ve günlüğe yazılmaz.
+    private func rotateDevicePassword(api: SupabaseAPI, email: String, code: String) async {
+        let fresh = DevicePassword.generate()
+        state.deviceLogin = DeviceLogin.rotating(email: email, newPassword: fresh, code: code)
+        let outcome: PasswordChangeOutcome
+        if await saveStateAndWait() {
+            do {
+                try await api.updatePassword(fresh)
+                outcome = .applied
+            } catch {
+                outcome = PasswordChangeOutcome(error: error)
+            }
+        } else {
+            // [yeni, kod] diske yazılamadı: şifre değişirse uygulama yeniden açılınca yeni şifre bilinmezdi
+            outcome = .rejected
+        }
+        rotationRetryNotBefore = outcome == .applied ? nil : Date().addingTimeInterval(DeviceLogin.rotationRetrySeconds)
+        // Bu sırada "Şubeden Ayır" ile kayıt silindiyse dokunulmaz
+        guard let login = state.deviceLogin, login.email == email else { return }
+        state.deviceLogin = login.after(outcome)
+        saveState()
+    }
+
+    /// Bağlıyken yarım kalan şifre değiştirmeyi yeniden dener: kayıtta hâlâ kod biçiminde bir şifre varsa (istek
+    /// reddedildi, sonucu bilinmiyor ya da durum diske yazılamadı) kod geçerli kalmasın. Düzenli turda, en fazla
+    /// `DeviceLogin.rotationRetrySeconds`'ta bir.
+    private func retryDeviceRotationIfDue() {
+        guard enabled, isConnected, !busy, let login = state.deviceLogin, login.rotationRetry != .notNeeded,
+              TextFold.asciiLowercased(login.email) == TextFold.asciiLowercased(state.config?.email ?? "") else { return }
+        if let wait = rotationRetryNotBefore, Date() < wait { return }
+        guard let api = currentAPI(), let c = state.config else { return }
+        rotationRetryNotBefore = Date().addingTimeInterval(DeviceLogin.rotationRetrySeconds)
+        busy = true
+        let gen = generation
+        Task { [weak self] in await self?.performRotationRetry(login, api: api, config: c, generation: gen) }
+    }
+
+    private func performRotationRetry(_ login: DeviceLogin, api: SupabaseAPI, config c: CloudConfig, generation gen: Int) async {
+        defer { busy = false }
+        let code: String
+        switch login.rotationRetry {
+        case .notNeeded:
+            return
+        case .rotate(let current):
+            code = current
+        case .verify:
+            // Önceki isteğin sonucu bilinmiyor: hangi şifrenin geçtiği ayrı bir girişle bulunur (bu oturuma dokunulmaz;
+            // deneme oturumu kapatılmaz: çıkış isteği hesabın bütün oturumlarını kapatırdı)
+            guard let probe = try? SupabaseAPI(url: c.url, publishableKey: c.publishableKey) else { return }
+            let result = await DeviceSignIn.attempt(login) { e, p in try await probe.signIn(email: e, password: p) }
+            // Bu sırada çıkış yapıldıysa, başka hesapla girildiyse ya da kayıt değiştiyse sonuç uygulanmaz. Hepsi
+            // reddedildiyse ya da geçici hatada kayda dokunulmaz (bağlantı kaldırıldıysa oturum düşünce anlaşılır).
+            guard gen == generation, state.deviceLogin == login, result.session != nil, let kept = result.login else { return }
+            state.deviceLogin = kept
+            saveState()
+            guard result.needsNewPassword, let current = result.password else {
+                // Önceki istek uygulanmış: şifre artık kod değil
+                rotationRetryNotBefore = nil
+                return
+            }
+            code = current
+        }
+        guard gen == generation, isConnected else { return }
+        await rotateDevicePassword(api: api, email: login.email, code: code)
+    }
+
+    // MARK: - Sessiz giriş (bağlantı koduyla bağlanan bilgisayar)
+
+    /// Düzenli tur: bağlıyken eşitleme (ve yarım kalan şifre değiştirme); oturumu düşmüş cihaz hesabında sessiz giriş
+    /// (geçici hatadan sonra beklemeyle) yeniden denenir
+    private func tick() {
+        if needsSignIn {
+            startSilentSignIn()
+        } else {
+            syncNow()
+            retryDeviceRotationIfDue()
+        }
+    }
+
+    /// Oturumun süresi doldu ve bu Mac bağlantı koduyla bağlandı: kayıtlı şifrelerle sırayla, sessizce yeniden girilir
+    /// (her süre dolmasında bir kez; geçici hatada beklemeyle yeniden). Başarısızsa hata ya da "Giriş gerekli" gösterilir.
+    /// - Returns: deneme başladı mı
+    @discardableResult
+    private func startSilentSignIn() -> Bool {
+        guard enabled, !busy, !silentSignInAttempted, let login = state.silentSignIn, let c = state.config else { return false }
+        if let wait = silentSignInNotBefore, Date() < wait { return false }
+        silentSignInAttempted = true
+        busy = true
+        status = .syncing
+        let gen = generation
+        Task { [weak self] in await self?.performSilentSignIn(login, config: c, generation: gen) }
+        return true
+    }
+
+    private func performSilentSignIn(_ login: DeviceLogin, config c: CloudConfig, generation gen: Int) async {
+        defer { busy = false }
+        guard let api = try? SupabaseAPI(url: c.url, publishableKey: c.publishableKey) else {
+            showSignInNeeded()
+            return
+        }
+        let result = await DeviceSignIn.attempt(login) { e, p in try await api.signIn(email: e, password: p) }
+        // Bu sırada çıkış yapıldıysa, başka hesapla girildiyse ya da şube değiştiyse sonuç uygulanmaz
+        guard gen == generation, state.silentSignIn?.email == login.email else { return }
+        lastLogin = login.email
+        guard let session = result.session else {
+            guard result.login != nil, let e = result.error else {
+                // Şifrelerin hepsi reddedildi (bağlantı web panelinden kaldırıldı): kayıt silinir, yeni bağlantı kodu gerekir
+                state.deviceLogin = nil
+                saveState()
+                silentSignInFailures = 0
+                silentSignInNotBefore = nil
+                silentRetryScheduled = false
+                showSignInNeeded()
+                return
+            }
+            // Kayıt geçerli; asıl hata gösterilir (bağlantı yok, sunucu hatası, çok fazla deneme). Geçici hatada
+            // beklemeyle kendiliğinden yeniden denenir (bağlantı yok: bir sonraki düzenli turda ya da uygulama öne
+            // gelince); başka bir hatada "Yeniden Bağlan" beklenir.
+            silentSignInFailures += 1
+            if let delay = DeviceSignIn.retryDelay(after: e, failures: silentSignInFailures) {
+                silentSignInAttempted = false
+                silentSignInNotBefore = Date().addingTimeInterval(delay)
+                silentRetryScheduled = true
+            } else {
+                silentRetryScheduled = false
+            }
+            lastError = e
+            status = .error(e.localizedDescription)
+            return
+        }
+        generation += 1
+        install(api)
+        var s = state
+        s.store(session)
+        s.userEmail = session.email ?? login.email
+        s.deviceLogin = result.login
+        state = s
+        saveState()
+        silentSignInAttempted = false
+        silentSignInFailures = 0
+        silentRetryScheduled = false
+        // Yeni oturumla bir eşitleme başarılı olana kadar yeni sessiz giriş beklenir: sunucu yeni oturumu hemen
+        // reddederse (ör. yanlış yapılandırılmış sunucu) giriş döngüye girmesin
+        silentSignInNotBefore = Date().addingTimeInterval(DeviceSignIn.cooldownAfterSuccess)
+        status = .idle(s.lastSyncAt)
+        if result.needsNewPassword, let code = result.password {
+            await rotateDevicePassword(api: api, email: login.email, code: code)
+        }
+        syncNow()
+    }
+
+    /// "Giriş gerekli": şube eşleşmesi ve bekleyen değişiklikler korunur, kartta ne yapılacağı yazar
+    private func showSignInNeeded() {
+        lastError = .sessionExpired
+        status = .error(CloudSyncError.sessionExpired.localizedDescription)
     }
 
     /// Şube listesini yeniler (şube değiştirmek için)
@@ -554,7 +812,10 @@ final class CloudSyncController: ObservableObject {
         state = s
         saveState()
         status = .off
-        notice = "Eşitleme başlatılmadı. Şube seçmek için yeniden bağlanın."
+        // Bağlantı koduyla bağlanan Mac: kod kullanıldı ama kayıtlı şifresiyle "Yeniden Bağlan" (reconnectableDevice)
+        notice = state.reconnectableDevice != nil
+            ? "Eşitleme başlatılmadı. Şube seçmek için “Yeniden Bağlan”a basın; yeni kod gerekmez."
+            : "Eşitleme başlatılmadı. Şube seçmek için yeniden bağlanın."
     }
 
     private func resolve(_ mode: InitialSyncMode, rows: [RemoteDoc]) {
@@ -654,6 +915,9 @@ final class CloudSyncController: ObservableObject {
             } else {
                 status = .idle(st.lastSyncAt)
                 if out.rejected.isEmpty { notice = nil }
+                // Oturum sunucuda geçerli: oturum yeniden düşerse sessiz giriş beklemeden denenir
+                silentSignInNotBefore = nil
+                silentSignInFailures = 0
             }
             if !changed.isEmpty || !changedDuringSync.isEmpty { rerunRequested = true }
         } catch {
@@ -759,7 +1023,7 @@ final class CloudSyncController: ObservableObject {
             case .forbidden:
                 return CloudMembers.ownerOnlyReason + " Yetkiniz web panelinde değiştiyse bir sonraki eşitlemede bu Mac'te de güncellenir."
             case .sessionExpired:
-                return "Oturumun süresi doldu. Ayarlar ve Veri → Web paneli ile eşitleme kartından yeniden giriş yapın."
+                return "Oturumun süresi doldu. Ayarlar → Web paneli ile eşitleme kartından (ya da yan menüdeki Web'e Bağlan ile) yeniden giriş yapın."
             case .network:
                 return "Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin."
             default:
@@ -818,6 +1082,10 @@ final class CloudSyncController: ObservableObject {
         if let api { Task { await api.logout() } }
         api = nil
         remotePending = false
+        silentSignInAttempted = false
+        silentSignInFailures = 0
+        silentSignInNotBefore = nil
+        silentRetryScheduled = false
         // Şube değişimi kararı bekleniyorsa önceki şubenin eşleşmesi korunur
         var s = decision?.previous ?? state
         s.signOut()
@@ -826,6 +1094,8 @@ final class CloudSyncController: ObservableObject {
             s.config?.workspaceID = nil
             s.config?.workspaceName = nil
             s.config?.role = nil
+            // Bağlantı koduyla bağlanan Mac'in cihaz hesabı da unutulur: yeniden bağlanmak için yeni kod gerekir
+            s.deviceLogin = nil
         }
         state = s
         saveState()
@@ -890,6 +1160,11 @@ final class CloudSyncController: ObservableObject {
             s.store(nil)
             state = s
             saveState()
+            // Bağlantı koduyla bağlanan bilgisayar önce kayıtlı şifresiyle sessizce yeniden girer
+            if startSilentSignIn() {
+                notice = nil
+                return
+            }
         }
         // Hata kartın üstündeki kutuda (issue) bir kez gösterilir; önceki bilgi notu (ör. "yükleniyor…") silinir
         lastError = e
@@ -964,6 +1239,19 @@ final class CloudSyncController: ObservableObject {
         diskQueue.sync { write() }
     }
 
+    /// Durum dosyasını yazar ve yazılmasını bekler (kuyrukta sırayla; ana iş parçacığı bekletilmez)
+    /// - Returns: dosya yazılabildi mi (bu modda kapalıysa false)
+    private func saveStateAndWait() async -> Bool {
+        guard enabled else { return false }
+        stateSaveTask?.cancel()
+        let write = stateSaver(), queue = diskQueue
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            queue.async {
+                cont.resume(returning: write())
+            }
+        }
+    }
+
     /// Kayıt noktası: yerel veri değiştiyse önce veri dosyası, sonra durum; ikisi de arka planda, sırayla
     /// (AppStore.syncCheckpoint). Kodlama ana iş parçacığında yapılmaz.
     private func checkpoint(_ app: AppStore, dataChanged: Bool) {
@@ -974,9 +1262,21 @@ final class CloudSyncController: ObservableObject {
 
     /// Şu anki durumun yazma işi (kopya şimdi alınır, kuyrukta yazılır)
     private func stateWriter() -> @Sendable () -> Void {
+        let save = stateSaver()
+        return { _ = save() }
+    }
+
+    /// Şu anki durumun yazma işi; yazılabildi mi döner (hata günlüğe yazılır)
+    private func stateSaver() -> @Sendable () -> Bool {
         let s = state, store = syncStore
         return {
-            do { try store.save(s) } catch { NSLog("Eşitleme durumu kaydedilemedi: \(error)") }
+            do {
+                try store.save(s)
+                return true
+            } catch {
+                NSLog("Eşitleme durumu kaydedilemedi: \(error)")
+                return false
+            }
         }
     }
 }

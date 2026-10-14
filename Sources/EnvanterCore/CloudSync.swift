@@ -640,16 +640,19 @@ public enum DocCodec {
     /// aynı günde düzeltilen başka bir kalem ya da not) koruyarak geri alır. Her belge için
     /// merge3(taban = new, yerel = current, uzak = old): işlemin değiştirdiği alanlar eski haline döner, sonradan
     /// değişen alanlar korunur (ikisi de değiştiyse sonradan gelen kalır). Belge işlemden sonra hiç değişmediyse
-    /// birebir eski hali gelir (sıra dahil). Yineleme de aynı yoldan geçer.
+    /// birebir eski hali gelir (sıra dahil). Olmayan gün boş gün sayılır: günü açan işlem (ilk sayım girişi) geri alınınca
+    /// yalnızca işlemin alanları kalkar, sonradan yazılan not / giriş kalır; gün boş kalırsa kaydı silinir. Yineleme de
+    /// aynı yoldan geçer.
     public static func undoing(keys: Set<String>, old: AppData, new: AppData, current: AppData) -> AppData {
         var out = current
         for k in keys {
-            let n = body(for: k, in: new), c = body(for: k, in: current)
+            let empty = DocKey.date(of: k).map { emptyDayBody($0) }
+            let n = body(for: k, in: new) ?? empty, c = body(for: k, in: current) ?? empty
             if n == c {
                 out = replacing([k], in: out, from: old)
                 continue
             }
-            let merged = JSONMerge.merge3(base: n, local: c, remote: body(for: k, in: old))
+            let merged = JSONMerge.merge3(base: n, local: c, remote: body(for: k, in: old) ?? empty)
             if merged == c { continue }
             if !apply(key: k, body: merged, to: &out) { out = replacing([k], in: out, from: old) }
         }
@@ -794,6 +797,7 @@ enum Lenient {
         o["status"] = .string(["open", "received", "cancelled"].contains(status ?? "") ? status! : "open")
         o["receivedOn"] = str(raw["receivedOn"])
         o["note"] = str(raw["note"])
+        o["receivedWithoutIncoming"] = raw["receivedWithoutIncoming"]?.boolValue.map { .bool($0) }
         return .object(o)
     }
 

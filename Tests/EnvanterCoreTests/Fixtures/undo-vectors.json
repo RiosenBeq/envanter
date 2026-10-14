@@ -1,0 +1,862 @@
+{
+  "comment": "Geri alma: DocCodec.undoing (Swift) / undoing (web, src/lib/store/undo.ts). Her durumda old → new işlemi, işlemden sonraki güncel hal (current) korunarak geri alınır; gövdeler belge anahtarına göre (items, products, settings, day:YYYY-MM-DD). expected'da null = belge yok. Mac: Tests/EnvanterCoreTests/UndoVectorTests.swift, web: test/store/undo.test.ts (aynı dosya).",
+  "cases": [
+    {
+      "name": "işlemden sonra dokunulmamış belge: birebir eski hal (silinen kalem yerine döner, sıra korunur)",
+      "keys": [
+        "items"
+      ],
+      "old": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ]
+      },
+      "new": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ]
+      },
+      "current": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "sonradan başka yerden gelen değişiklik (başka kalem ve not) korunur",
+      "keys": [
+        "day:2026-08-31"
+      ],
+      "old": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 110
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 110
+            },
+            "peynir": {
+              "closing": 9
+            }
+          },
+          "sales": [],
+          "note": "Müdür düzeltmesi"
+        }
+      },
+      "expected": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            },
+            "peynir": {
+              "closing": 9
+            }
+          },
+          "sales": [],
+          "note": "Müdür düzeltmesi"
+        }
+      }
+    },
+    {
+      "name": "aynı alan sonradan değiştiyse sonradan gelen değer kalır",
+      "keys": [
+        "day:2026-08-31"
+      ],
+      "old": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 110
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 130
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "expected": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 130
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      }
+    },
+    {
+      "name": "işlemin sildiği gün geri gelir",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "incoming": 200,
+              "closing": 95
+            }
+          },
+          "sales": [],
+          "note": "Kapanış 23:00"
+        }
+      },
+      "new": {},
+      "current": {},
+      "expected": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "incoming": 200,
+              "closing": 95
+            }
+          },
+          "sales": [],
+          "note": "Kapanış 23:00"
+        }
+      }
+    },
+    {
+      "name": "işlemin sildiği gün sonradan başka bir girişle açıldıysa eski girişler geri gelir, yeni giriş kalır",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "incoming": 200,
+              "closing": 95
+            }
+          },
+          "sales": [],
+          "note": "Kapanış 23:00"
+        }
+      },
+      "new": {},
+      "current": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "peynir": {
+              "closing": 3.5
+            }
+          },
+          "sales": []
+        }
+      },
+      "expected": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "incoming": 200,
+              "closing": 95
+            },
+            "peynir": {
+              "closing": 3.5
+            }
+          },
+          "sales": [],
+          "note": "Kapanış 23:00"
+        }
+      }
+    },
+    {
+      "name": "silinen kalem geri gelir; başka kalemin sonradan değişen toleransı korunur",
+      "keys": [
+        "items"
+      ],
+      "old": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ]
+      },
+      "new": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ]
+      },
+      "current": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "tolerance": 2
+          }
+        ]
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "kalem silme (kalem + açık gündeki girişi): ikisi de geri gelir, gündeki sonraki düzeltme kalır",
+      "keys": [
+        "items",
+        "day:2026-08-31"
+      ],
+      "old": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ],
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 118
+            }
+          },
+          "sales": []
+        }
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ],
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 118
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      }
+    },
+    {
+      "name": "günü kapatmayı geri alma: kilit kalkar, sonradan yazılan not kalır",
+      "keys": [
+        "day:2026-08-31"
+      ],
+      "old": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            }
+          },
+          "sales": [],
+          "locked": true
+        }
+      },
+      "current": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            }
+          },
+          "sales": [],
+          "locked": true,
+          "note": "Sayım tamam"
+        }
+      },
+      "expected": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            }
+          },
+          "sales": [],
+          "note": "Sayım tamam"
+        }
+      }
+    },
+    {
+      "name": "ayarlar: sipariş gün sayısı geri döner, sonradan değişen şube adı kalır",
+      "keys": [
+        "settings"
+      ],
+      "old": {
+        "settings": {
+          "branchName": "Tuzla",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 2,
+          "staff": []
+        }
+      },
+      "new": {
+        "settings": {
+          "branchName": "Tuzla",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 4,
+          "staff": []
+        }
+      },
+      "current": {
+        "settings": {
+          "branchName": "Tuzla Marina",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 4,
+          "staff": []
+        }
+      },
+      "expected": {
+        "settings": {
+          "branchName": "Tuzla Marina",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 2,
+          "staff": []
+        }
+      }
+    },
+    {
+      "name": "reçeteler: silinen ürün geri gelir, başka ürünün sonradan değişen miktarı kalır",
+      "keys": [
+        "products"
+      ],
+      "old": {
+        "products": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "category": "BURGERLER",
+            "amounts": {
+              "g90": 1
+            }
+          },
+          {
+            "code": "11103",
+            "name": "MEDIUM CHEESE BURGER",
+            "category": "BURGERLER",
+            "amounts": {
+              "g90": 1,
+              "peynir": 2
+            }
+          }
+        ]
+      },
+      "new": {
+        "products": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "category": "BURGERLER",
+            "amounts": {
+              "g90": 1
+            }
+          }
+        ]
+      },
+      "current": {
+        "products": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "category": "BURGERLER",
+            "amounts": {
+              "g90": 2
+            }
+          }
+        ]
+      },
+      "expected": {
+        "products": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "category": "BURGERLER",
+            "amounts": {
+              "g90": 2
+            }
+          },
+          {
+            "code": "11103",
+            "name": "MEDIUM CHEESE BURGER",
+            "category": "BURGERLER",
+            "amounts": {
+              "g90": 1,
+              "peynir": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "yineleme: geri alınan sayım girişi yeniden uygulanır, arada gelen not kalır",
+      "keys": [
+        "day:2026-08-31"
+      ],
+      "old": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 110
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 120
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": [],
+          "note": "Not"
+        }
+      },
+      "expected": {
+        "day:2026-08-31": {
+          "date": "2026-08-31",
+          "entries": {
+            "g90": {
+              "closing": 110
+            },
+            "peynir": {
+              "closing": 4
+            }
+          },
+          "sales": [],
+          "note": "Not"
+        }
+      }
+    },
+    {
+      "name": "işlemin açtığı gün (ilk giriş) geri alınınca gün kaydı kalkar",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "expected": {
+        "day:2026-08-30": null
+      }
+    },
+    {
+      "name": "işlemin açtığı güne sonradan not yazıldıysa geri almada yalnızca işlemin girişi kalkar, not kalır",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": [],
+          "note": "Müdür notu"
+        }
+      },
+      "expected": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {},
+          "sales": [],
+          "note": "Müdür notu"
+        }
+      }
+    },
+    {
+      "name": "işlemin açtığı güne sonradan başka giriş yapıldıysa geri almada yalnızca işlemin girişi kalkar",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            },
+            "peynir": {
+              "closing": 3
+            }
+          },
+          "sales": []
+        }
+      },
+      "expected": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "peynir": {
+              "closing": 3
+            }
+          },
+          "sales": []
+        }
+      }
+    },
+    {
+      "name": "işlemin açtığı gün sonradan silindiyse geri almada silinmiş kalır",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {},
+      "expected": {
+        "day:2026-08-30": null
+      }
+    }
+  ]
+}

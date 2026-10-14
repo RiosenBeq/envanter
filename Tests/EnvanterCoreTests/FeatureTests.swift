@@ -627,6 +627,10 @@ final class DemoDataTests: XCTestCase {
         XCTAssertFalse(e.orderSuggestions(asOf: "2026-08-31", lookbackDays: 14, coverDays: 3).filter { $0.suggested > 0 }.isEmpty)
         XCTAssertEqual(data.purchaseOrders.map { $0.id }, ["demo-siparis-1", "demo-siparis-2"])
         XCTAssertEqual(data.purchaseOrders.filter { $0.status == .open }.count, 1)
+        // Açık siparişin notu tedarikçiye gider: kopyalanan metnin son satırı (iç açıklama değil)
+        let open = data.purchaseOrders.first { $0.status == .open }!
+        XCTAssertEqual(Purchasing.text(open, items: e.itemsByID, branch: "").components(separatedBy: "\n").last,
+                       "Not: Sabah 9'dan önce teslim edin")
         XCTAssertEqual(data.settings.branchName, "Burger Yiyelim · Tuzla Marina")
 
         // Ekip: görevli birkaç üye; sayımı yapanlar ekipten, eski sayan listesi boş

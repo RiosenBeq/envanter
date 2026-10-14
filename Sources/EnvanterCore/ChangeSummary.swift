@@ -303,7 +303,9 @@ public enum ChangeSummary {
             if old == o { continue }
             if old.status != o.status && o.status == .received {
                 let n = o.lines.filter { ($0.received ?? 0) > 0 }.count
-                let extra = n > 0 && n != o.lines.count ? ", \(n)/\(o.lines.count) kalem" : ""
+                var extra = n > 0 && n != o.lines.count ? ", \(n)/\(o.lines.count) kalem" : ""
+                // "Teslim alındı say": Gelen elle girilmişti
+                if o.receivedWithoutIncoming == true { extra += ", Gelen'e eklenmeden" }
                 segs.append(Segment(head: "Sipariş teslim alındı (\(orderLabel(o))\(extra))"))
             } else if old.status != o.status && o.status == .cancelled {
                 segs.append(Segment(head: "Sipariş iptal edildi (\(orderLabel(o)))"))
@@ -323,6 +325,10 @@ public enum ChangeSummary {
                 }
                 let newLines = byKey(o.lines) { $0.itemID }
                 for l in old.lines where newLines[l.itemID] == nil { lines.append("\(itemName(data, l.itemID)) çıkarıldı") }
+                if old.supplier != o.supplier {
+                    lines.append(nonEmpty(o.supplier).map { "tedarikçi \"\(clip($0, 40))\"" } ?? "tedarikçi silindi")
+                }
+                if (old.note ?? "") != (o.note ?? "") { lines.append(nonEmpty(o.note) == nil ? "not silindi" : "not güncellendi") }
                 segs.append(Segment(head: "Sipariş güncellendi (\(orderLabel(o)))\(lines.isEmpty ? "" : ": ")", details: lines))
             }
         }

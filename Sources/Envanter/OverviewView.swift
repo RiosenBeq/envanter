@@ -455,11 +455,24 @@ struct OverviewView: View {
                         }
                     }
                     if !orders.isEmpty {
+                        // 3 günden eski açık siparişler öneriden düşülmeye devam eder: uyarı ve bekleme süresi
+                        let staleNotice = Purchasing.staleNotice(Purchasing.staleOrders(orders, asOf: o.date))
                         ListCard(title: "Bekleyen siparişler", icon: "shippingbox", color: Brand.positive, term: .purchaseOrder,
                                  linkTitle: "Siparişlere git", link: { store.section = .orders }) {
+                            if let staleNotice {
+                                Label(staleNotice, systemImage: "clock.badge.exclamationmark")
+                                    .font(.callout).foregroundStyle(Brand.warn)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                             ForEach(orders) { order in
                                 HStack {
-                                    Text(DateKey.short(order.date) + (order.supplier.isEmpty ? "" : " · " + order.supplier))
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(DateKey.short(order.date) + (order.supplier.isEmpty ? "" : " · " + order.supplier))
+                                        if let waiting = Purchasing.waitingText(order, asOf: o.date) {
+                                            Text(waiting).font(.caption)
+                                                .foregroundStyle(Purchasing.isStale(order, asOf: o.date) ? Brand.warn : Color.secondary)
+                                        }
+                                    }
                                     Spacer()
                                     Text("\(order.lines.count) kalem").foregroundStyle(.secondary)
                                 }

@@ -168,7 +168,7 @@ public enum DemoData {
         if var open = Purchasing.makeOrder(from: preferred.isEmpty ? Array(suggestions.prefix(4)) : preferred,
                                            date: yesterday, supplier: "Haftalık Tedarik") {
             open.id = "demo-siparis-2"   // tekrarlanabilir çıktı (web fikstürleri) için sabit kimlik
-            open.note = "Sipariş Önerisi ekranından oluşturuldu"
+            open.note = "Sabah 9'dan önce teslim edin"   // tedarikçiye not (sipariş metninin sonuna eklenir)
             data.purchaseOrders.append(open)
         }
         return data

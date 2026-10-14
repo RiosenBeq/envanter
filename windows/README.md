@@ -2,8 +2,10 @@
 
 Mağaza bilgisayarı Windows ise bu uygulama kullanılır. Web panelini kendi penceresinde açar; sayım, satış aktarma
 (ModPos dosyası dahil), sipariş, raporlar, stok kalemleri, reçeteler, ekip, ayarlar ve yönetim ekranlarının hepsi
-panelden gelir. Panelde yayınlanan her yenilik uygulamada da hemen görünür; ekranlar için uygulamayı güncellemek
-gerekmez. Uygulamanın içindeki tarayıcı motorunun (Electron/Chromium) güvenlik düzeltmeleri için yeni kurulum
+panelden gelir. Panelde yayınlanan her yenilik uygulamada da görünür; ekranlar için uygulamayı güncellemek gerekmez:
+panelin yeni sürümü yayınlanınca pencerenin üstünde **Yeni sürüm hazır · Yenile** çıkar (ya da **Dosya → Yenile**,
+Ctrl+R), uygulama gece açık kalmışsa gün dönümünde, gönderilmemiş değişiklik yoksa panel kendiliğinden yenilenir. Gece
+yarısı "bugün" açıksa panel yeni güne geçer ("Yeni gün başladı · Dünkü güne dön"). Uygulamanın içindeki tarayıcı motorunun (Electron/Chromium) güvenlik düzeltmeleri için yeni kurulum
 dosyası çıktığında üzerine kurulur.
 
 Tarayıcıda açmaya göre farkı:

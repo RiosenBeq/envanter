@@ -1,0 +1,324 @@
+{
+  "about": "Veri biçimi düzeyi (Swift DataFormat / web src/lib/version.ts) ve gün dönümü (Swift DayRollover / web src/lib/rollover.ts). rolloverWait: gün dönümü beklesin mi (Swift DayRollover.shouldWait / web rolloverWaits): açık pencere ya da odakta yazı alanı ve son giriş rolloverIdleSeconds'tan yeni.",
+  "level": 2,
+  "presenceFormat": [
+    {
+      "name": "fmt yok (eski Mac 2.0)",
+      "meta": {
+        "client": "mac",
+        "app": "2.0",
+        "branch": "Tuzla"
+      },
+      "expected": 1
+    },
+    {
+      "name": "sayı",
+      "meta": {
+        "client": "mac",
+        "app": "2.1",
+        "fmt": 2
+      },
+      "expected": 2
+    },
+    {
+      "name": "sayı metni",
+      "meta": {
+        "client": "windows",
+        "fmt": "3"
+      },
+      "expected": 3
+    },
+    {
+      "name": "kesirli: aşağı yuvarlanır",
+      "meta": {
+        "fmt": 2.7
+      },
+      "expected": 2
+    },
+    {
+      "name": "sıfır",
+      "meta": {
+        "fmt": 0
+      },
+      "expected": 1
+    },
+    {
+      "name": "negatif",
+      "meta": {
+        "fmt": -4
+      },
+      "expected": 1
+    },
+    {
+      "name": "okunamayan metin",
+      "meta": {
+        "fmt": "iki"
+      },
+      "expected": 1
+    },
+    {
+      "name": "null",
+      "meta": {
+        "fmt": null
+      },
+      "expected": 1
+    },
+    {
+      "name": "mantıksal",
+      "meta": {
+        "fmt": true
+      },
+      "expected": 1
+    },
+    {
+      "name": "aşırı büyük",
+      "meta": {
+        "fmt": 1000000000.0
+      },
+      "expected": 1
+    },
+    {
+      "name": "boşluklu metin",
+      "meta": {
+        "fmt": " 2 "
+      },
+      "expected": 2
+    }
+  ],
+  "newerPeer": [
+    {
+      "name": "yalnızca eski ve aynı düzeyler",
+      "ownKey": "mac-1",
+      "presence": {
+        "mac-1": [
+          {
+            "client": "mac",
+            "fmt": 2
+          }
+        ],
+        "web-a": [
+          {
+            "client": "web",
+            "fmt": 2
+          }
+        ],
+        "mac-2": [
+          {
+            "client": "mac",
+            "app": "2.0"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "web paneli daha yeni",
+      "ownKey": "mac-1",
+      "presence": {
+        "mac-1": [
+          {
+            "client": "mac",
+            "fmt": 2
+          }
+        ],
+        "web-a": [
+          {
+            "client": "web",
+            "fmt": 3
+          }
+        ]
+      },
+      "expected": 3
+    },
+    {
+      "name": "kendi kaydı sayılmaz",
+      "ownKey": "mac-1",
+      "presence": {
+        "mac-1": [
+          {
+            "client": "mac",
+            "fmt": 5
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "fmt bildirmeyen kayıt sayılmaz",
+      "ownKey": "mac-1",
+      "presence": {
+        "web-b": [
+          {
+            "client": "web"
+          }
+        ],
+        "pc": [
+          {
+            "client": "windows",
+            "fmt": "4"
+          },
+          {
+            "client": "windows",
+            "fmt": 3
+          }
+        ]
+      },
+      "expected": 4
+    }
+  ],
+  "newerPeerMessage": [
+    {
+      "level": 3,
+      "expected": "Bu Mac'teki uygulama eski: şubede daha yeni bir sürüm çalışıyor (veri biçimi 3, bu Mac 2). Sayım ve fark hesapları bu Mac'te farklı çıkabilir; uygulamayı güncelleyin."
+    }
+  ],
+  "rollover": [
+    {
+      "name": "bugün seçiliyken gün değişti",
+      "selected": "2026-10-14",
+      "previousToday": "2026-10-14",
+      "today": "2026-10-15",
+      "editing": false,
+      "expected": {
+        "kind": "move",
+        "date": "2026-10-15"
+      }
+    },
+    {
+      "name": "başka gün görüntüleniyor: değişmez",
+      "selected": "2026-10-10",
+      "previousToday": "2026-10-14",
+      "today": "2026-10-15",
+      "editing": false,
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "gün değişmedi",
+      "selected": "2026-10-14",
+      "previousToday": "2026-10-14",
+      "today": "2026-10-14",
+      "editing": false,
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "yazılıyor: bekler",
+      "selected": "2026-10-14",
+      "previousToday": "2026-10-14",
+      "today": "2026-10-15",
+      "editing": true,
+      "expected": {
+        "kind": "wait"
+      }
+    },
+    {
+      "name": "hafta sonu uykusu: birkaç gün atlanır",
+      "selected": "2026-10-16",
+      "previousToday": "2026-10-16",
+      "today": "2026-10-19",
+      "editing": false,
+      "expected": {
+        "kind": "move",
+        "date": "2026-10-19"
+      }
+    },
+    {
+      "name": "ay ve yıl dönümü",
+      "selected": "2026-12-31",
+      "previousToday": "2026-12-31",
+      "today": "2027-01-01",
+      "editing": false,
+      "expected": {
+        "kind": "move",
+        "date": "2027-01-01"
+      }
+    },
+    {
+      "name": "ileri tarih görüntüleniyor",
+      "selected": "2026-10-15",
+      "previousToday": "2026-10-14",
+      "today": "2026-10-15",
+      "editing": false,
+      "expected": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "saat geri alındı (saat dilimi değişti)",
+      "selected": "2026-10-15",
+      "previousToday": "2026-10-15",
+      "today": "2026-10-14",
+      "editing": false,
+      "expected": {
+        "kind": "move",
+        "date": "2026-10-14"
+      }
+    }
+  ],
+  "rolloverTitle": [
+    {
+      "date": "2026-10-15",
+      "expected": "Yeni gün başladı: 15.10.2026"
+    },
+    {
+      "date": "2027-01-01",
+      "expected": "Yeni gün başladı: 01.01.2027"
+    }
+  ],
+  "rolloverBack": "Dünkü güne dön",
+  "rolloverIdleSeconds": 900,
+  "rolloverWait": [
+    {
+      "name": "odakta alan yok",
+      "dialogOpen": false,
+      "fieldFocused": false,
+      "idleSeconds": 5,
+      "expected": false
+    },
+    {
+      "name": "hücreye yazılıyor",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 5,
+      "expected": true
+    },
+    {
+      "name": "hücre odakta, 30 sn'dir dokunulmadı (sayım sürüyor)",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 40,
+      "expected": true
+    },
+    {
+      "name": "hücre odakta, 15 dk'yı biraz geçmedi",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 899,
+      "expected": true
+    },
+    {
+      "name": "hücre odakta, 15 dk'dır dokunulmadı: geçilir (hücre önce bırakılır)",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 900,
+      "expected": false
+    },
+    {
+      "name": "açık pencere: süre ne olursa olsun bekler",
+      "dialogOpen": true,
+      "fieldFocused": false,
+      "idleSeconds": 36000,
+      "expected": true
+    },
+    {
+      "name": "açık pencerede alan odakta",
+      "dialogOpen": true,
+      "fieldFocused": true,
+      "idleSeconds": 36000,
+      "expected": true
+    }
+  ]
+}

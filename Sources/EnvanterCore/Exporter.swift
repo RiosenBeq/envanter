@@ -29,11 +29,23 @@ public enum Exporter {
         return rows
     }
 
+    /// Dışa aktarılan dosyanın adı: "NextGen Envanter – Kadıköy – 01.08.2026.xlsx". Şube adı kırpılır; içindeki / : \
+    /// yerine - yazılır; boşsa atlanır. Web'deki `exportFileName` ile aynı (Fixtures/export-vectors.json).
+    public static func fileName(branch: String, base: String, ext: String = "xlsx") -> String {
+        let b = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: "\\", with: "-")
+        return (["NextGen Envanter"] + (b.isEmpty ? [] : [b]) + [base]).joined(separator: " – ") + ".\(ext)"
+    }
+
     /// Seçili günün envanteri + satış dökümü (iki sayfa)
-    public static func day(engine: Engine, date: String) -> Data {
+    public static func daySheets(engine: Engine, date: String) -> [XlsxSheetData] {
         let inv = XlsxSheetData(name: "Envanter", header: inventoryHeader,
                                 rows: inventoryRows(engine: engine, dates: [date]), widths: inventoryWidths)
-        return XlsxWriter.build(sheets: [inv, salesSheet(engine: engine, date: date)])
+        return [inv, salesSheet(engine: engine, date: date)]
+    }
+
+    public static func day(engine: Engine, date: String) -> Data {
+        XlsxWriter.build(sheets: daySheets(engine: engine, date: date))
     }
 
     /// Verisi olan tüm günler (Alımlar formatı) + özet + günlük durum + (varsa) gün notları, elle zayi kayıtları ve ekip
@@ -132,6 +144,10 @@ public enum Exporter {
 
     /// Depoda elle doldurmak için yazdırılabilir sayım formu: açılış (devreden) dolu, kapanış boş.
     public static func countSheet(engine: Engine, date: String, branch: String = "") -> Data {
+        XlsxWriter.build(sheets: [countSheetData(engine: engine, date: date, branch: branch)])
+    }
+
+    public static func countSheetData(engine: Engine, date: String, branch: String = "") -> XlsxSheetData {
         let calcs = engine.calc(date: date).rows
         let rows: [[XlsxCell]] = calcs.compactMap { c in
             guard let item = engine.itemsByID[c.itemID] else { return nil }
@@ -141,10 +157,9 @@ public enum Exporter {
                     .optNumber(e?.closing), XlsxCell(.blank)]
         }
         let title = (branch.isEmpty ? "" : branch + " · ") + "Sayım \(DateKey.short(date))"
-        let sheet = XlsxSheetData(name: "Sayım Formu",
-                                  header: [title, "Birim", "Açılış", "Gelen", "Gelen Transfer (+)", "Giden Transfer (-)", "Kapanış (sayım)", "Not"],
-                                  rows: rows, widths: [30, 8, 11, 11, 14, 14, 16, 30])
-        return XlsxWriter.build(sheets: [sheet])
+        return XlsxSheetData(name: "Sayım Formu",
+                             header: [title, "Birim", "Açılış", "Gelen", "Gelen Transfer (+)", "Giden Transfer (-)", "Kapanış (sayım)", "Not"],
+                             rows: rows, widths: [30, 8, 11, 11, 14, 14, 16, 30])
     }
 
     // MARK: - Sipariş önerisi

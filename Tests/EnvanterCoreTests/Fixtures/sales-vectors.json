@@ -1,0 +1,262 @@
+{
+  "comment": "Satış raporu metni (yapıştırma / .csv / .txt): başlık satırına göre sütunlar, birimli adet, tarih yazımları ve okunamayan satırlar. Mac: SalesVectorTests.swift, web: test/salesParser.test.ts (aynı dosya).",
+  "cases": [
+    {
+      "name": "başlık: Birim Fiyat adetten önce (fiyat adet sanılmaz)",
+      "sourceName": "x.csv",
+      "text": "Kodu;Ürün Tipi;Birim Fiyat;Adedi;Tutarı\n11100;MEDIUM BURGER;185;12;2220\n11103;CHEESE;210;3;630\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 3
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [],
+        "codeRows": 2
+      }
+    },
+    {
+      "name": "başlık: Sıra sütunu (100'den büyük sıra numarası kod sanılmaz)",
+      "sourceName": "x.csv",
+      "text": "Sıra;Kodu;Ürün;Adedi\n101;11100;MEDIUM BURGER;5\n102;11103;CHEESE;7\n103;;***** MENÜLER *****;\n104;12102;DUBLEX MENÜ;2\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "qty": 5
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          },
+          {
+            "code": "12102",
+            "name": "DUBLEX MENÜ",
+            "qty": 2
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [],
+        "codeRows": 3
+      }
+    },
+    {
+      "name": "başlık: Ürün Fiyatı ad sütunu sanılmaz",
+      "sourceName": "x.csv",
+      "text": "Kodu;Ürün Fiyatı;Ürün Grubu Adı;Adedi\n11100;150;MEDIUM;3\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 3
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [],
+        "codeRows": 1
+      }
+    },
+    {
+      "name": "birimli adet ve okunamayan satırlar",
+      "sourceName": "Pano",
+      "text": "Kodu\tÜrün Tipi\tAdedi\n11100\tMEDIUM BURGER\t12 adet\n11103\tCHEESE\t12,00 Ad.\n19001\tPATATES\t3 porsiyon\n11152\tKASAP\tbilinmiyor\n12102\tDUBLEX\t\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM BURGER",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 12
+          },
+          {
+            "code": "19001",
+            "name": "PATATES",
+            "qty": 3
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [
+          {
+            "row": 5,
+            "text": "11152\tKASAP\tbilinmiyor",
+            "reason": "Adet okunamadı"
+          },
+          {
+            "row": 6,
+            "text": "12102\tDUBLEX",
+            "reason": "Adet okunamadı"
+          }
+        ],
+        "codeRows": 5
+      }
+    },
+    {
+      "name": "başlıksız: adedi olmayan satır okunamadı sayılır",
+      "sourceName": "Pano",
+      "text": "11100\tMEDIUM BURGER\n11103\tCHEESE\t5\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 5
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [
+          {
+            "row": 1,
+            "text": "11100\tMEDIUM BURGER",
+            "reason": "Adet okunamadı"
+          }
+        ],
+        "codeRows": 2
+      }
+    },
+    {
+      "name": "tek başına tire sıfırdır (okunamadı sayılmaz)",
+      "sourceName": "x.csv",
+      "text": "Kodu,Ürün Tipi,Adedi\n17001,ZAYİ,-\n11100,MEDIUM,2\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 2
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [],
+        "codeRows": 2
+      }
+    },
+    {
+      "name": "CRLF: satır numarası dosyadaki satırdır",
+      "sourceName": "x.txt",
+      "text": "Satış\r\nKodu\tÜrün Tipi\tAdedi\r\n11100\tA\tx\r\n11103\tB\t4\r\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11103",
+            "name": "B",
+            "qty": 4
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "skipped": [
+          {
+            "row": 3,
+            "text": "11100\tA\tx",
+            "reason": "Adet okunamadı"
+          }
+        ],
+        "codeRows": 2
+      }
+    },
+    {
+      "name": "tarih: gg-aa-yyyy",
+      "sourceName": "x.txt",
+      "text": "Tarih: 12-10-2026\n11100\tMEDIUM\t4\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 4
+          }
+        ],
+        "dateFrom": "2026-10-12",
+        "dateTo": "2026-10-12",
+        "periodText": "12.10.2026",
+        "skipped": [],
+        "codeRows": 1
+      }
+    },
+    {
+      "name": "tarih: yyyy-aa-gg aralığı",
+      "sourceName": "x.txt",
+      "text": "Rapor 2026-10-01 - 2026-10-07\n11100\tMEDIUM\t4\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 4
+          }
+        ],
+        "dateFrom": "2026-10-01",
+        "dateTo": "2026-10-07",
+        "periodText": "01.10.2026 – 07.10.2026",
+        "skipped": [],
+        "codeRows": 1
+      }
+    },
+    {
+      "name": "tarih: iki haneli yıl (gg.aa.yy ve gg-aa-yy)",
+      "sourceName": "x.txt",
+      "text": "Tarih.:01-10-26 / 07.10.26\nKodu;Ürün Tipi;Adedi\n11100;MEDIUM;4\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 4
+          }
+        ],
+        "dateFrom": "2026-10-01",
+        "dateTo": "2026-10-07",
+        "periodText": "01.10.2026 – 07.10.2026",
+        "skipped": [],
+        "codeRows": 1
+      }
+    },
+    {
+      "name": "tarih: eski yazım değişmedi (g.aa.yyyy)",
+      "sourceName": "x.txt",
+      "text": "Tarih.:1.08.2026 1.08.2026\n11100\tMEDIUM\t4\n",
+      "expected": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 4
+          }
+        ],
+        "dateFrom": "2026-08-01",
+        "dateTo": "2026-08-01",
+        "periodText": "01.08.2026",
+        "skipped": [],
+        "codeRows": 1
+      }
+    }
+  ]
+}

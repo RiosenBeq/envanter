@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 import UniformTypeIdentifiers
 import EnvanterCore
 
@@ -97,6 +98,14 @@ struct AppAlert: Identifiable {
     var message: String
 }
 
+/// Gün dönümü bildirimi (ana pencerenin üstündeki şerit): "Yeni gün başladı: 15.10.2026 · Dünkü güne dön"
+struct DayRolloverNotice: Equatable {
+    /// Önceki gün ("Dünkü güne dön")
+    let from: String
+    /// Geçilen yeni gün
+    let to: String
+}
+
 struct ImportPreview: Identifiable {
     let id = UUID()
     var report: SalesReport
@@ -163,6 +172,12 @@ final class AppStore: ObservableObject {
     /// Ekran görüntüsü aracı: bağlanma penceresinin içeriği ana pencerenin üstünde gösterilir (pencere görüntüsüne
     /// sayfa pencereleri girmez)
     @Published var previewConnectPanel = false
+    /// Gün dönümünde "bugün" seçiliyken yeni güne geçildi (şerit; `checkDayRollover`)
+    @Published var dayRollover: DayRolloverNotice?
+    /// Son bakıldığında "bugün" olan gün (gün dönümü)
+    private(set) var knownToday = DateKey.today()
+    /// Dakikada bir gün dönümü denetimi (mağaza bilgisayarı gün boyu açık kalır)
+    private var rolloverTimer: Timer?
 
     let persistence: Persistence
     /// Web paneliyle (Supabase) arka planda eşitleme
@@ -230,6 +245,19 @@ final class AppStore: ObservableObject {
         alert = startupAlert
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.flush() }
+        }
+        // Gün dönümü: uygulama öne gelince, Mac uykudan uyanınca, takvim günü değişince ve dakikada bir (otomatik test ve
+        // ekran görüntüsü modlarında kapalı; sistem testi `checkDayRollover`ı doğrudan çağırır)
+        if !automated {
+            let check: @Sendable (Notification) -> Void = { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkDayRollover() }
+            }
+            NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main, using: check)
+            NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main, using: check)
+            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: check)
+            rolloverTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkDayRollover() }
+            }
         }
         // İlk açılışta dosyayı hemen oluştur
         if !FileManager.default.fileExists(atPath: persistence.dataFile.path) {
@@ -436,6 +464,47 @@ final class AppStore: ObservableObject {
     }
     func shiftDay(_ n: Int) { selectedDate = DateKey.addDays(n, to: selectedDate) }
     func goToday() { selectedDate = DateKey.today() }
+
+    // MARK: - Gün dönümü
+
+    /// Gün dönümü (`DayRollover`, web ile aynı kural): takvim günü değiştiyse ve "bugün" seçiliyse yeni güne geçilir ve
+    /// "Yeni gün başladı" şeridi (kapatılana kadar) gösterilir; başka gün seçiliyse hiçbir şey değişmez. Açık bir sayfa /
+    /// uyarı varken ya da sayım sürerken (`isEditingText`) geçiş bir sonraki denemeye kalır. Geçişte Günlük Sayım tablosu
+    /// yeni günle yeniden kurulur (`.id(date)`); odaktaki hücrede yazılmış değer kapanırken önceki güne kaydedilir.
+    func checkDayRollover(today: String = DateKey.today(), editing: Bool? = nil) {
+        let previous = knownToday
+        guard today != previous else { return }
+        switch DayRollover.decide(selected: selectedDate, previousToday: previous, today: today, editing: editing ?? Self.isEditingText()) {
+        case .wait:
+            return
+        case .none:
+            knownToday = today
+        case .move(let to):
+            knownToday = today
+            selectedDate = to
+            dayRollover = DayRolloverNotice(from: previous, to: to)
+        }
+    }
+
+    /// Şeritteki "Dünkü güne dön"
+    func returnFromRollover() {
+        if let r = dayRollover { selectedDate = r.from }
+        dayRollover = nil
+    }
+
+    /// Sistem testi: bilinen "bugün"ü ayarlar
+    func setKnownToday(_ day: String) { knownToday = day }
+
+    /// Gün dönümü beklesin mi (`DayRollover.shouldWait`): açık bir sayfa ya da uyarı var (içindeki işlem seçili güne
+    /// bağlıdır; kapanınca geçilir) ya da uygulama önde, odakta bir yazı alanı ve son 15 dk içinde klavye / fare kullanılmış
+    /// (gece yarısını geçen sayım kendi gününde biter; gece boyu dokunulmayan bilgisayar yine de yeni güne geçer)
+    private static func isEditingText() -> Bool {
+        let dialogOpen = NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
+        let fieldFocused = NSApp.isActive && NSApp.keyWindow?.firstResponder is NSText
+        let inputs: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .mouseMoved, .scrollWheel]
+        let idle = inputs.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? .infinity
+        return DayRollover.shouldWait(dialogOpen: dialogOpen, fieldFocused: fieldFocused, idleSeconds: idle)
+    }
 
     // MARK: - Günlük giriş
 
@@ -855,43 +924,78 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func addItem(name: String, unit: String) {
-        var base = name.lowercased(with: Locale(identifier: "tr_TR")).filter { $0.isLetter || $0.isNumber }
-        if base.isEmpty { base = "kalem" }
-        var id = base, n = 2
-        while data.items.contains(where: { $0.id == id }) { id = "\(base)\(n)"; n += 1 }
-        let isKg = unit == "Kg"
-        mutateData("Stok Kalemi Ekle") { $0.items.append(Item(id: id, name: name, unit: unit, recipeUnit: isKg ? "kg" : "adet", factor: 1)) }
+    /// Yeni stok kalemi (`CatalogOps`): aynı adlı kalem varsa eklenmez ("Bu adla bir kalem zaten var"); kimlik silinmiş
+    /// kalemlerinkini de almaz (kapatılmış günlerde kalan kayıtları devralmasın).
+    /// - Returns: eklendi mi
+    @discardableResult
+    func addItem(name: String, unit: String) -> Bool {
+        guard !CatalogOps.hasItemNamed(name, in: data.items) else {
+            alert = AppAlert(title: CatalogOps.duplicateTitle, message: CatalogOps.duplicateMessage(name))
+            return false
+        }
+        let item = CatalogOps.newItem(name: name, unit: unit, data: data)
+        return mutateData("Stok Kalemi Ekle") { $0.items.append(item) }
     }
 
-    func deleteItem(_ id: String) {
-        mutateData("Stok Kalemi Sil") { d in
-            d.items.removeAll { $0.id == id }
-            for i in d.products.indices { d.products[i].amounts[id] = nil }
-            for (k, var day) in d.days {
-                day.entries[id] = nil
-                day.legacySold?[id] = nil
-                day.legacyWaste?[id] = nil
-                if day.isEmpty { d.days[k] = nil } else { d.days[k] = day }
-            }
+    /// Kalemin adını değiştirir; aynı adlı başka kalem varsa değiştirmez ve uyarır
+    @discardableResult
+    func renameItem(_ id: String, to name: String) -> Bool {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, data.items.first(where: { $0.id == id })?.name != n else { return false }
+        guard !CatalogOps.hasItemNamed(n, in: data.items, except: id) else {
+            alert = AppAlert(title: CatalogOps.duplicateTitle, message: CatalogOps.duplicateMessage(n))
+            return false
         }
+        updateItem(id) { $0.name = n }
+        return true
+    }
+
+    /// Kalemi kalıcı olarak siler (`CatalogOps.deleteItem`): reçete miktarları ve açık günlerdeki kayıtlar da silinir;
+    /// kapatılmış günlere dokunulmaz. ⌘Z ile geri alınır.
+    @discardableResult
+    func deleteItem(_ id: String) -> CatalogOps.DeleteResult? {
+        let r = CatalogOps.deleteItem(id, in: data)
+        let applied = mutateData("Stok Kalemi Sil") { $0 = r.data }
+        return applied ? r : nil
+    }
+
+    /// Kalemi pasif yapar (silmek yerine önerilen: günlük sayımda ve raporlarda görünmez, geçmişi korunur)
+    @discardableResult
+    func deactivateItem(_ id: String) -> Bool {
+        guard data.items.first(where: { $0.id == id })?.active == true else { return false }
+        return mutateData("Kalemi Pasif Yap") { d in
+            if let i = d.items.firstIndex(where: { $0.id == id }) { d.items[i].active = false }
+        }
+    }
+
+    /// "Yeni kalem olarak aç" (`CatalogOps.splitForUnit`): eski kalem "Patates (adet)" adıyla pasif kalır, aynı adla yeni
+    /// birimli kalem açılır, reçete miktarları ona taşınır. Sonuç bildirimle gösterilir.
+    @discardableResult
+    func splitItemForUnit(_ id: String, unit: String) -> Bool {
+        guard let item = data.items.first(where: { $0.id == id }),
+              let r = CatalogOps.splitForUnit(id, unit: unit, in: data) else { return false }
+        let moved = CatalogOps.history(id, in: data).recipes
+        guard mutateData("Yeni Kalem Olarak Aç", { $0 = r.data }) else { return false }
+        alert = AppAlert(title: "Yeni kalem açıldı",
+                         message: CatalogOps.splitMessage(name: item.name, unit: unit, oldName: r.oldName, recipeUnit: item.recipeUnit,
+                                                          movedRecipes: moved) + " Düzen > Geri Al (⌘Z) ile geri alınabilir.")
+        return true
     }
 
     func moveItems(from: IndexSet, to: Int) {
         mutateData("Sıralama") { $0.items.move(fromOffsets: from, toOffset: to) }
     }
 
-    /// Silinmiş varsayılan reçete/kalemleri geri ekler; mevcut düzenlemelere dokunmaz.
+    /// Silinmiş varsayılan reçete/kalemleri geri ekler (`CatalogOps.mergeDefinitions`, web ile aynı kural): aynı adlı kalemi
+    /// olan hazır kalem eklenmez (reçeteler şubedeki aynı adlı kalemi kullanır); silinmiş kalemin kimliği kapatılmış günlerde
+    /// ya da siparişlerde geçiyorsa kalem yeni kimlikle gelir. Mevcut düzenlemelere dokunmaz.
     @discardableResult
     func restoreMissingDefaults() -> (items: Int, products: Int) {
         let seed = AppData.seeded()
-        var addedItems = 0, addedProducts = 0
-        let applied = mutateData("Varsayılanları Geri Ekle") { d in
-            let ids = Set(d.items.map { $0.id }), codes = Set(d.products.map { $0.code })
-            for i in seed.items where !ids.contains(i.id) { d.items.append(i); addedItems += 1 }
-            for p in seed.products where !codes.contains(p.code) { d.products.append(p); addedProducts += 1 }
-        }
-        return applied ? (addedItems, addedProducts) : (0, 0)
+        let r = CatalogOps.mergeDefinitions(items: seed.items, products: seed.products, into: data)
+        guard r.addedItems + r.addedProducts > 0 else { return (0, 0) }
+        let applied = mutateData("Varsayılanları Geri Ekle") { $0 = r.data }
+        return applied ? (r.addedItems, r.addedProducts) : (0, 0)
     }
 
     // MARK: - Raporlar
@@ -1021,16 +1125,45 @@ final class AppStore: ObservableObject {
         return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
     }
 
-    /// Siparişi teslim alır: gelen miktarlar o günün Gelen sütununa eklenir (yalnızca miktar; fiyat yok).
-    /// - Returns: teslim alındı mı (sipariş açık değilse, gün kapatılmışsa ya da personel hesabıyla false)
+    /// Sipariş formundan yeni sipariş (miktarlar elle; öneri yalnızca başlangıç değeri)
     @discardableResult
-    func receiveOrder(_ id: String, on date: String, quantities: [String: Double]) -> Bool {
+    func createOrder(date: String, supplier: String, note: String, lines: [OrderLine]) -> Bool {
+        do {
+            let order = try Purchasing.orderFromDraft(date: date, supplier: supplier, note: note, lines: lines)
+            return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
+        } catch {
+            alert = AppAlert(title: "Sipariş oluşturulamadı", message: error.localizedDescription)
+            return false
+        }
+    }
+
+    /// Açık siparişi düzenler (tedarikçi, not, miktarlar, kalem ekle / çıkar). Değişiklik yoksa geri alma geçmişine
+    /// boş adım eklenmez.
+    @discardableResult
+    func updateOrder(_ id: String, supplier: String, note: String, lines: [OrderLine]) -> Bool {
         var copy = data
         do {
-            let lines = try Purchasing.receive(orderID: id, on: date, quantities: quantities, data: &copy)
-            guard mutateData("Teslim Al", { $0 = copy }) else { return false }
-            alert = AppAlert(title: "Teslim alındı",
-                             message: "\(lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi.")
+            try Purchasing.updateOrder(orderID: id, supplier: supplier, note: note, lines: lines, data: &copy)
+        } catch {
+            alert = AppAlert(title: "Sipariş kaydedilemedi", message: error.localizedDescription)
+            return false
+        }
+        guard copy.purchaseOrders != data.purchaseOrders else { return true }
+        return mutateData("Siparişi Düzenle") { $0 = copy }
+    }
+
+    /// Siparişi teslim alır: gelen miktarlar o günün Gelen sütununa eklenir (yalnızca miktar; fiyat yok).
+    /// `addToIncoming == false` ("Teslim alındı say"): Gelen elle girilmişti; yalnızca sipariş kapanır.
+    /// - Returns: teslim alındı mı (sipariş açık değilse, gün kapatılmışsa ya da personel hesabıyla false)
+    @discardableResult
+    func receiveOrder(_ id: String, on date: String, quantities: [String: Double], addToIncoming: Bool = true) -> Bool {
+        var copy = data
+        do {
+            let lines = try Purchasing.receive(orderID: id, on: date, quantities: quantities, addToIncoming: addToIncoming, data: &copy)
+            guard mutateData(addToIncoming ? "Teslim Al" : "Teslim Alındı Say", { $0 = copy }) else { return false }
+            alert = addToIncoming
+                ? AppAlert(title: "Teslim alındı", message: "\(lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi.")
+                : AppAlert(title: "Teslim alındı sayıldı", message: "\(lines) kalem · \(DateKey.short(date)) Gelen'ine dokunulmadı.")
             return true
         } catch {
             alert = AppAlert(title: "Teslim alınamadı", message: error.localizedDescription)
@@ -1040,6 +1173,11 @@ final class AppStore: ObservableObject {
 
     func cancelOrder(_ id: String) {
         mutateData("Siparişi İptal Et") { Purchasing.cancel(orderID: id, data: &$0) }
+    }
+
+    /// İptal edilmiş siparişi yeniden açar (miktarları yeniden öneriden düşülür)
+    func reopenOrder(_ id: String) {
+        mutateData("Siparişi Yeniden Aç") { Purchasing.reopen(orderID: id, data: &$0) }
     }
 
     func deleteOrder(_ id: String) {
@@ -1073,11 +1211,9 @@ final class AppStore: ObservableObject {
 
     // MARK: - Dışa / içe aktarma
 
-    /// "NextGen Envanter – Kadıköy – 01.08.2026.xlsx"
+    /// "NextGen Envanter – Kadıköy – 01.08.2026.xlsx" (web paneliyle aynı kural: Exporter.fileName)
     private func fileName(_ base: String, ext: String = "xlsx") -> String {
-        let branch = settings.branchName.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        return ([Brand.appName] + (branch.isEmpty ? [] : [branch]) + [base]).joined(separator: " – ") + ".\(ext)"
+        Exporter.fileName(branch: settings.branchName, base: base, ext: ext)
     }
 
     func exportDayExcel() {

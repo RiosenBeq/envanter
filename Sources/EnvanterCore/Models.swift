@@ -126,12 +126,17 @@ public struct PurchaseOrder: Codable, Hashable, Identifiable {
     public var lines: [OrderLine]
     public var status: OrderStatus
     public var receivedOn: String?
+    /// Tedarikçiye not (sipariş metninin sonuna eklenir)
     public var note: String?
+    /// "Teslim alındı say": Gelen elle girilmişti, teslim alırken Gelen'e eklenmedi (yalnızca true yazılır)
+    public var receivedWithoutIncoming: Bool?
 
     public init(id: String = UUID().uuidString, date: String, supplier: String = "", lines: [OrderLine],
-                status: OrderStatus = .open, receivedOn: String? = nil, note: String? = nil) {
+                status: OrderStatus = .open, receivedOn: String? = nil, note: String? = nil,
+                receivedWithoutIncoming: Bool? = nil) {
         self.id = id; self.date = date; self.supplier = supplier; self.lines = lines
         self.status = status; self.receivedOn = receivedOn; self.note = note
+        self.receivedWithoutIncoming = receivedWithoutIncoming
     }
 }
 

@@ -41,13 +41,9 @@ final class RoleAndLockedDayTests: XCTestCase {
         return nil
     }
 
+    /// AppStore.deleteItem ile aynı kural (CatalogOps: kapatılmış günlere dokunulmaz)
     private func deleteItem(_ id: String, _ d: inout AppData) {
-        d.items.removeAll { $0.id == id }
-        for i in d.products.indices { d.products[i].amounts[id] = nil }
-        for (k, var day) in d.days {
-            day.entries[id] = nil
-            d.days[k] = day.isEmpty ? nil : day
-        }
+        d = CatalogOps.deleteItem(id, in: d).data
     }
 
     // MARK: - Sunucu kuralı (FakeServer = SQL envanter_put)
@@ -233,12 +229,13 @@ final class RoleAndLockedDayTests: XCTestCase {
         var closed = demo
         closed.days[today]?.locked = true
         XCTAssertNil(CloudPermission.refusal(role: CloudRole.staff, old: demo, new: closed))
-        // Kalem silme: tanımlar ve (kapalı günler dahil) günler birlikte reddedilir
+        // Kalem silme: tanımlar reddedilir; kapatılmış günlere silme hiç dokunmaz (CatalogOps)
         var deleted = demo
         deleteItem("g90", &deleted)
         let rd = CloudPermission.refusal(role: CloudRole.staff, old: demo, new: deleted)
         XCTAssertEqual(rd?.catalogKeys, [DocKey.items, DocKey.products])
-        XCTAssertTrue(rd?.lockedDates.contains(lockedDate) ?? false)
+        XCTAssertEqual(rd?.lockedDates, [])
+        XCTAssertEqual(deleted.days[lockedDate], demo.days[lockedDate])
         var settings = demo
         settings.settings.staff.append("Yeni")
         XCTAssertEqual(CloudPermission.refusal(role: CloudRole.staff, old: demo, new: settings)?.message,

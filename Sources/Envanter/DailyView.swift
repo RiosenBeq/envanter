@@ -220,7 +220,8 @@ struct DailyView: View {
             }
             .buttonStyle(SoftButtonStyle(tint: note.isEmpty ? .primary : Brand.accent))
             .help(note.isEmpty ? "Güne not ekleyin, sayımı yapanı seçin" : note)
-            .popover(isPresented: $showNote, arrowEdge: .bottom) { DayNotePopover(date: date).environmentObject(store) }
+            // Gün değişirse (gün dönümü) not penceresi yeniden kurulur: yazılan not açıldığı güne kaydedilir
+            .popover(isPresented: $showNote, arrowEdge: .bottom) { DayNotePopover(date: date).environmentObject(store).id(date) }
 
             // Elle zayi: kapatılmış günde kapalı (nedeni ipucunda)
             Button { openWaste(nil) } label: { Label(WasteText.addTitle, systemImage: "plus.circle") }

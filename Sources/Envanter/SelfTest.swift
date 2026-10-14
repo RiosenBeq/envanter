@@ -121,6 +121,13 @@ enum SelfTest {
         check(near(calc?.waste, 1), "ZAYİ köfte → zayi 1")
         check(near(calc?.diff, -1), "fark = 28 + 1 − 30 = −1")
         check(store.engine.overview(date: d1).unknownLines == 1, "reçetesi tanımsız 1 ürün işaretlendi")
+        let again = SalesImportCheck.warnings(report: report, targetDate: DateKey.addDays(1, to: d1), data: store.data)
+        check(again.first?.kind == .duplicate && SalesImportCheck.needsConfirmation(again),
+              "aynı rapor ertesi güne aktarılırken uyarı ve \"Yine de bu güne aktar\" onayı")
+        let priced = SalesParser.parse(text: "Kodu;Ürün Tipi;Birim Fiyat;Adedi\n11101;DUBLEX;185;12 adet\n11103;CHEESE;210;?\n",
+                                       sourceName: "selftest")
+        check(priced.lines.first?.qty == 12 && priced.skipped.map { $0.row } == [3],
+              "başlıklı rapor: birim fiyat adet sanılmadı, okunamayan satır bildirildi")
         let json = (try? persistence.encode(store.data)).map { String(decoding: $0, as: UTF8.self) } ?? ""
         check(!json.isEmpty && !json.contains("\"amount\"") && !json.contains("\"salesRevenue\""), "satış tutarı saklanmıyor (yalnızca adet)")
 
@@ -365,6 +372,23 @@ enum SelfTest {
             check(store.openOrders.isEmpty, "sipariş kapandı")
         }
 
+        print("10b) Sipariş formu, düzenleme ve \"Teslim alındı say\"")
+        let manual = store.createOrder(date: d2, supplier: "Sebzeci", note: "Sabah getirin",
+                                       lines: [OrderLine(itemID: "patates", qty: 5), OrderLine(itemID: "g90", qty: 0)])
+        check(manual && store.openOrders.first?.lines == [OrderLine(itemID: "patates", qty: 5)] && store.openOrders.first?.note == "Sabah getirin",
+              "formdan sipariş: miktarı 0 olan kalem atıldı, not yazıldı")
+        if let o = store.openOrders.first {
+            check(store.updateOrder(o.id, supplier: "Sebzeci", note: "", lines: [OrderLine(itemID: "patates", qty: 8)]), "açık sipariş düzenlendi")
+            check(store.openOrders.first?.lines.first?.qty == 8 && store.openOrders.first?.note == nil, "miktar 8 oldu, not silindi")
+            let before = store.data.days[d2]?.entries["patates"]?.incoming
+            store.alert = nil
+            check(store.receiveOrder(o.id, on: d2, quantities: ["patates": 8], addToIncoming: false), "\"Teslim alındı say\" uygulandı")
+            store.alert = nil
+            check(store.data.days[d2]?.entries["patates"]?.incoming == before, "Gelen'e eklenmedi (elle girilmişti)")
+            check(store.data.purchaseOrders.first { $0.id == o.id }?.receivedWithoutIncoming == true && store.openOrders.isEmpty,
+                  "sipariş kapandı ve \"Gelen'e eklenmeden\" olarak işaretlendi")
+        }
+
         print("11) Ayarlar")
         step("şube adı") { store.updateSettings { $0.branchName = "Test Şube" } }
         check(store.settings.branchName == "Test Şube", "şube adı kaydedildi")
@@ -380,6 +404,9 @@ enum SelfTest {
         } else { check(false, "geçmiş Excel'i okunabilir") }
         check((try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: d2)))?.first?.name == "Sayım Formu", "sayım formu")
         check((try? XlsxReader.read(data: Exporter.day(engine: store.engine, date: d1)))?.count == 2, "gün Excel'i 2 sayfa")
+        // Web paneliyle aynı dosya adı kuralı (Fixtures/export-vectors.json)
+        check(Exporter.fileName(branch: " A/B:C ", base: "Sayım Formu 01.08.2026") == "NextGen Envanter – A-B-C – Sayım Formu 01.08.2026.xlsx",
+              "dışa aktarım dosya adı (web ile aynı)")
         if let o = try? XlsxReader.read(data: Exporter.orders(store.orderSuggestions(date: d2), date: d2)) {
             let cells = o.flatMap { $0.rows.values.flatMap { $0.values } }
             check(o.first?.name == "Sipariş" && !cells.contains { $0.contains("₺") || $0.contains("Tutar") }, "sipariş Excel'inde tutar sütunu yok")
@@ -408,6 +435,42 @@ enum SelfTest {
         check(store.product("11101") == nil, "ürün silindi")
         let restored = store.restoreMissingDefaults()
         check(restored.products == 1 && store.product("11101") != nil, "silinen varsayılan ürün geri eklendi")
+
+        print("14b) Stok kalemi: aynı ad, silme, silinen kimlik, birim (CatalogOps; web ile aynı)")
+        store.alert = nil
+        check(!store.addItem(name: " 90 GR ", unit: "Adet") && store.alert?.title == CatalogOps.duplicateTitle, "aynı adlı kalem eklenmedi (uyarı)")
+        store.alert = nil
+        check(store.addItem(name: "Turşu", unit: "Adet") && store.data.items.last?.id == "turşu", "yeni kalem eklendi (turşu)")
+        check(!store.renameItem("turşu", to: "peynir") && store.alert?.title == CatalogOps.duplicateTitle
+              && store.data.items.last?.name == "Turşu", "başka kalemin adı verilemiyor")
+        store.alert = nil
+        let lockedDay = "2026-07-10", openDay = "2026-07-11"
+        setClosings(lockedDay, ["turşu": 4])
+        setClosings(openDay, ["turşu": 3])
+        store.setLocked(lockedDay, true)
+        let lockedBefore = store.data.days[lockedDay]
+        check(CatalogOps.history("turşu", in: store.data).suggestsDeactivate, "sayım geçmişi olan kalemde silmek yerine \"Pasif Yap\" öneriliyor")
+        let removed = store.deleteItem("turşu")
+        check(removed?.days == 1 && removed?.keptLockedDays == 1 && store.data.days[openDay] == nil && store.data.days[lockedDay] == lockedBefore,
+              "silme: açık gündeki kayıt silindi, kapatılmış gün olduğu gibi kaldı")
+        check(store.addItem(name: "Turşu", unit: "Kg") && store.data.items.last?.id == "turşu2",
+              "yeniden eklenen kalem silinenin kimliğini almadı (turşu2: kapatılmış gündeki kayıtları devralmaz)")
+        setClosings(openDay, ["turşu2": 2])
+        check(CatalogOps.unitChangeNeedsConfirmation(CatalogOps.history("turşu2", in: store.data)), "sayım geçmişi olan kalemde birim değişikliği onay istiyor")
+        check(store.splitItemForUnit("turşu2", unit: "Adet") && store.data.items.first { $0.id == "turşu2" }?.active == false
+              && store.data.items.first { $0.id == "turşu2" }?.name == "Turşu (kg)"
+              && store.data.items.contains { $0.name == "Turşu" && $0.unit == "Adet" && $0.active },
+              "Yeni Kalem Olarak Aç: eski kalem \"Turşu (kg)\" adıyla pasif, yeni birimli kalem açık")
+        store.alert = nil
+        check(store.deactivateItem("turşu2") == false, "pasif kalem yeniden pasif yapılmıyor")
+        // Eksik varsayılanları geri ekleme aynı adlı kalemi ikinci kez eklemez (silinip "Peynir" adıyla yeniden eklenmiş)
+        var reAdded = CatalogOps.deleteItem("peynir", in: store.data).data
+        reAdded.items.append(CatalogOps.newItem(name: "Peynir", unit: "Kg", data: reAdded))
+        let seed = AppData.seeded()
+        let merged = CatalogOps.mergeDefinitions(items: seed.items, products: seed.products, into: reAdded).data
+        check(merged.items.filter { CatalogOps.hasItemNamed("Peynir", in: [$0]) }.count == 1,
+              "Eksik varsayılanları geri ekle: silinip yeniden eklenen \"Peynir\" ikinci kez gelmedi")
+        store.setLocked(lockedDay, false)
 
         print("15) Takip şeridi renkleri (sayılanların kaçında fark var; web paneliyle aynı kural)")
         check(TrackerState.legendOrder.prefix(3).map { $0.label }
@@ -708,5 +771,25 @@ enum SelfTest {
         let empty = DaySteps(store.engine.overview(date: DateKey.addDays(60, to: d2)))
         check(empty.next == .sales && store.lockAction(DateKey.addDays(60, to: d2)) == .nothingCounted,
               "boş gün: sıradaki adım satış raporu, gün kapatılamaz")
+
+        print("21) Sürüm uyumu ve gün dönümü")
+        check(DataFormat.level == 2 && DataFormat.level(ofPresence: RealtimePresence.mac(branch: "Tuzla", app: "2.1", since: Date())) == 2,
+              "canlı durum bilgisi veri biçimi düzeyini bildiriyor (fmt 2)")
+        check(Brand.version == "2.1" || Brand.version == "geliştirme", "uygulama sürümü 2.1 (\(Brand.version))")
+        check(DataFormat.newerPeerLevel(in: ["web-1": [.object(["client": .string("web"), "fmt": .number(3)])]], ownKey: "mac-1") == 3,
+              "kanalda daha yeni sürüm görülünce uyarı düzeyi")
+        let day0 = "2026-10-14", day1 = "2026-10-15"
+        store.setKnownToday(day0)
+        store.selectedDate = day0
+        store.checkDayRollover(today: day1, editing: true)
+        check(store.selectedDate == day0 && store.dayRollover == nil, "gün dönümü: biri yazarken beklenir")
+        store.checkDayRollover(today: day1, editing: false)
+        check(store.selectedDate == day1 && store.dayRollover == DayRolloverNotice(from: day0, to: day1),
+              "gün dönümü: bugün seçiliyken yeni güne geçildi, şerit gösterildi (\(DayRollover.title(day1)))")
+        store.returnFromRollover()
+        check(store.selectedDate == day0 && store.dayRollover == nil, "\"\(DayRollover.backLabel)\" önceki güne döndü")
+        store.checkDayRollover(today: "2026-10-16", editing: false)
+        check(store.selectedDate == day0 && store.dayRollover == nil, "başka gün görüntülenirken gün değişmez")
+        store.setKnownToday(DateKey.today())
     }
 }

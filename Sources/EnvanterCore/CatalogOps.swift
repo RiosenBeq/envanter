@@ -18,9 +18,10 @@ public enum CatalogOps {
         public var keptLockedDays: Int
     }
 
-    /// Kalemin bu günde kaydı (sayım, Excel'den gelen satılan / zayi) var mı
+    /// Kalemin bu günde kaydı (sayım, Excel'den gelen satılan / zayi, elle zayi) var mı
     static func dayMentions(_ day: DayRecord, _ id: String) -> Bool {
         day.entries[id] != nil || day.legacySold?[id] != nil || day.legacyWaste?[id] != nil
+            || (day.wasteLog ?? []).contains { $0.itemID == id }
     }
 
     /// Kalemi siler: reçetelerdeki miktarları ve açık günlerdeki kayıtları da kaldırır; boşalan açık gün silinir.
@@ -40,6 +41,8 @@ public enum CatalogOps {
             next.entries[id] = nil
             next.legacySold?[id] = nil
             next.legacyWaste?[id] = nil
+            // Elle zayi: kalemin kayıtları çıkarılır; son kayıt gidince `[]` kalır (anahtar silinmez, SYNC.md "Elle zayi")
+            next.wasteLog = next.wasteLog.map { log in log.filter { $0.itemID != id } }
             d.days[k] = next.isEmpty ? nil : next
             removed += 1
         }
@@ -58,7 +61,7 @@ public enum CatalogOps {
         return ids
     }
 
-    /// Kayıtlarda geçen kalem kimlikleri: günlerin (kapatılmışlar dahil) kayıt anahtarları ve sipariş satırları. Bu kimlikle
+    /// Kayıtlarda geçen kalem kimlikleri: günlerin (kapatılmışlar dahil) kayıt anahtarları, elle zayi kayıtları ve sipariş satırları. Bu kimlikle
     /// eklenen kalem bu kayıtları devralırdı.
     public static func historyItemIDs(_ data: AppData) -> Set<String> {
         var ids = Set<String>()
@@ -66,6 +69,7 @@ public enum CatalogOps {
             ids.formUnion(day.entries.keys)
             ids.formUnion((day.legacySold ?? [:]).keys)
             ids.formUnion((day.legacyWaste ?? [:]).keys)
+            ids.formUnion((day.wasteLog ?? []).map { $0.itemID })
         }
         for o in data.purchaseOrders { ids.formUnion(o.lines.map { $0.itemID }) }
         return ids

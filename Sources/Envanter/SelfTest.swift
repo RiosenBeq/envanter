@@ -447,12 +447,15 @@ enum SelfTest {
         let lockedDay = "2026-07-10", openDay = "2026-07-11"
         setClosings(lockedDay, ["turşu": 4])
         setClosings(openDay, ["turşu": 3])
+        // Elle zayi kayıtları da kalemin geçmişidir: açık günde silinir, kapatılmış günde kalır
+        if let z = WasteLog.make(itemID: "turşu", qty: 1, reason: .spoiled) { store.addWaste(date: openDay, entry: z) }
+        if let z = WasteLog.make(itemID: "turşu", qty: 2, reason: .burnt) { store.addWaste(date: lockedDay, entry: z) }
         store.setLocked(lockedDay, true)
         let lockedBefore = store.data.days[lockedDay]
         check(CatalogOps.history("turşu", in: store.data).suggestsDeactivate, "sayım geçmişi olan kalemde silmek yerine \"Pasif Yap\" öneriliyor")
         let removed = store.deleteItem("turşu")
         check(removed?.days == 1 && removed?.keptLockedDays == 1 && store.data.days[openDay] == nil && store.data.days[lockedDay] == lockedBefore,
-              "silme: açık gündeki kayıt silindi, kapatılmış gün olduğu gibi kaldı")
+              "silme: açık gündeki kayıt ve elle zayisi silindi, kapatılmış gün (zayi kaydıyla) olduğu gibi kaldı")
         check(store.addItem(name: "Turşu", unit: "Kg") && store.data.items.last?.id == "turşu2",
               "yeniden eklenen kalem silinenin kimliğini almadı (turşu2: kapatılmış gündeki kayıtları devralmaz)")
         setClosings(openDay, ["turşu2": 2])

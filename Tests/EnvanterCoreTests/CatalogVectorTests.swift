@@ -77,6 +77,38 @@ final class CatalogVectorTests: XCTestCase {
         }
     }
 
+    /// Elle zayi kayıtları (`wasteLog`): silmede kalemin açık günlerdeki kayıtları çıkar (`[]` kalır), kapatılmış günlere
+    /// dokunulmaz; kayıtta geçen kimlik geçmiş sayılır ve yeniden kullanılmaz
+    func testWasteLogEntries() throws {
+        let v = try vectors()
+        let w = try XCTUnwrap(v["wasteLog"])
+        var input = try data(v)
+        for (date, raw) in w["days"]?.objectValue ?? [:] { input.days[date] = try JSONCoding.decode(DayRecord.self, from: raw) }
+        func view(_ day: DayRecord?) throws -> JSONValue {
+            guard let day else { return .null }
+            var out: [String: JSONValue] = ["entries": try JSONCoding.value(day.entries)]
+            if let log = day.wasteLog { out["wasteLog"] = .array(log.map { .string($0.id) }) }
+            return .object(out)
+        }
+        for c in w["delete"]?.arrayValue ?? [] {
+            let r = CatalogOps.deleteItem(c["itemID"]?.stringValue ?? "", in: input)
+            for (date, expected) in c["expected"]?["days"]?.objectValue ?? [:] {
+                XCTAssertEqual(try view(r.data.days[date]), expected, "\(name(c)): \(date)")
+            }
+            XCTAssertEqual(Double(r.days), c["expected"]?["counts"]?["days"]?.doubleValue, name(c))
+            XCTAssertEqual(Double(r.keptLockedDays), c["expected"]?["counts"]?["keptLockedDays"]?.doubleValue, name(c))
+            for (date, day) in input.days where day.isLocked { XCTAssertEqual(r.data.days[date], day, "\(name(c)): \(date)") }
+        }
+        for c in w["history"]?.arrayValue ?? [] {
+            let h = CatalogOps.history(c["itemID"]?.stringValue ?? "", in: input)
+            XCTAssertEqual(Double(h.days), c["expected"]?["days"]?.doubleValue, name(c))
+            XCTAssertEqual(Double(h.lockedDays), c["expected"]?["lockedDays"]?.doubleValue, name(c))
+        }
+        for c in w["newID"]?.arrayValue ?? [] {
+            XCTAssertEqual(CatalogOps.newItemID(name: c["itemName"]?.stringValue ?? "", data: input), c["expected"]?.stringValue, name(c))
+        }
+    }
+
     func testHistoryAndTexts() throws {
         let v = try vectors()
         let input = try data(v)

@@ -385,6 +385,13 @@ enum SelfTest {
               "Yeni Kalem Olarak Aç: eski kalem \"Turşu (kg)\" adıyla pasif, yeni birimli kalem açık")
         store.alert = nil
         check(store.deactivateItem("turşu2") == false, "pasif kalem yeniden pasif yapılmıyor")
+        // Eksik varsayılanları geri ekleme aynı adlı kalemi ikinci kez eklemez (silinip "Peynir" adıyla yeniden eklenmiş)
+        var reAdded = CatalogOps.deleteItem("peynir", in: store.data).data
+        reAdded.items.append(CatalogOps.newItem(name: "Peynir", unit: "Kg", data: reAdded))
+        let seed = AppData.seeded()
+        let merged = CatalogOps.mergeDefinitions(items: seed.items, products: seed.products, into: reAdded).data
+        check(merged.items.filter { CatalogOps.hasItemNamed("Peynir", in: [$0]) }.count == 1,
+              "Eksik varsayılanları geri ekle: silinip yeniden eklenen \"Peynir\" ikinci kez gelmedi")
         store.setLocked(lockedDay, false)
 
         print("15) Takip şeridi renkleri (sayılanların kaçında fark var; web paneliyle aynı kural)")

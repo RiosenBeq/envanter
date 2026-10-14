@@ -415,8 +415,9 @@ final class AppStore: ObservableObject {
     // MARK: - Gün dönümü
 
     /// Gün dönümü (`DayRollover`, web ile aynı kural): takvim günü değiştiyse ve "bugün" seçiliyse yeni güne geçilir ve
-    /// "Yeni gün başladı" şeridi gösterilir; başka gün seçiliyse hiçbir şey değişmez. Biri o an bir alana yazıyorsa geçiş
-    /// bir sonraki denemeye kalır.
+    /// "Yeni gün başladı" şeridi (kapatılana kadar) gösterilir; başka gün seçiliyse hiçbir şey değişmez. Açık bir sayfa /
+    /// uyarı varken ya da sayım sürerken (`isEditingText`) geçiş bir sonraki denemeye kalır. Geçişte Günlük Sayım tablosu
+    /// yeni günle yeniden kurulur (`.id(date)`); odaktaki hücrede yazılmış değer kapanırken önceki güne kaydedilir.
     func checkDayRollover(today: String = DateKey.today(), editing: Bool? = nil) {
         let previous = knownToday
         guard today != previous else { return }
@@ -441,11 +442,15 @@ final class AppStore: ObservableObject {
     /// Sistem testi: bilinen "bugün"ü ayarlar
     func setKnownToday(_ day: String) { knownToday = day }
 
-    /// Biri şu an yazıyor mu: uygulama önde, odakta bir yazı alanı ve son 30 sn içinde tuşa basılmış (odak bir hücrede
-    /// kalıp kimse yazmıyorsa gün dönümü beklemez)
+    /// Gün dönümü beklesin mi (`DayRollover.shouldWait`): açık bir sayfa ya da uyarı var (içindeki işlem seçili güne
+    /// bağlıdır; kapanınca geçilir) ya da uygulama önde, odakta bir yazı alanı ve son 15 dk içinde klavye / fare kullanılmış
+    /// (gece yarısını geçen sayım kendi gününde biter; gece boyu dokunulmayan bilgisayar yine de yeni güne geçer)
     private static func isEditingText() -> Bool {
-        guard NSApp.isActive, NSApp.keyWindow?.firstResponder is NSText else { return false }
-        return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) < 30
+        let dialogOpen = NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
+        let fieldFocused = NSApp.isActive && NSApp.keyWindow?.firstResponder is NSText
+        let inputs: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .mouseMoved, .scrollWheel]
+        let idle = inputs.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? .infinity
+        return DayRollover.shouldWait(dialogOpen: dialogOpen, fieldFocused: fieldFocused, idleSeconds: idle)
     }
 
     // MARK: - Günlük giriş
@@ -763,17 +768,16 @@ final class AppStore: ObservableObject {
         mutateData("Sıralama") { $0.items.move(fromOffsets: from, toOffset: to) }
     }
 
-    /// Silinmiş varsayılan reçete/kalemleri geri ekler; mevcut düzenlemelere dokunmaz.
+    /// Silinmiş varsayılan reçete/kalemleri geri ekler (`CatalogOps.mergeDefinitions`, web ile aynı kural): aynı adlı kalemi
+    /// olan hazır kalem eklenmez (reçeteler şubedeki aynı adlı kalemi kullanır); silinmiş kalemin kimliği kapatılmış günlerde
+    /// ya da siparişlerde geçiyorsa kalem yeni kimlikle gelir. Mevcut düzenlemelere dokunmaz.
     @discardableResult
     func restoreMissingDefaults() -> (items: Int, products: Int) {
         let seed = AppData.seeded()
-        var addedItems = 0, addedProducts = 0
-        let applied = mutateData("Varsayılanları Geri Ekle") { d in
-            let ids = Set(d.items.map { $0.id }), codes = Set(d.products.map { $0.code })
-            for i in seed.items where !ids.contains(i.id) { d.items.append(i); addedItems += 1 }
-            for p in seed.products where !codes.contains(p.code) { d.products.append(p); addedProducts += 1 }
-        }
-        return applied ? (addedItems, addedProducts) : (0, 0)
+        let r = CatalogOps.mergeDefinitions(items: seed.items, products: seed.products, into: data)
+        guard r.addedItems + r.addedProducts > 0 else { return (0, 0) }
+        let applied = mutateData("Varsayılanları Geri Ekle") { $0 = r.data }
+        return applied ? (r.addedItems, r.addedProducts) : (0, 0)
     }
 
     // MARK: - Raporlar

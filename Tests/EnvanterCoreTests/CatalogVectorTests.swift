@@ -3,7 +3,7 @@ import XCTest
 
 /// Ortak stok kalemi vektörleri (Fixtures/catalog-vectors.json; web: test/catalogVectors.test.ts aynı dosyayı okur):
 /// silme (kapatılmış günlere dokunulmaz), kullanılmış kimlikler, yeni kimlik, ad denetimi, geçmiş, onay metinleri ve
-/// "Yeni kalem olarak aç".
+/// "Yeni kalem olarak aç" (metinleri ve açık sipariş engeli) ve eksik tanımları ekleme.
 final class CatalogVectorTests: XCTestCase {
     private func vectors() throws -> JSONValue {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "Fixtures/catalog-vectors", withExtension: "json"))
@@ -85,7 +85,8 @@ final class CatalogVectorTests: XCTestCase {
             let e = c["expected"]
             let got: [String: JSONValue] = [
                 "days": .number(Double(h.days)), "lockedDays": .number(Double(h.lockedDays)), "products": .number(Double(h.products)),
-                "recipes": .number(Double(h.recipes)), "orders": .number(Double(h.orders)), "salesDays": .number(Double(h.salesDays)),
+                "recipes": .number(Double(h.recipes)), "orders": .number(Double(h.orders)), "openOrders": .number(Double(h.openOrders)),
+                "salesDays": .number(Double(h.salesDays)),
                 "lockedSalesDays": .number(Double(h.lockedSalesDays)), "suggestsDeactivate": .bool(h.suggestsDeactivate),
             ]
             XCTAssertEqual(JSONValue.object(got), e, name(c))
@@ -130,6 +131,48 @@ final class CatalogVectorTests: XCTestCase {
             let moved = CatalogOps.history(id, in: input).recipes
             XCTAssertEqual(CatalogOps.splitMessage(name: item.name, unit: unit, oldName: s.oldName, recipeUnit: item.recipeUnit, movedRecipes: moved),
                            e["message"]?.stringValue, name(c))
+        }
+    }
+
+    func testSplitTextsAndOpenOrders() throws {
+        let v = try vectors()
+        for c in v["splitTexts"]?.arrayValue ?? [] {
+            let input = try data(v, extraItems: c["extraItems"])
+            let id = c["itemID"]?.stringValue ?? "", unit = c["unit"]?.stringValue ?? ""
+            let item = try XCTUnwrap(input.items.first { $0.id == id }, name(c))
+            let h = CatalogOps.history(id, in: input)
+            let oldName = CatalogOps.splitOldName(item, in: input.items)
+            XCTAssertEqual(oldName, c["oldName"]?.stringValue, name(c))
+            XCTAssertEqual(CatalogOps.splitBlocked(h), c["blocked"]?.boolValue, name(c))
+            XCTAssertEqual(CatalogOps.splitExplanation(item: item, newUnit: unit, oldName: oldName, movedRecipes: h.recipes),
+                           c["explanation"]?.stringValue, name(c))
+            if let m = c["blockedMessage"]?.stringValue {
+                XCTAssertEqual(CatalogOps.splitBlockedMessage(item: item, openOrders: h.openOrders), m, name(c))
+            }
+            // splitForUnit aynı adı kullanır; açık siparişte bölünmez
+            let r = CatalogOps.splitForUnit(id, unit: unit, in: input)
+            if c["blocked"]?.boolValue == true { XCTAssertNil(r, name(c)) } else { XCTAssertEqual(r?.oldName, c["oldName"]?.stringValue, name(c)) }
+        }
+    }
+
+    func testMergeDefinitions() throws {
+        let v = try vectors()
+        for c in v["merge"]?.arrayValue ?? [] {
+            var input = try data(v, extraItems: c["extraItems"])
+            if let id = c["deleteFirst"]?.stringValue { input = CatalogOps.deleteItem(id, in: input).data }
+            let remove = Set((c["removeProducts"]?.arrayValue ?? []).compactMap { $0.stringValue })
+            input.products.removeAll { remove.contains($0.code) }
+            let items = try JSONCoding.decode([Item].self, from: c["source"]?["items"] ?? .array([]))
+            let products = try JSONCoding.decode([Product].self, from: c["source"]?["products"] ?? .array([]))
+            let r = CatalogOps.mergeDefinitions(items: items, products: products, into: input)
+            let e = try XCTUnwrap(c["expected"])
+            XCTAssertEqual(try JSONCoding.value(r.data.items), e["items"], name(c))
+            XCTAssertEqual(try amounts(r.data), e["products"], name(c))
+            XCTAssertEqual(Double(r.addedItems), e["addedItems"]?.doubleValue, name(c))
+            XCTAssertEqual(Double(r.addedProducts), e["addedProducts"]?.doubleValue, name(c))
+            // Günlere ve siparişlere dokunulmaz
+            XCTAssertEqual(r.data.days, input.days, name(c))
+            XCTAssertEqual(r.data.purchaseOrders, input.purchaseOrders, name(c))
         }
     }
 }

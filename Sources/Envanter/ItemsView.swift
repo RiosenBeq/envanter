@@ -96,16 +96,18 @@ struct ItemsView: View {
         } message: { item in
             Text(deleteMessage(item))
         }
-        // Birim: geçmiş yeni birimle okunurdu; önerilen "Yeni Kalem Olarak Aç" (eski kalem "Patates (adet)" adıyla pasif kalır)
+        // Birim: geçmiş yeni birimle okunurdu; önerilen "Yeni Kalem Olarak Aç" (eski kalem "Patates (adet)" adıyla pasif kalır).
+        // Açık siparişte geçen kalemde yeni kalem açılmaz: teslimat pasif kalan eski kaleme işlenirdi (CatalogOps.splitBlocked)
         .confirmationDialog(unitChange.map { "Birim \($0.unit) yapılsın mı?" } ?? "",
                             isPresented: Binding(get: { unitChange != nil }, set: { if !$0 { unitChange = nil } }),
                             titleVisibility: .visible, presenting: unitChange) { c in
-            Button("Yeni Kalem Olarak Aç (önerilen)") { store.splitItemForUnit(c.item.id, unit: c.unit); unitChange = nil }
+            if !CatalogOps.splitBlocked(c.history) {
+                Button("Yeni Kalem Olarak Aç (önerilen)") { store.splitItemForUnit(c.item.id, unit: c.unit); unitChange = nil }
+            }
             Button("Yine de Değiştir") { store.updateItem(c.item.id) { $0.unit = c.unit }; unitChange = nil }
             Button("Vazgeç", role: .cancel) { unitChange = nil }
         } message: { c in
-            Text(CatalogOps.unitChangeMessage(item: c.item, newUnit: c.unit, days: c.history.days)
-                 + " Yeni kalem olarak açılınca eski kayıtlar \"\(c.item.name) (\(c.item.unit.lowercased(with: Locale(identifier: "tr_TR"))))\" adıyla pasif kalır; reçetelerdeki miktarlar yeni kaleme taşınır.")
+            Text(unitMessage(c))
         }
         // Katsayı: kalemi kullanan ürünlerin satıldığı geçmiş günlerin Satılan ve Fark'ı değişir
         .confirmationDialog(factorChange.map { "Katsayı \(Fmt.number($0.item.factor, maxFraction: 6)) → \(Fmt.number($0.factor, maxFraction: 6)) olsun mu?" } ?? "",
@@ -137,6 +139,16 @@ struct ItemsView: View {
             return "Kalemin sayım geçmişi, siparişi ya da reçetesi var. Silmek yerine pasif yapın: günlük sayımda ve raporlarda görünmez, geçmişi olduğu gibi kalır.\n\nKalıcı silmede: " + text + undo
         }
         return text + (item.active ? " Geçici olarak gizlemek için \"Aktif\" işaretini kaldırın." : "") + undo
+    }
+
+    /// Birim onayının metni (web ile aynı): geçmiş yeni birimle okunur + yeni kalemin açıklaması ya da açık sipariş engeli
+    private func unitMessage(_ c: UnitChangeRequest) -> String {
+        let head = CatalogOps.unitChangeMessage(item: c.item, newUnit: c.unit, days: c.history.days)
+        if CatalogOps.splitBlocked(c.history) {
+            return head + "\n\n" + CatalogOps.splitBlockedMessage(item: c.item, openOrders: c.history.openOrders)
+        }
+        let oldName = CatalogOps.splitOldName(c.item, in: store.data.items)
+        return head + "\n\n" + CatalogOps.splitExplanation(item: c.item, newUnit: c.unit, oldName: oldName, movedRecipes: c.history.recipes)
     }
 
     /// Birim değişikliği: sayım geçmişi olan kalemde önce sorulur

@@ -1,5 +1,5 @@
 {
-  "about": "Stok kalemi işlemleri (Swift CatalogOps / web src/lib/catalog.ts). Ortak veri: items, products, days, orders. delete.expected.days: her giriş günü için null (silindi) ya da {entries, legacySold?, legacyWaste?}.",
+  "about": "Stok kalemi işlemleri (Swift CatalogOps / web src/lib/catalog.ts). Ortak veri: items, products, days, orders. delete.expected.days: her giriş günü için null (silindi) ya da {entries, legacySold?, legacyWaste?}. merge: veri = ortak veri, extraItems eklenir, deleteFirst silinir, removeProducts kodlu reçeteler çıkarılır; source eksik tanım olarak eklenir (mergeDefinitions). splitTexts: splitOldName, splitBlocked, splitExplanation, splitBlockedMessage.",
   "items": [
     {
       "id": "g90",
@@ -555,6 +555,7 @@
         "products": 2,
         "recipes": 1,
         "orders": 0,
+        "openOrders": 0,
         "salesDays": 2,
         "lockedSalesDays": 1,
         "suggestsDeactivate": true
@@ -568,6 +569,7 @@
         "products": 1,
         "recipes": 1,
         "orders": 1,
+        "openOrders": 1,
         "salesDays": 2,
         "lockedSalesDays": 1,
         "suggestsDeactivate": true
@@ -581,6 +583,7 @@
         "products": 1,
         "recipes": 1,
         "orders": 0,
+        "openOrders": 0,
         "salesDays": 2,
         "lockedSalesDays": 1,
         "suggestsDeactivate": true
@@ -594,6 +597,7 @@
         "products": 1,
         "recipes": 1,
         "orders": 0,
+        "openOrders": 0,
         "salesDays": 1,
         "lockedSalesDays": 0,
         "suggestsDeactivate": true
@@ -607,6 +611,7 @@
         "products": 0,
         "recipes": 0,
         "orders": 1,
+        "openOrders": 0,
         "salesDays": 0,
         "lockedSalesDays": 0,
         "suggestsDeactivate": true
@@ -620,6 +625,7 @@
         "products": 0,
         "recipes": 0,
         "orders": 0,
+        "openOrders": 0,
         "salesDays": 0,
         "lockedSalesDays": 0,
         "suggestsDeactivate": false
@@ -1029,6 +1035,13 @@
       "unit": "Kg",
       "extraItems": [],
       "expected": null
+    },
+    {
+      "name": "açık siparişte geçen kalem (90 Gr): bölünmez",
+      "itemID": "g90",
+      "unit": "Kg",
+      "extraItems": [],
+      "expected": null
     }
   ],
   "duplicate": {
@@ -1039,5 +1052,437 @@
         "expected": "“Peynir” adı başka bir kalemde kullanılıyor."
       }
     ]
-  }
+  },
+  "merge": [
+    {
+      "name": "silinip aynı adla yeniden eklenen kalem: hazır kalem ikinci kez eklenmez, gelen reçete şubedeki kalemi kullanır",
+      "extraItems": [
+        {
+          "id": "peynir2",
+          "name": "Peynir",
+          "unit": "Kg",
+          "recipeUnit": "kg",
+          "factor": 1,
+          "active": true
+        }
+      ],
+      "deleteFirst": "peynir",
+      "removeProducts": [
+        "11101"
+      ],
+      "source": {
+        "items": [
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "11101",
+            "name": "Dublex",
+            "category": "Burger",
+            "amounts": {
+              "g90": 2,
+              "peynir": 2
+            }
+          }
+        ]
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir2",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": {
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "sos": 1
+          },
+          "11101": {
+            "g90": 2,
+            "peynir2": 2
+          }
+        },
+        "addedItems": 0,
+        "addedProducts": 1
+      }
+    },
+    {
+      "name": "silinen kalemin kimliği kapatılmış günde kaldı: yeni kimlikle eklenir, gelen reçete yeni kimliği kullanır",
+      "extraItems": [],
+      "deleteFirst": "peynir",
+      "removeProducts": [
+        "11101"
+      ],
+      "source": {
+        "items": [
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "11101",
+            "name": "Dublex",
+            "category": "Burger",
+            "amounts": {
+              "g90": 2,
+              "peynir": 2
+            }
+          }
+        ]
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynir2",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ],
+        "products": {
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "sos": 1
+          },
+          "11101": {
+            "g90": 2,
+            "peynir2": 2
+          }
+        },
+        "addedItems": 1,
+        "addedProducts": 1
+      }
+    },
+    {
+      "name": "izi kalmayan kalem aynı kimlikle; adı değişmiş kalem (aynı kimlik) ve büyük/küçük harf farklı aynı ad eklenmez; aynı kaleme düşen miktarlar toplanır; mevcut reçeteye dokunulmaz",
+      "extraItems": [],
+      "deleteFirst": "sos",
+      "removeProducts": [],
+      "source": {
+        "items": [
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "g90",
+            "name": "90 Gram",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "peynirx",
+            "name": "PEYNİR",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "11104",
+            "name": "Sos Kase",
+            "category": "Ekstra",
+            "amounts": {
+              "sos": 1,
+              "peynirx": 3,
+              "peynir": 1
+            }
+          },
+          {
+            "code": "11102",
+            "name": "Patates Kızartması",
+            "category": "Yan Ürün",
+            "amounts": {
+              "patates": 9
+            }
+          }
+        ]
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true,
+            "tolerance": 0.1
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "peynir": 0
+          },
+          "11104": {
+            "sos": 1,
+            "peynir": 4
+          }
+        },
+        "addedItems": 1,
+        "addedProducts": 1
+      }
+    },
+    {
+      "name": "eksik yok: hiçbir şey eklenmez",
+      "extraItems": [],
+      "deleteFirst": null,
+      "removeProducts": [],
+      "source": {
+        "items": [
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true,
+            "tolerance": 0.1
+          }
+        ],
+        "products": [
+          {
+            "code": "11101",
+            "name": "Dublex",
+            "category": "Burger",
+            "amounts": {
+              "g90": 2,
+              "peynir": 2
+            }
+          }
+        ]
+      },
+      "expected": {
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true,
+            "tolerance": 0.1
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "peynir": 0,
+            "sos": 1
+          }
+        },
+        "addedItems": 0,
+        "addedProducts": 0
+      }
+    }
+  ],
+  "splitTexts": [
+    {
+      "name": "patates adet → kg",
+      "itemID": "patates",
+      "unit": "Kg",
+      "extraItems": [],
+      "oldName": "Patates (adet)",
+      "blocked": false,
+      "explanation": "Yeni kalem olarak açılınca eski kayıtlar “Patates (adet)” adıyla pasif kalır; sayıma Kg biriminde yeni kalemle devam edilir. 1 reçetedeki miktar yeni kaleme taşınır: katsayıyı (1 adet kaç kg) yeni birime göre güncelleyin.",
+      "blockedMessage": null
+    },
+    {
+      "name": "eski ad dolu",
+      "itemID": "patates",
+      "unit": "Kg",
+      "extraItems": [
+        {
+          "id": "x",
+          "name": "patates (ADET)",
+          "unit": "Adet",
+          "recipeUnit": "adet",
+          "factor": 1,
+          "active": false
+        }
+      ],
+      "oldName": "Patates (adet) 2",
+      "blocked": false,
+      "explanation": "Yeni kalem olarak açılınca eski kayıtlar “Patates (adet) 2” adıyla pasif kalır; sayıma Kg biriminde yeni kalemle devam edilir. 1 reçetedeki miktar yeni kaleme taşınır: katsayıyı (1 adet kaç kg) yeni birime göre güncelleyin.",
+      "blockedMessage": null
+    },
+    {
+      "name": "reçetesiz kalem",
+      "itemID": "buz",
+      "unit": "Adet",
+      "extraItems": [
+        {
+          "id": "buz",
+          "name": "Buz",
+          "unit": "Kg",
+          "recipeUnit": "kg",
+          "factor": 1,
+          "active": true
+        }
+      ],
+      "oldName": "Buz (kg)",
+      "blocked": false,
+      "explanation": "Yeni kalem olarak açılınca eski kayıtlar “Buz (kg)” adıyla pasif kalır; sayıma Adet biriminde yeni kalemle devam edilir.",
+      "blockedMessage": null
+    },
+    {
+      "name": "açık siparişte (90 Gr)",
+      "itemID": "g90",
+      "unit": "Kg",
+      "extraItems": [],
+      "oldName": "90 Gr (adet)",
+      "blocked": true,
+      "explanation": "Yeni kalem olarak açılınca eski kayıtlar “90 Gr (adet)” adıyla pasif kalır; sayıma Kg biriminde yeni kalemle devam edilir. 1 reçetedeki miktar yeni kaleme taşınır: katsayıyı (1 adet kaç kg) yeni birime göre güncelleyin.",
+      "blockedMessage": "“90 Gr” 1 açık siparişte var; yeni kalem olarak açılırsa teslimat pasif kalan eski kaleme işlenir ve sayımda görünmez. Önce siparişleri teslim alın ya da iptal edin."
+    }
+  ]
 }

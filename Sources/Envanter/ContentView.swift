@@ -187,7 +187,7 @@ struct ContentView: View {
     }
 }
 
-/// Gün dönümü şeridi: "Yeni gün başladı: 15.10.2026 · Dünkü güne dön" (bir dakika sonra kendiliğinden kapanır)
+/// Gün dönümü şeridi: "Yeni gün başladı: 15.10.2026 · Dünkü güne dön" (kapatılana kadar kalır; web'deki bildirim de böyle)
 private struct DayRolloverBanner: View {
     @EnvironmentObject var store: AppStore
     let notice: DayRolloverNotice
@@ -212,10 +212,6 @@ private struct DayRolloverBanner: View {
         .background(.regularMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
         .padding(.top, 12)
-        .task(id: notice) {
-            try? await Task.sleep(for: .seconds(60))
-            if store.dayRollover == notice { store.dayRollover = nil }
-        }
     }
 }
 

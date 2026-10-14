@@ -1,5 +1,5 @@
 {
-  "about": "Veri biçimi düzeyi (Swift DataFormat / web src/lib/version.ts) ve gün dönümü (Swift DayRollover / web src/lib/rollover.ts).",
+  "about": "Veri biçimi düzeyi (Swift DataFormat / web src/lib/version.ts) ve gün dönümü (Swift DayRollover / web src/lib/rollover.ts). rolloverWait: gün dönümü beklesin mi (Swift DayRollover.shouldWait / web rolloverWaits): açık pencere ya da odakta yazı alanı ve son giriş rolloverIdleSeconds'tan yeni.",
   "level": 2,
   "presenceFormat": [
     {
@@ -268,5 +268,57 @@
       "expected": "Yeni gün başladı: 01.01.2027"
     }
   ],
-  "rolloverBack": "Dünkü güne dön"
+  "rolloverBack": "Dünkü güne dön",
+  "rolloverIdleSeconds": 900,
+  "rolloverWait": [
+    {
+      "name": "odakta alan yok",
+      "dialogOpen": false,
+      "fieldFocused": false,
+      "idleSeconds": 5,
+      "expected": false
+    },
+    {
+      "name": "hücreye yazılıyor",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 5,
+      "expected": true
+    },
+    {
+      "name": "hücre odakta, 30 sn'dir dokunulmadı (sayım sürüyor)",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 40,
+      "expected": true
+    },
+    {
+      "name": "hücre odakta, 15 dk'yı biraz geçmedi",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 899,
+      "expected": true
+    },
+    {
+      "name": "hücre odakta, 15 dk'dır dokunulmadı: geçilir (hücre önce bırakılır)",
+      "dialogOpen": false,
+      "fieldFocused": true,
+      "idleSeconds": 900,
+      "expected": false
+    },
+    {
+      "name": "açık pencere: süre ne olursa olsun bekler",
+      "dialogOpen": true,
+      "fieldFocused": false,
+      "idleSeconds": 36000,
+      "expected": true
+    },
+    {
+      "name": "açık pencerede alan odakta",
+      "dialogOpen": true,
+      "fieldFocused": true,
+      "idleSeconds": 36000,
+      "expected": true
+    }
+  ]
 }

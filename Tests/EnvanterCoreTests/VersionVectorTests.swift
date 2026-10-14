@@ -51,5 +51,11 @@ final class VersionVectorTests: XCTestCase {
             XCTAssertEqual(DayRollover.title(c["date"]?.stringValue ?? ""), c["expected"]?.stringValue)
         }
         XCTAssertEqual(DayRollover.backLabel, v["rolloverBack"]?.stringValue)
+        XCTAssertEqual(DayRollover.editingIdleSeconds, v["rolloverIdleSeconds"]?.doubleValue)
+        for c in v["rolloverWait"]?.arrayValue ?? [] {
+            XCTAssertEqual(DayRollover.shouldWait(dialogOpen: c["dialogOpen"]?.boolValue ?? false, fieldFocused: c["fieldFocused"]?.boolValue ?? false,
+                                                  idleSeconds: c["idleSeconds"]?.doubleValue ?? -1),
+                           c["expected"]?.boolValue, c["name"]?.stringValue ?? "?")
+        }
     }
 }

@@ -52,8 +52,16 @@ public enum CatalogOps {
     /// (kapatılmış günlerde silinen kalemlerinkiler dahil) ve sipariş satırları. Yeni kalem bunlardan birini alırsa silinmiş
     /// bir kalemin eski kayıtlarını devralırdı.
     public static func reservedItemIDs(_ data: AppData) -> Set<String> {
-        var ids = Set(data.items.map { $0.id })
+        var ids = historyItemIDs(data)
+        ids.formUnion(data.items.map { $0.id })
         for p in data.products { ids.formUnion(p.amounts.keys) }
+        return ids
+    }
+
+    /// Kayıtlarda geçen kalem kimlikleri: günlerin (kapatılmışlar dahil) kayıt anahtarları ve sipariş satırları. Bu kimlikle
+    /// eklenen kalem bu kayıtları devralırdı.
+    public static func historyItemIDs(_ data: AppData) -> Set<String> {
+        var ids = Set<String>()
         for day in data.days.values {
             ids.formUnion(day.entries.keys)
             ids.formUnion((day.legacySold ?? [:]).keys)
@@ -80,8 +88,17 @@ public enum CatalogOps {
 
     /// Aynı adlı (boşluklar kırpılmış, Türkçe büyük/küçük harf duyarsız) kalem var mı; `except` kimlikli kalem sayılmaz
     public static func hasItemNamed(_ name: String, in items: [Item], except: String? = nil) -> Bool {
-        let n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(with: tr)
-        return items.contains { $0.id != except && $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(with: tr) == n }
+        itemNamed(name, in: items, except: except) != nil
+    }
+
+    /// Aynı adlı (boşluklar kırpılmış, Türkçe büyük/küçük harf duyarsız) ilk kalem; `except` kimlikli kalem sayılmaz
+    public static func itemNamed(_ name: String, in items: [Item], except: String? = nil) -> Item? {
+        let n = foldName(name)
+        return items.first { $0.id != except && foldName($0.name) == n }
+    }
+
+    private static func foldName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(with: tr)
     }
 
     /// Aynı adlı kalem uyarısı (web bildirimiyle aynı)
@@ -95,6 +112,53 @@ public enum CatalogOps {
     public static func newItem(name: String, unit: String, data: AppData) -> Item {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return Item(id: newItemID(name: n, data: data), name: n, unit: unit, recipeUnit: unit == "Kg" ? "kg" : "adet", factor: 1)
+    }
+
+    // MARK: - Eksik tanımları ekleme
+
+    public struct MergeResult {
+        public var data: AppData
+        /// Eklenen stok kalemi sayısı
+        public var addedItems: Int
+        /// Eklenen reçete sayısı
+        public var addedProducts: Int
+    }
+
+    /// Eksik tanımları ekler ("Eksik varsayılanları geri ekle"; web'de başka şubeden "Eksikleri ekle"). Kaynağın her kalemi:
+    /// hedefte aynı adlı kalem varsa eklenmez, gelen reçetelerde onun yerine hedefteki kullanılır; aynı kimlikli kalem varsa
+    /// (adı değiştirilmiş olabilir) eklenmez; kimlik kayıtlarda geçiyorsa (silinmiş kalem, `historyItemIDs`) `newItemID` ile
+    /// yeni kimlikle eklenir, gelen reçetelerdeki miktarlar yeni kimliğe taşınır; yoksa olduğu gibi eklenir. Kodu hedefte
+    /// olmayan reçeteler sona eklenir (aynı kaleme düşen miktarlar toplanır). Hedefteki kalem ve reçetelere dokunulmaz.
+    public static func mergeDefinitions(items: [Item], products: [Product], into data: AppData) -> MergeResult {
+        var d = data
+        let history = historyItemIDs(data)
+        var map: [String: String] = [:]
+        var addedItems = 0
+        for source in items {
+            if let same = itemNamed(source.name, in: d.items) { map[source.id] = same.id; continue }
+            if d.items.contains(where: { $0.id == source.id }) { continue }
+            var item = source
+            if history.contains(source.id) {
+                item.id = newItemID(name: source.name, data: d)
+                map[source.id] = item.id
+            }
+            d.items.append(item)
+            addedItems += 1
+        }
+        let codes = Set(d.products.map { $0.code })
+        var addedProducts = 0
+        for source in products where !codes.contains(source.code) {
+            var product = source
+            var amounts: [String: Double] = [:]
+            for (k, v) in source.amounts {
+                let key = map[k] ?? k
+                amounts[key] = amounts[key].map { $0 + v } ?? v
+            }
+            product.amounts = amounts
+            d.products.append(product)
+            addedProducts += 1
+        }
+        return MergeResult(data: d, addedItems: addedItems, addedProducts: addedProducts)
     }
 
     // MARK: - Geçmiş (silme, birim ve katsayı onayı)
@@ -111,15 +175,17 @@ public enum CatalogOps {
         public var recipes: Int
         /// Satırında kalem olan sipariş sayısı
         public var orders: Int
+        /// Bunlardan açık (teslim alınmamış, iptal edilmemiş) olanlar
+        public var openOrders: Int
         /// Satış raporunda kalemi kullanan bir ürün olan gün sayısı (katsayı bunların Satılan'ını değiştirir)
         public var salesDays: Int
         /// Bunlardan kapatılmış olanlar
         public var lockedSalesDays: Int
 
         public init(days: Int = 0, lockedDays: Int = 0, products: Int = 0, recipes: Int = 0, orders: Int = 0,
-                    salesDays: Int = 0, lockedSalesDays: Int = 0) {
+                    openOrders: Int = 0, salesDays: Int = 0, lockedSalesDays: Int = 0) {
             self.days = days; self.lockedDays = lockedDays; self.products = products; self.recipes = recipes
-            self.orders = orders; self.salesDays = salesDays; self.lockedSalesDays = lockedSalesDays
+            self.orders = orders; self.openOrders = openOrders; self.salesDays = salesDays; self.lockedSalesDays = lockedSalesDays
         }
 
         /// Silmek yerine "Pasif yap" önerilir: gün kaydı, sipariş satırı ya da reçete kullanımı var
@@ -131,7 +197,9 @@ public enum CatalogOps {
         let using = Set(data.products.filter { ($0.amounts[id] ?? 0) != 0 }.map { $0.code })
         h.products = data.products.filter { $0.amounts[id] != nil }.count
         h.recipes = using.count
-        h.orders = data.purchaseOrders.filter { o in o.lines.contains { $0.itemID == id } }.count
+        let orders = data.purchaseOrders.filter { o in o.lines.contains { $0.itemID == id } }
+        h.orders = orders.count
+        h.openOrders = orders.filter { $0.status == .open }.count
         for day in data.days.values {
             if dayMentions(day, id) {
                 h.days += 1
@@ -195,16 +263,28 @@ public enum CatalogOps {
         public var oldName: String
     }
 
+    /// "Yeni kalem olarak aç" açık siparişte geçen kalemde yapılmaz: teslimat (Gelen) pasif kalan eski kaleme işlenir,
+    /// sayımda ve raporlarda görünmez; yeni kalem için de aynı mal yeniden önerilir.
+    public static func splitBlocked(_ h: ItemHistory) -> Bool { h.openOrders > 0 }
+
+    /// Eski kalemin bölünmede alacağı ad: "Patates (adet)", doluysa "Patates (adet) 2", "… 3"
+    public static func splitOldName(_ item: Item, in items: [Item]) -> String {
+        let base = "\(item.name) (\(item.unit.lowercased(with: tr)))"
+        var name = base, n = 2
+        while hasItemNamed(name, in: items, except: item.id) { name = "\(base) \(n)"; n += 1 }
+        return name
+    }
+
     /// "Yeni kalem olarak aç": eski kalem "Patates (adet)" adıyla pasif kalır, sayım geçmişi ona aittir. Hemen ardına aynı
     /// adla, yeni birimle yeni kalem açılır (reçete birimi ve katsayı eskisinden; kritik seviye ve tolerans yok). Reçetelerdeki
-    /// miktarlar yeni kaleme taşınır: katsayının yeni birime göre girilmesi gerekir. Kalem yoksa ya da birim aynıysa nil.
+    /// miktarlar yeni kaleme taşınır: katsayının yeni birime göre girilmesi gerekir. Kalem yoksa, birim aynıysa ya da kalem
+    /// açık bir siparişte geçiyorsa (`splitBlocked`) nil.
     public static func splitForUnit(_ id: String, unit: String, in data: AppData) -> UnitSplit? {
-        guard let i = data.items.firstIndex(where: { $0.id == id }), data.items[i].unit != unit else { return nil }
+        guard let i = data.items.firstIndex(where: { $0.id == id }), data.items[i].unit != unit,
+              !splitBlocked(history(id, in: data)) else { return nil }
         var d = data
         let old = d.items[i]
-        let base = "\(old.name) (\(old.unit.lowercased(with: tr)))"
-        var oldName = base, n = 2
-        while hasItemNamed(oldName, in: d.items, except: old.id) { oldName = "\(base) \(n)"; n += 1 }
+        let oldName = splitOldName(old, in: d.items)
         let newID = newItemID(name: old.name, data: d)
         d.items[i].name = oldName
         d.items[i].active = false
@@ -215,6 +295,23 @@ public enum CatalogOps {
             d.products[p].amounts[newID] = amount
         }
         return UnitSplit(data: d, newID: newID, oldName: oldName)
+    }
+
+    /// Birim onayındaki açıklama (işlemden önce): "Yeni kalem olarak açılınca eski kayıtlar “Patates (adet)” adıyla pasif
+    /// kalır; sayıma Kg biriminde yeni kalemle devam edilir. 3 reçetedeki miktar yeni kaleme taşınır: katsayıyı (1 adet kaç
+    /// kg) yeni birime göre güncelleyin." `oldName`: `splitOldName`.
+    public static func splitExplanation(item: Item, newUnit: String, oldName: String, movedRecipes: Int) -> String {
+        var s = "Yeni kalem olarak açılınca eski kayıtlar “\(oldName)” adıyla pasif kalır; sayıma \(newUnit) biriminde yeni kalemle devam edilir."
+        if movedRecipes > 0 {
+            s += " \(movedRecipes) reçetedeki miktar yeni kaleme taşınır: katsayıyı (1 \(item.recipeUnit) kaç \(newUnit.lowercased(with: tr))) yeni birime göre güncelleyin."
+        }
+        return s
+    }
+
+    /// Açık siparişte geçen kalemde "Yeni kalem olarak aç" yerine: "“Patates” 2 açık siparişte var; yeni kalem olarak
+    /// açılırsa teslimat pasif kalan eski kaleme işlenir ve sayımda görünmez. Önce siparişleri teslim alın ya da iptal edin."
+    public static func splitBlockedMessage(item: Item, openOrders: Int) -> String {
+        "“\(item.name)” \(openOrders) açık siparişte var; yeni kalem olarak açılırsa teslimat pasif kalan eski kaleme işlenir ve sayımda görünmez. Önce siparişleri teslim alın ya da iptal edin."
     }
 
     /// "Yeni kalem olarak aç"ın sonucu: "“Patates” kg olarak yeni kalem açıldı; eski kayıtlar “Patates (adet)” adıyla pasif

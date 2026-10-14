@@ -36,7 +36,7 @@ public enum Exporter {
         return XlsxWriter.build(sheets: [inv, salesSheet(engine: engine, date: date)])
     }
 
-    /// Verisi olan tüm günler (Alımlar formatı) + özet + günlük durum + (varsa) gün notları ve ekip
+    /// Verisi olan tüm günler (Alımlar formatı) + özet + günlük durum + (varsa) gün notları, elle zayi kayıtları ve ekip
     public static func history(engine: Engine, from: String, to: String) -> Data {
         let dates = engine.datesWithData.filter { $0 >= from && $0 <= to }
         let alim = XlsxSheetData(name: "Alımlar", header: inventoryHeader,
@@ -50,8 +50,26 @@ public enum Exporter {
         if !notes.isEmpty {
             sheets.append(XlsxSheetData(name: "Notlar", header: ["Tarih", "Sayımı Yapan", "Durum", "Not"], rows: notes, widths: [12, 20, 12, 60]))
         }
+        if let waste = wasteSheet(engine: engine, dates: dates) { sheets.append(waste) }
         if !engine.data.employees.isEmpty { sheets.append(teamSheet(engine.data.employees)) }
         return XlsxWriter.build(sheets: sheets)
+    }
+
+    public static let wasteHeader = ["Tarih", "Kalem", "Miktar", "Birim", "Neden", "Not", "Kim"]
+
+    /// Elle girilen zayi kayıtları (gün ve giriş sırasıyla); aralıkta kayıt yoksa nil
+    public static func wasteSheet(engine: Engine, dates: [String]) -> XlsxSheetData? {
+        var rows: [[XlsxCell]] = []
+        for d in dates {
+            for e in engine.data.days[d]?.wasteLog ?? [] {
+                let item = engine.itemsByID[e.itemID]
+                rows.append([DateKey.excelSerial(d).map { XlsxCell.date(serial: $0) } ?? .text(d),
+                             .text(item?.name ?? e.itemID), .number(e.qty), .text(item?.unit ?? ""),
+                             .text(WasteReason.title(e.reason)), .text(e.note ?? ""), .text(e.by ?? "")])
+            }
+        }
+        guard !rows.isEmpty else { return nil }
+        return XlsxSheetData(name: "Zayi Kayıtları", header: wasteHeader, rows: rows, widths: [12, 24, 10, 8, 22, 40, 18])
     }
 
     /// Günlük sayım durumu: sayılan / sorunlu / fazla çıkış / kritik altı kalem sayıları

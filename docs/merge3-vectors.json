@@ -110,5 +110,26 @@
     "local": [{"id": "o1", "status": "received", "lines": [{"itemID": "g90", "qty": 100}]}],
     "remote": [{"id": "o1", "status": "open", "note": "acele", "lines": [{"itemID": "g90", "qty": 100}]}],
     "expected": [{"id": "o1", "status": "received", "note": "acele", "lines": [{"itemID": "g90", "qty": 100}]}]
+  },
+  {
+    "name": "waste log: last entry deleted locally ([] kept), new entry added remotely -> only the new entry",
+    "base": {"note": "x", "wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}]},
+    "local": {"note": "x", "wasteLog": []},
+    "remote": {"note": "x", "wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}, {"id": "e2", "itemID": "g90", "qty": 1, "reason": "burnt"}]},
+    "expected": {"note": "x", "wasteLog": [{"id": "e2", "itemID": "g90", "qty": 1, "reason": "burnt"}]}
+  },
+  {
+    "name": "waste log: entries added on both sides are kept (local order, then remote-only)",
+    "base": {"wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}]},
+    "local": {"wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}, {"id": "e2", "itemID": "g90", "qty": 1, "reason": "burnt"}]},
+    "remote": {"wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}, {"id": "e3", "itemID": "patates", "qty": 0.5, "reason": "dropped"}]},
+    "expected": {"wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}, {"id": "e2", "itemID": "g90", "qty": 1, "reason": "burnt"}, {"id": "e3", "itemID": "patates", "qty": 0.5, "reason": "dropped"}]}
+  },
+  {
+    "name": "waste log: old client body without the field merges with a new one (field kept, old client's change applied)",
+    "base": {"entries": {"g90": {"closing": 10}}, "note": "a"},
+    "local": {"entries": {"g90": {"closing": 10}}, "note": "a", "wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}]},
+    "remote": {"entries": {"g90": {"closing": 12}}, "note": "a"},
+    "expected": {"entries": {"g90": {"closing": 12}}, "note": "a", "wasteLog": [{"id": "e1", "itemID": "patates", "qty": 2, "reason": "spoiled"}]}
   }
 ]

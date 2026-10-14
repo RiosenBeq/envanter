@@ -22,7 +22,8 @@ public enum Metrics {
              "sold": n(r.sold), "waste": n(r.waste), "actual": n(r.actual), "diff": n(r.diff),
              "severity": sev(r.severity), "belowMinimum": r.belowMinimum,
              "openingSource": r.openingSource.rawValue, "openingBaseDate": s(r.openingBaseDate), "carriedNet": n(r.carriedNet),
-             "carriedDays": r.carriedDays, "isBaseline": r.isBaseline, "openingJump": n(r.openingJump)]
+             "carriedDays": r.carriedDays, "isBaseline": r.isBaseline, "openingJump": n(r.openingJump),
+             "manualWaste": n(r.manualWaste)]
         }
         let o = e.overview(date: date)
         let overview: [String: Any] = [

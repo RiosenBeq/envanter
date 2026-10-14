@@ -486,6 +486,34 @@ final class AppStore: ObservableObject {
         return (applied ? r.count : 0, nil)
     }
 
+    // MARK: - Elle zayi
+
+    /// Elle zayi kaydı ekler (Düzen > "Zayi Ekle Geri Al"). Kapatılmış günde yapılmaz; personel hesabıyla kilit ve rol
+    /// kuralları `setData`'da uygulanır.
+    /// - Returns: eklendi mi
+    @discardableResult
+    func addWaste(date: String, entry: WasteEntry) -> Bool {
+        guard !isLocked(date) else { NSSound.beep(); return false }
+        return updateDay(date, actionName: "Zayi Ekle") { $0 = WasteLog.adding(entry, to: $0) }
+    }
+
+    /// Elle zayi kaydını siler ("Zayi Sil"; ⌘Z ile geri gelir). Son kayıt silinince `[]` kalır (docs/SYNC.md §1).
+    /// - Returns: silindi mi
+    @discardableResult
+    func removeWaste(date: String, id: String) -> Bool {
+        guard !isLocked(date) else { NSSound.beep(); return false }
+        guard data.days[date]?.wasteLog?.contains(where: { $0.id == id }) == true else { return false }
+        return updateDay(date, actionName: "Zayi Sil") { $0 = WasteLog.removing(id: id, from: $0) }
+    }
+
+    /// Zayi Ekle'deki "Kim" varsayılanı: günün sayımı yapanı; yoksa bu Mac'in web hesabına bağlı ekip üyesi (mağaza
+    /// bilgisayarının cihaz hesabı kişi değildir); yoksa boş
+    func defaultWasteBy(date: String) -> String {
+        if let c = data.days[date]?.countedBy, !c.isEmpty { return c }
+        if let email = cloud.state.config?.email, !PairCode.isDeviceAccount(email), let e = employee(linkedTo: email) { return e.name }
+        return ""
+    }
+
     // MARK: - Eşik önerileri ve kurulum
 
     /// Seçilen eşik önerilerini (tolerans / kritik seviye) kalemlere yazar; tek geri alma adımı

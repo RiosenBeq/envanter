@@ -36,7 +36,7 @@ enum VectorSupport {
          "openingBaseDate": str(r.openingBaseDate), "openingBaseKind": str(r.openingBaseKind?.rawValue),
          "carriedNet": .number(r.carriedNet), "carriedDays": .number(Double(r.carriedDays)), "isBaseline": .bool(r.isBaseline),
          "openingJump": num(r.openingJump), "openingJumpIsProblem": .bool(r.openingJumpIsProblem),
-         "hasStaleBase": .bool(r.hasStaleBase), "isCounted": .bool(r.isCounted)]
+         "hasStaleBase": .bool(r.hasStaleBase), "isCounted": .bool(r.isCounted), "manualWaste": .number(r.manualWaste)]
     }
 
     static func carryDay(_ d: CarryDay) -> [String: JSONValue] {

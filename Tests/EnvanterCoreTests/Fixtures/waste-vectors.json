@@ -1,0 +1,965 @@
+{
+  "about": "Elle zayi (Zayi Ekle, DayRecord.wasteLog) için ortak test vektörleri: hoşgörülü okuma, motor (yalnızca elle, ModPos + elle, Excel + elle; devir, dönem özeti, tahmini stok, Hareketsizleri Doldur), neden adları, metinler ve değişiklik geçmişi özetleri. Mac (EnvanterCoreTests/WasteVectorTests) ve web (test/waste.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. 'expect' içindeki alanlar kontrol edilir (sayılar ±1e-6, null = nil). Özetlerde kalem adları 'activityItems'tan, tarih 2026-10-09.",
+  "constants": {
+    "addTitle": "Zayi Ekle",
+    "helpTip": "Bozulan, yanan, düşen ya da iade edilen malı nota yazmak yerine Günlük Sayım'da Zayi Ekle ile girin: kalemin Zayi'sine eklenir ve farkı açıklar. ModPos'ta ZAYİ ürünü olarak girilen zayiyi ikinci kez girmeyin.",
+    "glossary": "ModPos'ta ZAYİ kategorisinde girilen ürünlerin reçeteye göre düşen miktarı ile Zayi Ekle'yle elle girilen kayıtların toplamı (bozulan, yanan, düşen, iade edilen mal).",
+    "noteHint": "ör. Akşam yoğunluğu; zayi için Zayi Ekle'yi kullanın",
+    "section": "Zayi",
+    "manualSection": "Elle girilen zayi",
+    "posSection": "ModPos ZAYİ ürünleri",
+    "lockedNote": "Gün kapatılmış; zayi girilemez.",
+    "empty": "Bu gün elle zayi girilmedi.",
+    "qtyRequired": "Miktar 0'dan büyük olmalı.",
+    "itemRequired": "Kalem seçin.",
+    "reasonRequired": "Neden seçin.",
+    "listLink2": "Zayi kayıtları (2)",
+    "noteMaxLength": 200
+  },
+  "reasons": [
+    {
+      "raw": "spoiled",
+      "title": "Bozuldu / SKT geçti"
+    },
+    {
+      "raw": "burnt",
+      "title": "Yandı / hatalı üretim"
+    },
+    {
+      "raw": "dropped",
+      "title": "Düştü / döküldü"
+    },
+    {
+      "raw": "returned",
+      "title": "Müşteri iadesi"
+    },
+    {
+      "raw": "staffMeal",
+      "title": "Personel yemeği"
+    },
+    {
+      "raw": "training",
+      "title": "Deneme / eğitim"
+    },
+    {
+      "raw": "other",
+      "title": "Diğer"
+    },
+    {
+      "raw": "yeniNeden",
+      "title": "Diğer"
+    },
+    {
+      "raw": "",
+      "title": "Diğer"
+    }
+  ],
+  "normalize": [
+    {
+      "name": "geçersiz elemanlar atılır, neden yoksa other, bilinmeyen neden korunur",
+      "raw": {
+        "wasteLog": [
+          {
+            "id": "a",
+            "itemID": "patates",
+            "qty": 2,
+            "reason": "spoiled",
+            "note": "n",
+            "by": "Murat A.",
+            "at": "2026-08-02T19:30:00Z"
+          },
+          {
+            "id": "b",
+            "itemID": "patates",
+            "qty": 0.5
+          },
+          {
+            "id": "c",
+            "itemID": "patates",
+            "qty": 1,
+            "reason": "yeniNeden",
+            "note": 5,
+            "by": null
+          },
+          {
+            "id": "d",
+            "itemID": "patates",
+            "qty": 0
+          },
+          {
+            "id": "e",
+            "itemID": "patates",
+            "qty": -1
+          },
+          {
+            "id": "f",
+            "itemID": "patates",
+            "qty": "3"
+          },
+          {
+            "id": 7,
+            "itemID": "patates",
+            "qty": 1
+          },
+          {
+            "itemID": "patates",
+            "qty": 1
+          },
+          {
+            "id": "g",
+            "qty": 1
+          },
+          {
+            "id": "h",
+            "itemID": "patates",
+            "reason": "spoiled"
+          },
+          "metin",
+          null
+        ]
+      },
+      "expected": [
+        {
+          "id": "a",
+          "itemID": "patates",
+          "qty": 2,
+          "reason": "spoiled",
+          "note": "n",
+          "by": "Murat A.",
+          "at": "2026-08-02T19:30:00Z"
+        },
+        {
+          "id": "b",
+          "itemID": "patates",
+          "qty": 0.5,
+          "reason": "other"
+        },
+        {
+          "id": "c",
+          "itemID": "patates",
+          "qty": 1,
+          "reason": "yeniNeden"
+        }
+      ]
+    },
+    {
+      "name": "boş dizi boş dizi olarak kalır (silme merge3'te kaybolmasın)",
+      "raw": {
+        "note": "x",
+        "wasteLog": []
+      },
+      "expected": []
+    },
+    {
+      "name": "hepsi geçersizse boş dizi",
+      "raw": {
+        "wasteLog": [
+          {
+            "id": "d",
+            "itemID": "patates",
+            "qty": 0
+          }
+        ]
+      },
+      "expected": []
+    },
+    {
+      "name": "alan yoksa yok",
+      "raw": {
+        "note": "x"
+      },
+      "expected": null
+    },
+    {
+      "name": "dizi değilse yok",
+      "raw": {
+        "wasteLog": {
+          "id": "a"
+        }
+      },
+      "expected": null
+    }
+  ],
+  "cases": [
+    {
+      "name": "elle-zayi: satış yokken elle girilen zayi farka, devre, döneme ve Hareketsizleri Doldur'a girer",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "P1",
+            "name": "PATATES PORSİYON",
+            "category": "YAN ÜRÜNLER",
+            "amounts": {
+              "patates": 0.2
+            }
+          },
+          {
+            "code": "Z1",
+            "name": "ZAYİ PATATES",
+            "category": "ZAYİLER",
+            "amounts": {
+              "patates": 0.1
+            }
+          },
+          {
+            "code": "K1",
+            "name": "KOLA",
+            "category": "İÇECEKLER",
+            "amounts": {}
+          }
+        ],
+        "days": {
+          "2026-08-01": {
+            "date": "2026-08-01",
+            "entries": {
+              "patates": {
+                "closing": 20
+              },
+              "g90": {
+                "closing": 100
+              }
+            },
+            "sales": []
+          },
+          "2026-08-02": {
+            "date": "2026-08-02",
+            "entries": {
+              "patates": {
+                "closing": 15
+              },
+              "g90": {
+                "closing": 98
+              }
+            },
+            "sales": [],
+            "wasteLog": [
+              {
+                "id": "w1",
+                "itemID": "patates",
+                "qty": 3,
+                "reason": "spoiled",
+                "note": "Dondurucu arızası",
+                "by": "Murat A.",
+                "at": "2026-08-02T19:30:00Z"
+              },
+              {
+                "id": "w2",
+                "itemID": "patates",
+                "qty": 1.5,
+                "reason": "dropped"
+              },
+              {
+                "id": "wx",
+                "itemID": "yok",
+                "qty": 9,
+                "reason": "other"
+              },
+              {
+                "id": "wg",
+                "itemID": "g90",
+                "qty": 2,
+                "reason": "burnt",
+                "by": "Selin K."
+              }
+            ]
+          },
+          "2026-08-03": {
+            "date": "2026-08-03",
+            "entries": {
+              "g90": {
+                "incoming": 10
+              }
+            },
+            "sales": [],
+            "wasteLog": [
+              {
+                "id": "w3",
+                "itemID": "patates",
+                "qty": 2,
+                "reason": "other"
+              }
+            ]
+          },
+          "2026-08-04": {
+            "date": "2026-08-04",
+            "entries": {
+              "patates": {
+                "closing": 12
+              },
+              "g90": {
+                "closing": 108
+              }
+            },
+            "sales": []
+          },
+          "2026-08-05": {
+            "date": "2026-08-05",
+            "entries": {},
+            "sales": [
+              {
+                "code": "K1",
+                "name": "KOLA",
+                "qty": 5
+              }
+            ],
+            "wasteLog": [
+              {
+                "id": "w4",
+                "itemID": "patates",
+                "qty": 1,
+                "reason": "burnt"
+              }
+            ]
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "calc": [
+        {
+          "date": "2026-08-02",
+          "itemID": "patates",
+          "expect": {
+            "opening": 20,
+            "openingSource": "closing",
+            "closing": 15,
+            "sold": 0,
+            "waste": 4.5,
+            "manualWaste": 4.5,
+            "actual": 5,
+            "diff": -0.5,
+            "severity": "shortage",
+            "isBaseline": false
+          }
+        },
+        {
+          "date": "2026-08-02",
+          "itemID": "g90",
+          "expect": {
+            "opening": 100,
+            "closing": 98,
+            "sold": 0,
+            "waste": 2,
+            "manualWaste": 2,
+            "actual": 2,
+            "diff": 0,
+            "severity": "zero"
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "patates",
+          "expect": {
+            "opening": 15,
+            "openingSource": "closing",
+            "closing": null,
+            "waste": 2,
+            "manualWaste": 2,
+            "actual": null,
+            "diff": null
+          }
+        },
+        {
+          "date": "2026-08-04",
+          "itemID": "patates",
+          "expect": {
+            "opening": 13,
+            "openingSource": "carried",
+            "openingBaseDate": "2026-08-02",
+            "carriedNet": -2,
+            "carriedDays": 1,
+            "closing": 12,
+            "waste": 0,
+            "manualWaste": 0,
+            "actual": 1,
+            "diff": -1,
+            "severity": "shortage"
+          }
+        },
+        {
+          "date": "2026-08-05",
+          "itemID": "patates",
+          "expect": {
+            "opening": 12,
+            "openingSource": "closing",
+            "waste": 1,
+            "manualWaste": 1,
+            "isCounted": false
+          }
+        },
+        {
+          "date": "2026-08-05",
+          "itemID": "g90",
+          "expect": {
+            "opening": 108,
+            "openingSource": "closing",
+            "waste": 0,
+            "manualWaste": 0,
+            "isCounted": false
+          }
+        }
+      ],
+      "breakdown": [
+        {
+          "date": "2026-08-04",
+          "itemID": "patates",
+          "expect": [
+            {
+              "date": "2026-08-03",
+              "incoming": 0,
+              "transferIn": 0,
+              "transferOut": 0,
+              "sold": 0,
+              "waste": 2,
+              "net": -2
+            }
+          ],
+          "lines": [
+            "03.08 · Zayi −2 → −2"
+          ]
+        }
+      ],
+      "summary": [
+        {
+          "from": "2026-08-01",
+          "to": "2026-08-05",
+          "itemID": "patates",
+          "expect": {
+            "daysCounted": 2,
+            "firstOpening": 20,
+            "lastClosing": 12,
+            "incoming": 0,
+            "sold": 0,
+            "waste": 6.5,
+            "actual": 8,
+            "diff": -1.5,
+            "shortageQty": 1.5,
+            "shortageDays": 2,
+            "openingAdjust": 0,
+            "daily": [
+              {
+                "date": "2026-08-02",
+                "diff": -0.5
+              },
+              {
+                "date": "2026-08-04",
+                "diff": -1
+              }
+            ]
+          }
+        }
+      ],
+      "estimates": [
+        {
+          "date": "2026-08-05",
+          "itemID": "patates",
+          "expect": {
+            "stock": 11,
+            "baseDate": "2026-08-04",
+            "counted": false
+          }
+        }
+      ],
+      "fill": [
+        {
+          "date": "2026-08-03",
+          "expect": {
+            "refusal": "noSales",
+            "closings": {}
+          }
+        },
+        {
+          "date": "2026-08-05",
+          "expect": {
+            "refusal": null,
+            "closings": {
+              "g90": 108
+            }
+          }
+        }
+      ],
+      "texts": [
+        {
+          "date": "2026-08-02",
+          "itemID": "patates",
+          "expect": {
+            "duplicateHint": "Bu gün elle 4,5 kg zayi girildi (2 kayıt)."
+          }
+        },
+        {
+          "date": "2026-08-01",
+          "itemID": "patates",
+          "expect": {
+            "duplicateHint": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "modpos-ve-elle: ModPos ZAYİ ürünleri ile elle girilen zayi toplanır",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true,
+            "tolerance": 0.2
+          }
+        ],
+        "products": [
+          {
+            "code": "P1",
+            "name": "PATATES PORSİYON",
+            "category": "YAN ÜRÜNLER",
+            "amounts": {
+              "patates": 0.2
+            }
+          },
+          {
+            "code": "Z1",
+            "name": "ZAYİ PATATES",
+            "category": "ZAYİLER",
+            "amounts": {
+              "patates": 0.1
+            }
+          }
+        ],
+        "days": {
+          "2026-08-01": {
+            "date": "2026-08-01",
+            "entries": {
+              "patates": {
+                "closing": 20
+              }
+            },
+            "sales": []
+          },
+          "2026-08-02": {
+            "date": "2026-08-02",
+            "entries": {
+              "patates": {
+                "closing": 16.4
+              }
+            },
+            "sales": [
+              {
+                "code": "P1",
+                "name": "PATATES PORSİYON",
+                "qty": 10
+              },
+              {
+                "code": "Z1",
+                "name": "ZAYİ PATATES",
+                "qty": 4
+              }
+            ],
+            "wasteLog": [
+              {
+                "id": "w1",
+                "itemID": "patates",
+                "qty": 1.1,
+                "reason": "spoiled"
+              }
+            ]
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "calc": [
+        {
+          "date": "2026-08-02",
+          "itemID": "patates",
+          "expect": {
+            "opening": 20,
+            "closing": 16.4,
+            "sold": 2,
+            "waste": 1.5,
+            "manualWaste": 1.1,
+            "actual": 3.6,
+            "diff": -0.1,
+            "severity": "withinTolerance"
+          }
+        }
+      ],
+      "texts": [
+        {
+          "date": "2026-08-02",
+          "itemID": "patates",
+          "expect": {
+            "duplicateHint": "Bu gün ModPos'ta 0,4 kg zayi var; aynı zayiyi iki kez girmeyin. Bu gün elle 1,1 kg zayi girildi (1 kayıt)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "excel-ve-elle: Excel'den gelen Zaiyat ile elle girilen zayi toplanır",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "P1",
+            "name": "PATATES PORSİYON",
+            "category": "YAN ÜRÜNLER",
+            "amounts": {
+              "patates": 0.2
+            }
+          },
+          {
+            "code": "Z1",
+            "name": "ZAYİ PATATES",
+            "category": "ZAYİLER",
+            "amounts": {
+              "patates": 0.1
+            }
+          }
+        ],
+        "days": {
+          "2026-08-02": {
+            "date": "2026-08-02",
+            "entries": {
+              "patates": {
+                "opening": 20,
+                "closing": 16
+              }
+            },
+            "sales": [],
+            "legacySold": {
+              "patates": 2
+            },
+            "legacyWaste": {
+              "patates": 0.5
+            },
+            "importedFrom": "01.08.xlsm",
+            "wasteLog": [
+              {
+                "id": "w1",
+                "itemID": "patates",
+                "qty": 1,
+                "reason": "returned"
+              }
+            ]
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "calc": [
+        {
+          "date": "2026-08-02",
+          "itemID": "patates",
+          "expect": {
+            "opening": 20,
+            "openingSource": "manual",
+            "sold": 2,
+            "waste": 1.5,
+            "manualWaste": 1,
+            "actual": 4,
+            "diff": -0.5,
+            "openingJump": null
+          }
+        }
+      ],
+      "texts": [
+        {
+          "date": "2026-08-02",
+          "itemID": "patates",
+          "expect": {
+            "duplicateHint": "Bu gün Excel'den aktarılan 0,5 kg zayi var; aynı zayiyi iki kez girmeyin. Bu gün elle 1 kg zayi girildi (1 kayıt)."
+          }
+        }
+      ]
+    }
+  ],
+  "entryTexts": [
+    {
+      "entry": {
+        "id": "w1",
+        "itemID": "patates",
+        "qty": 3,
+        "reason": "spoiled",
+        "note": "Dondurucu arızası",
+        "by": "Murat A.",
+        "at": "2026-08-02T19:30:00Z"
+      },
+      "itemID": "patates",
+      "expect": {
+        "saved": "Zayi kaydedildi: Patates 3 kg · Bozuldu / SKT geçti",
+        "removed": "Zayi silindi: Patates 3 kg",
+        "detail": "Bozuldu / SKT geçti · Dondurucu arızası · Murat A.",
+        "amount": "3 kg"
+      }
+    },
+    {
+      "entry": {
+        "id": "wg",
+        "itemID": "g90",
+        "qty": 2,
+        "reason": "burnt",
+        "by": "Selin K."
+      },
+      "itemID": "g90",
+      "expect": {
+        "saved": "Zayi kaydedildi: 90 Gr 2 adet · Yandı / hatalı üretim",
+        "removed": "Zayi silindi: 90 Gr 2 adet",
+        "detail": "Yandı / hatalı üretim · Selin K.",
+        "amount": "2 adet"
+      }
+    },
+    {
+      "entry": {
+        "id": "u",
+        "itemID": "yok",
+        "qty": 1.25,
+        "reason": "x"
+      },
+      "itemID": null,
+      "expect": {
+        "saved": "Zayi kaydedildi: yok 1,25 · Diğer",
+        "removed": "Zayi silindi: yok 1,25",
+        "detail": "Diğer",
+        "amount": "1,25"
+      }
+    }
+  ],
+  "entryTextItems": [
+    {
+      "id": "patates",
+      "name": "Patates",
+      "unit": "Kg",
+      "recipeUnit": "kg",
+      "factor": 1,
+      "active": true
+    },
+    {
+      "id": "g90",
+      "name": "90 Gr",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true
+    }
+  ],
+  "activityItems": [
+    {
+      "id": "patates",
+      "name": "Patates",
+      "unit": "Kg",
+      "recipeUnit": "kg",
+      "factor": 1,
+      "active": true
+    },
+    {
+      "id": "g90",
+      "name": "90 Gr",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true
+    }
+  ],
+  "activityDate": "2026-10-09",
+  "activity": [
+    {
+      "name": "kayıt eklendi",
+      "before": {
+        "entries": {},
+        "sales": []
+      },
+      "after": {
+        "entries": {},
+        "sales": [],
+        "wasteLog": [
+          {
+            "id": "a1",
+            "itemID": "patates",
+            "qty": 3,
+            "reason": "spoiled",
+            "by": "Murat A.",
+            "at": "2026-10-09T19:30:00Z"
+          }
+        ]
+      },
+      "expected": "09.10.2026 zayi eklendi: Patates 3 kg (Bozuldu / SKT geçti)"
+    },
+    {
+      "name": "son kayıt silindi ([] kalır)",
+      "before": {
+        "note": "x",
+        "wasteLog": [
+          {
+            "id": "a1",
+            "itemID": "patates",
+            "qty": 3,
+            "reason": "spoiled",
+            "by": "Murat A.",
+            "at": "2026-10-09T19:30:00Z"
+          }
+        ]
+      },
+      "after": {
+        "note": "x",
+        "wasteLog": []
+      },
+      "expected": "09.10.2026 zayi silindi: Patates 3 kg"
+    },
+    {
+      "name": "iki kayıt eklendi, biri silindi",
+      "before": {
+        "note": "x",
+        "wasteLog": [
+          {
+            "id": "a1",
+            "itemID": "patates",
+            "qty": 3,
+            "reason": "spoiled",
+            "by": "Murat A.",
+            "at": "2026-10-09T19:30:00Z"
+          }
+        ]
+      },
+      "after": {
+        "note": "x",
+        "wasteLog": [
+          {
+            "id": "a2",
+            "itemID": "g90",
+            "qty": 2,
+            "reason": "burnt"
+          },
+          {
+            "id": "a3",
+            "itemID": "patates",
+            "qty": 0.25,
+            "reason": "yeniNeden"
+          }
+        ]
+      },
+      "expected": "09.10.2026 zayi eklendi: 90 Gr 2 adet (Yandı / hatalı üretim), Patates 0,25 kg (Diğer); 09.10.2026 zayi silindi: Patates 3 kg"
+    },
+    {
+      "name": "bilinmeyen kalem kimliğiyle",
+      "before": null,
+      "after": {
+        "wasteLog": [
+          {
+            "id": "a4",
+            "itemID": "x1",
+            "qty": 4,
+            "reason": "dropped"
+          }
+        ]
+      },
+      "expected": "09.10.2026 zayi eklendi: x1 4 (Düştü / döküldü)"
+    },
+    {
+      "name": "sayım ve zayi birlikte",
+      "before": {
+        "entries": {
+          "patates": {
+            "closing": 10
+          }
+        }
+      },
+      "after": {
+        "entries": {
+          "patates": {
+            "closing": 9.5
+          }
+        },
+        "wasteLog": [
+          {
+            "id": "a1",
+            "itemID": "patates",
+            "qty": 3,
+            "reason": "spoiled",
+            "by": "Murat A.",
+            "at": "2026-10-09T19:30:00Z"
+          }
+        ]
+      },
+      "expected": "09.10.2026 sayımı: Patates kapanış 10 → 9,5; 09.10.2026 zayi eklendi: Patates 3 kg (Bozuldu / SKT geçti)"
+    },
+    {
+      "name": "kayıt değişmedi",
+      "before": {
+        "note": "x",
+        "wasteLog": [
+          {
+            "id": "a1",
+            "itemID": "patates",
+            "qty": 3,
+            "reason": "spoiled",
+            "by": "Murat A.",
+            "at": "2026-10-09T19:30:00Z"
+          }
+        ]
+      },
+      "after": {
+        "note": "x",
+        "wasteLog": [
+          {
+            "id": "a1",
+            "itemID": "patates",
+            "qty": 3,
+            "reason": "spoiled",
+            "by": "Murat A.",
+            "at": "2026-10-09T19:30:00Z"
+          }
+        ]
+      },
+      "expected": "09.10.2026 günü güncellendi"
+    }
+  ]
+}

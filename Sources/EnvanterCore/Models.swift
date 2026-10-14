@@ -207,6 +207,50 @@ public struct DayEntry: Codable, Hashable {
     }
 }
 
+// MARK: - Elle zayi
+
+/// Zayi nedeni (ham değer bulutta saklanır; bilinmeyen değer korunur ve "Diğer" görünür; web `WasteReason`)
+public enum WasteReason: String, CaseIterable, Sendable {
+    case spoiled, burnt, dropped, returned, staffMeal, training, other
+
+    public var title: String {
+        switch self {
+        case .spoiled: return "Bozuldu / SKT geçti"
+        case .burnt: return "Yandı / hatalı üretim"
+        case .dropped: return "Düştü / döküldü"
+        case .returned: return "Müşteri iadesi"
+        case .staffMeal: return "Personel yemeği"
+        case .training: return "Deneme / eğitim"
+        case .other: return "Diğer"
+        }
+    }
+
+    /// Ham değerin adı (bilinmeyen değer "Diğer")
+    public static func title(_ raw: String) -> String { (WasteReason(rawValue: raw) ?? .other).title }
+}
+
+/// Elle girilen zayi kaydı (Zayi Ekle): kalem, miktar (envanter birimi), neden, not, kim, ne zaman. Günün Zayi'sine
+/// eklenir; dizi elemanları `id` ile birleştirilir (docs/SYNC.md §1 "Elle zayi").
+public struct WasteEntry: Codable, Hashable, Identifiable, Sendable {
+    public var id: String
+    public var itemID: String
+    /// Envanter biriminde miktar (> 0)
+    public var qty: Double
+    /// `WasteReason` ham değeri (bilinmeyen değer korunur)
+    public var reason: String
+    public var note: String?
+    /// Kaydı giren kişi
+    public var by: String?
+    /// ISO 8601 UTC, saniye hassasiyeti ("2026-10-13T21:40:00Z")
+    public var at: String?
+
+    public init(id: String = UUID().uuidString, itemID: String, qty: Double, reason: String,
+                note: String? = nil, by: String? = nil, at: String? = nil) {
+        self.id = id; self.itemID = itemID; self.qty = qty; self.reason = reason
+        self.note = note; self.by = by; self.at = at
+    }
+}
+
 public struct DayRecord: Codable, Hashable {
     /// yyyy-MM-dd
     public var date: String
@@ -221,21 +265,24 @@ public struct DayRecord: Codable, Hashable {
     public var legacyWaste: [String: Double]?
     /// Verinin geldiği Excel dosyası (varsa)
     public var importedFrom: String?
-    /// Günün notu (ör. "Dondurucu arızası, 3 kg patates atıldı")
+    /// Günün notu (ör. "Akşam yoğunluğu"; zayi Zayi Ekle ile `wasteLog`'a girilir)
     public var note: String?
     /// Sayımı yapan kişi
     public var countedBy: String?
     /// Gün kapatıldı: girişler kilitli, yanlışlıkla değiştirilemez
     public var locked: Bool?
+    /// Elle girilen zayi kayıtları. Son kayıt silinince `[]` yazılır (anahtar silinmez: merge3'te silme kaybolmasın);
+    /// `[]` boş sayılır.
+    public var wasteLog: [WasteEntry]?
 
     public init(date: String, entries: [String: DayEntry] = [:], sales: [SaleLine] = [],
                 salesSource: String? = nil, salesPeriod: String? = nil, salesImportedAt: Date? = nil,
                 legacySold: [String: Double]? = nil, legacyWaste: [String: Double]? = nil, importedFrom: String? = nil,
-                note: String? = nil, countedBy: String? = nil, locked: Bool? = nil) {
+                note: String? = nil, countedBy: String? = nil, locked: Bool? = nil, wasteLog: [WasteEntry]? = nil) {
         self.date = date; self.entries = entries; self.sales = sales
         self.salesSource = salesSource; self.salesPeriod = salesPeriod; self.salesImportedAt = salesImportedAt
         self.legacySold = legacySold; self.legacyWaste = legacyWaste; self.importedFrom = importedFrom
-        self.note = note; self.countedBy = countedBy; self.locked = locked
+        self.note = note; self.countedBy = countedBy; self.locked = locked; self.wasteLog = wasteLog
     }
 
     public var isLocked: Bool { locked == true }
@@ -252,10 +299,10 @@ public struct DayRecord: Codable, Hashable {
         !hasInventoryData && (note ?? "").isEmpty && (countedBy ?? "").isEmpty
     }
 
-    /// Sayım veya satış verisi var mı (not/sayan hariç). Excel aktarımında çakışma buna göre belirlenir.
+    /// Sayım, satış ya da elle zayi verisi var mı (not/sayan hariç). Excel aktarımında çakışma buna göre belirlenir.
     public var hasInventoryData: Bool {
         !sales.isEmpty || !entries.values.allSatisfy { $0.isEmpty }
-            || !(legacySold ?? [:]).isEmpty || !(legacyWaste ?? [:]).isEmpty
+            || !(legacySold ?? [:]).isEmpty || !(legacyWaste ?? [:]).isEmpty || !(wasteLog ?? []).isEmpty
     }
 }
 

@@ -5,6 +5,7 @@ import Foundation
 ///   "09.10.2026 sayımı: 90 Gr kapanış 120 → 110, Peynir gelen 5"
 ///   "09.10.2026 satış raporu aktarıldı (121 satır)"
 ///   "09.10.2026 günü kapatıldı"
+///   "09.10.2026 zayi eklendi: Patates 3 kg (Bozuldu / SKT geçti)"
 ///   "Stok kalemleri: Patates kritik stok 5 → 8"
 ///   "Ekip: Ayşe görev Kasiyer → Usta"
 /// Metin en fazla ~140 karakterdir; sığmayan ayrıntılar "+N değişiklik" olarak sayılır.
@@ -160,6 +161,16 @@ public enum ChangeSummary {
             if !phrases.isEmpty { entryDetails.append("\(itemName(data, id)) \(phrases.joined(separator: ", "))") }
         }
         if !entryDetails.isEmpty { segs.append(Segment(head: "\(D) sayımı: ", details: entryDetails)) }
+
+        // Elle zayi: kimliğe göre eklenen ve silinen kayıtlar ("Patates 3 kg (Bozuldu / SKT geçti)")
+        let bw = b?.wasteLog ?? [], aw = a.wasteLog ?? []
+        let bIDs = Set(bw.map { $0.id }), aIDs = Set(aw.map { $0.id })
+        let item: (String) -> Item? = { id in data?.items.first { $0.id == id } }
+        let added = aw.filter { !bIDs.contains($0.id) }
+            .map { "\(WasteText.itemAmount($0, item: item($0.itemID))) (\(WasteReason.title($0.reason)))" }
+        let removed = bw.filter { !aIDs.contains($0.id) }.map { WasteText.itemAmount($0, item: item($0.itemID)) }
+        if !added.isEmpty { segs.append(Segment(head: "\(D) zayi eklendi: ", details: added)) }
+        if !removed.isEmpty { segs.append(Segment(head: "\(D) zayi silindi: ", details: removed)) }
 
         if (b?.countedBy ?? "") != (a.countedBy ?? "") {
             segs.append(Segment(head: nonEmpty(a.countedBy).map { "\(D) sayımı yapan: \(clip($0, 30))" } ?? "\(D) sayımı yapan silindi"))

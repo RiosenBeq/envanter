@@ -145,7 +145,12 @@ public enum DemoData {
             }
             day.countedBy = counters[i % counters.count]
             if i < days - 2 { day.locked = true }
-            if i == days - 6 { day.note = "Dondurucu arızası: yaklaşık 2 kg patates çöpe gitti." }
+            if i == days - 6 {
+                day.note = "Dondurucu arızası: yaklaşık 2 kg patates çöpe gitti."
+                // Atılan patates Zayi Ekle ile girildi (fazla çıkışın çoğunu açıklar); saat 22:30 (İstanbul)
+                day.wasteLog = [WasteEntry(id: "demo-zayi-1", itemID: "patates", qty: 2, reason: WasteReason.spoiled.rawValue,
+                                           note: "Dondurucu arızası", by: "Murat A.", at: "\(d)T19:30:00Z")]
+            }
             if i == days - 12 { day.note = "Akşam vardiyasında yoğunluk; peynir porsiyonları kontrol edilecek." }
             data.days[d] = day
         }

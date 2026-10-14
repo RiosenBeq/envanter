@@ -48,7 +48,8 @@ enum Term: String, CaseIterable, Identifiable {
         case .sold:
             return "ModPos satış raporundaki ürünlerin reçetelerine göre bu kalemden düşmesi gereken miktar. Örn. 10 Dublex Burger = 20 adet 90 gr."
         case .waste:
-            return "ModPos'ta ZAYİ kategorisinde girilen ürünlerin reçeteye göre düşen miktarı (yanan, düşen, iade edilen ürün)."
+            // Web glossary.ts ile aynı metin (WasteText.glossary)
+            return WasteText.glossary
         case .actualUsage:
             return "Sayıma göre gerçekten çıkan miktar: Açılış + Gelen + Gelen transfer − Giden transfer − Kapanış."
         case .diff:

@@ -190,6 +190,51 @@ enum SelfTest {
               "Genel Bakış: sayım yokken kritik seviye kartı tahmini stoğu gösteriyor (\(card.value))")
         store.updateItem("g90", actionName: "Kritik Seviye") { $0.minStock = nil }
 
+        print("6c) Elle zayi (Zayi Ekle)")
+        let wasteBefore = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
+        let wasteUndo = UndoManager()
+        store.undoManager = wasteUndo
+        await settle()
+        if let entry = WasteLog.make(id: "selftest-zayi", itemID: "g90", qty: 2, reason: .burnt, note: "Yanan köfte", by: "Ayşe") {
+            check(store.addWaste(date: d1, entry: entry), "zayi kaydı eklendi")
+        } else { check(false, "zayi kaydı oluşturuldu") }
+        await settle()
+        let wasteRow = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
+        check(near(wasteRow?.manualWaste, 2) && near(wasteRow?.waste, (wasteBefore?.waste ?? 0) + 2),
+              "elle zayi Zayi sütununa eklendi (ModPos + elle)")
+        check(near(wasteRow?.diff, (wasteBefore?.diff ?? 0) + 2), "fark elle zayi kadar değişti")
+        check(wasteUndo.undoActionName == "Zayi Ekle", "Düzen menüsünde \"Zayi Ekle Geri Al\"")
+        check(store.removeWaste(date: d1, id: "selftest-zayi") && store.data.days[d1]?.wasteLog == [],
+              "son kayıt silinince liste boş kalır ([]; anahtar silinmez)")
+        await settle()
+        wasteUndo.undo()
+        await settle()
+        check(store.data.days[d1]?.wasteLog?.map { $0.id } == ["selftest-zayi"], "geri al: silinen zayi kaydı geri geldi")
+        if let row = store.engine.calc(date: d1).rows.first(where: { $0.itemID == "g90" }), let g90 = store.engine.itemsByID["g90"] {
+            check(WasteText.duplicateHint(row, day: store.data.days[d1], item: g90)?.contains("elle 2 adet zayi girildi") == true,
+                  "Zayi Ekle aynı zayinin iki kez girilmesine karşı uyarıyor")
+        }
+        if let withWaste = store.data.days[d1] {
+            var plain = withWaste
+            plain.wasteLog = nil
+            let summary = ChangeSummary.summarize(key: DocKey.day(d1), before: try? JSONCoding.value(plain),
+                                                  after: try? JSONCoding.value(withWaste), data: store.data)
+            check(summary == "01.08.2026 zayi eklendi: 90 Gr 2 adet (Yandı / hatalı üretim)", "değişiklik geçmişi: \(summary)")
+        }
+        // Satışı olan gün: yalnızca elle zayisi olan kalem hareketsiz sayılmaz (Hareketsizleri Doldur)
+        let d5 = "2026-08-05"
+        store.confirmImport(report: SalesParser.parse(text: "Kodu\tÜrün Tipi\tAdedi\n13001\tKOLA\t2\n", sourceName: "selftest-zayi"), date: d5)
+        let peynirIdle = { store.engine.calc(date: d5).rows.first { $0.itemID == "peynir" }.map(DayOps.isIdle) ?? false }
+        check(peynirIdle(), "satışı olan günde hareketsiz peynir doldurulabilir")
+        if let peynirZayi = WasteLog.make(itemID: "peynir", qty: 0.5, reason: .spoiled) { store.addWaste(date: d5, entry: peynirZayi) }
+        check(!peynirIdle(), "elle zayi hareket sayılır")
+        _ = store.fillUncountedWithOpening(date: d5)
+        check(store.data.days[d5]?.entries["peynir"]?.closing == nil, "elle zayisi olan kaleme kapanış = açılış yazılmadı")
+        store.undoManager = nil
+        wasteUndo.removeAllActions()
+        store.removeWaste(date: d1, id: "selftest-zayi")
+        store.selectedDate = d1
+
         print("7) Gün kilidi")
         step("kilit") { store.setLocked(d1, true) }
         store.entryBinding(item: "g90", date: d1, \.closing).wrappedValue = 1

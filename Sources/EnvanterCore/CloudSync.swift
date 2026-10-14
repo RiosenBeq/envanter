@@ -587,7 +587,7 @@ public enum DocCodec {
     /// Mac'in bildiği gün alanları (`DayRecord`)
     static let knownDayKeys: Set<String> = [
         "date", "entries", "sales", "salesSource", "salesPeriod", "salesImportedAt", "legacySold", "legacyWaste",
-        "importedFrom", "note", "countedBy", "locked",
+        "importedFrom", "note", "countedBy", "locked", "wasteLog",
     ]
 
     /// Gün gövdesinde Mac'in bilmediği dolu bir alan var mı (eski sürümlerin vardiyaları, ileriki sürümlerin alanları):
@@ -739,6 +739,8 @@ enum Lenient {
         o["note"] = str(raw["note"])
         o["countedBy"] = str(raw["countedBy"])
         o["locked"] = raw["locked"]?.boolValue.map { .bool($0) }
+        // Dizi değilse yok; boş dizi boş dizi olarak kalır (son kaydın silinmesi merge3'te kaybolmasın)
+        if case .array(let w)? = raw["wasteLog"] { o["wasteLog"] = .array(w.compactMap { wasteEntry($0) }) } else { o["wasteLog"] = nil }
         return try? JSONCoding.decode(DayRecord.self, from: .object(o))
     }
 
@@ -806,6 +808,19 @@ enum Lenient {
         guard case .object(let raw) = v else { return nil }
         var o = raw
         for k in ["opening", "incoming", "transferIn", "transferOut", "closing"] { o[k] = num(raw[k]) }
+        return .object(o)
+    }
+
+    /// Elle zayi kaydı: `id` ve `itemID` metin, `qty` sonlu ve > 0 olmalı; `reason` yoksa "other" (web `normalizeWasteEntry`)
+    static func wasteEntry(_ v: JSONValue) -> JSONValue? {
+        guard case .object(let raw) = v, case .string(let id)? = raw["id"], case .string(let itemID)? = raw["itemID"],
+              let qty = finite(raw["qty"]), qty > 0 else { return nil }
+        var o = raw
+        o["id"] = .string(id)
+        o["itemID"] = .string(itemID)
+        o["qty"] = .number(qty)
+        o["reason"] = .string(raw["reason"]?.stringValue ?? WasteReason.other.rawValue)
+        for k in ["note", "by", "at"] { o[k] = str(raw[k]) }
         return .object(o)
     }
 

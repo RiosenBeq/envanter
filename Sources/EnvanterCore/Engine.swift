@@ -104,6 +104,7 @@ public struct ItemCalc {
     public var transferOut: Double
     public var closing: Double?
     public var sold: Double
+    /// Toplam zayi: ModPos ZAYİ ürünleri (ya da Excel'den gelen Zaiyat) + elle girilen zayi
     public var waste: Double
     /// Sayım yapılmadıysa (kapanış boşsa) ya da ilk sayımsa nil
     public var actual: Double?
@@ -126,6 +127,8 @@ public struct ItemCalc {
     public var openingJump: Double? = nil
     /// Açılış sıçraması tolerans dışı ("Sorunlu" nedeni)
     public var openingJumpIsProblem: Bool = false
+    /// Elle girilen zayi (Zayi Ekle; `waste` içinde)
+    public var manualWaste: Double = 0
 
     /// Kapanış girilmiş mi (günün bu kalemi için sayım tamam mı)
     public var isCounted: Bool { closing != nil }
@@ -265,6 +268,7 @@ struct OpeningBasePoint {
 final class EngineCache: @unchecked Sendable {
     private let lock = NSLock()
     var analyses: [String: SalesAnalysis] = [:]
+    var manualWastes: [String: [String: Double]] = [:]
     var movements: [String: [String: CarryDay]] = [:]
     var calcs: [String: [ItemCalc]] = [:]
     var bases: [String: [OpeningBasePoint]] = [:]
@@ -348,6 +352,19 @@ public struct Engine {
         return a
     }
 
+    /// Günün elle girilen zayisi: kalem id → toplam miktar (önbellekli). Bilinmeyen kaleme ait ya da miktarı > 0 olmayan
+    /// kayıtlar atlanır.
+    public func manualWaste(date: String) -> [String: Double] {
+        if let m = cache.get(\.manualWastes, date) { return m }
+        var out: [String: Double] = [:]
+        for e in data.days[date]?.wasteLog ?? [] where itemsByID[e.itemID] != nil && e.qty.isFinite && e.qty > 0 {
+            out[e.itemID, default: 0] += e.qty
+        }
+        out = out.mapValues { Self.clean($0) }
+        cache.set(\.manualWastes, date, out)
+        return out
+    }
+
     // MARK: - Açılış devri (Excel'deki "YeniEnvanterAç" makrosu + sayılmayan günlerin hareketleri)
 
     /// `key`'den küçük olmayan ilk günün konumu (ikili arama)
@@ -377,14 +394,15 @@ public struct Engine {
     }
 
     /// Günün kalem bazında hareketleri (önbellekli). Satılan ve Zayi `calcRow` ile aynı kaynaktan (satış dökümü ya da
-    /// Excel'den gelen değerler).
+    /// Excel'den gelen değerler; Zayi'ye elle girilen zayi eklenir).
     func movements(on date: String) -> [String: CarryDay] {
         if let m = cache.get(\.movements, date) { return m }
         var out: [String: CarryDay] = [:]
         if let day = data.days[date] {
             let useLegacy = day.usesLegacySales
             let a = useLegacy ? SalesAnalysis() : analysis(date: date)
-            var ids = Set(day.entries.keys)
+            let manual = manualWaste(date: date)
+            var ids = Set(day.entries.keys).union(manual.keys)
             if useLegacy {
                 ids.formUnion((day.legacySold ?? [:]).keys)
                 ids.formUnion((day.legacyWaste ?? [:]).keys)
@@ -396,7 +414,7 @@ public struct Engine {
                 let e = day.entries[id]
                 let inc = e?.incoming ?? 0, tin = e?.transferIn ?? 0, tout = e?.transferOut ?? 0
                 let sold = Self.clean(useLegacy ? (day.legacySold?[id] ?? 0) : (a.sold[id] ?? 0))
-                let waste = Self.clean(useLegacy ? (day.legacyWaste?[id] ?? 0) : (a.waste[id] ?? 0))
+                let waste = Self.clean((useLegacy ? (day.legacyWaste?[id] ?? 0) : (a.waste[id] ?? 0)) + (manual[id] ?? 0))
                 out[id] = CarryDay(date: date, incoming: inc, transferIn: tin, transferOut: tout, sold: sold, waste: waste,
                                    net: Self.clean(inc + tin - tout - sold - waste))
             }
@@ -504,7 +522,9 @@ public struct Engine {
         let tout = entry.transferOut ?? 0
         let useLegacy = day?.usesLegacySales ?? false
         let sold = useLegacy ? (day?.legacySold?[item.id] ?? 0) : (analysis.sold[item.id] ?? 0)
-        let waste = useLegacy ? (day?.legacyWaste?[item.id] ?? 0) : (analysis.waste[item.id] ?? 0)
+        // Zayi = ModPos ZAYİ ürünleri (ya da Excel'den gelen Zaiyat) + elle girilen zayi
+        let manual = manualWaste(date: date)[item.id] ?? 0
+        let waste = (useLegacy ? (day?.legacyWaste?[item.id] ?? 0) : (analysis.waste[item.id] ?? 0)) + manual
         // İlk sayım: önceki kapanış yok (ya da çok eski) ve açılış elle girilmedi → fark hesaplanmaz
         let isBaseline = entry.closing != nil && entry.opening == nil && est == nil
         var actual: Double?
@@ -536,6 +556,7 @@ public struct Engine {
         row.isBaseline = isBaseline
         row.openingJump = jump
         row.openingJumpIsProblem = jump.map { item.severity(of: $0).isProblem } ?? false
+        row.manualWaste = manual
         return row
     }
 

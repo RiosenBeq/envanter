@@ -538,7 +538,7 @@ final class PeriodTests: XCTestCase {
         XCTAssertEqual(keys(rows("calc").first), ["itemID", "opening", "openingIsAuto", "incoming", "transferIn", "transferOut",
                                                   "closing", "sold", "waste", "actual", "diff", "severity", "belowMinimum",
                                                   "openingSource", "openingBaseDate", "carriedNet", "carriedDays", "isBaseline",
-                                                  "openingJump"])
+                                                  "openingJump", "manualWaste"])
         XCTAssertEqual(keys(root["overview"]), ["itemCount", "countedItems", "hasSales", "salesLines", "unknownLines", "problemItems",
                                                 "shortageItems", "belowMinimumItems", "isLocked", "isFullyCounted",
                                                 "hasNotableProblems", "hasSignificantProblems"])

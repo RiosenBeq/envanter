@@ -15,6 +15,12 @@ private enum RowFilter: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// "Zayi Ekle" penceresi isteği (kalem seçili gelebilir)
+private struct WasteRequest: Identifiable {
+    let id = UUID()
+    var itemID: String?
+}
+
 struct DailyView: View {
     @EnvironmentObject var store: AppStore
     @FocusState private var focus: CellID?
@@ -23,6 +29,10 @@ struct DailyView: View {
     @State private var filter: RowFilter = .all
     @State private var showNote = false
     @State private var fillMessage: String?
+    @State private var wasteRequest: WasteRequest?
+    /// Zayi hücresi açık olan satır (döküm penceresi)
+    @State private var wasteDetail: String?
+    @State private var showWasteList = false
 
     var body: some View {
         let date = store.selectedDate
@@ -54,7 +64,8 @@ struct DailyView: View {
                         ForEach(Array(rows.enumerated()), id: \.element.itemID) { idx, calc in
                             if let item = store.engine.itemsByID[calc.itemID] {
                                 DailyRow(order: order, calc: calc, item: item, date: date,
-                                         focus: $focus, detail: $detailItem)
+                                         focus: $focus, detail: $detailItem, wasteDetail: $wasteDetail,
+                                         onAddWaste: { openWaste($0) })
                                     .background(idx % 2 == 0 ? Color.clear : Color.primary.opacity(0.03))
                             }
                         }
@@ -78,6 +89,22 @@ struct DailyView: View {
             return true
         }
         .onChange(of: date) { _, _ in fillMessage = nil }
+        .sheet(item: $wasteRequest) { r in
+            WasteSheet(date: date, initialItemID: r.itemID, onSaved: { fillMessage = $0 + " (⌘Z ile geri alınır)" })
+                .environmentObject(store)
+        }
+    }
+
+    /// "Zayi Ekle" (açık döküm penceresi önce kapanır; sayfa penceresi onun ardından açılır)
+    private func openWaste(_ itemID: String?) {
+        let wasOpen = wasteDetail != nil || showWasteList
+        wasteDetail = nil
+        showWasteList = false
+        if wasOpen {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { wasteRequest = WasteRequest(itemID: itemID) }
+        } else {
+            wasteRequest = WasteRequest(itemID: itemID)
+        }
     }
 
     // MARK: Parçalar
@@ -101,6 +128,24 @@ struct DailyView: View {
                         Text("Sorunlu").foregroundStyle(.secondary)
                         Pill(text: "\(problems) kalem", color: problems == 0 ? Brand.ok : Brand.negative)
                     }
+                }
+                let wasteEntries = store.data.days[date]?.wasteLog ?? []
+                if !wasteEntries.isEmpty {
+                    // Günün elle girilen zayi kayıtları (silme düğmeleriyle)
+                    Button(WasteText.listLink(wasteEntries.count)) { showWasteList = true }
+                        .buttonStyle(.link)
+                        .popover(isPresented: $showWasteList, arrowEdge: .bottom) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("\(DateKey.short(date)) zayi kayıtları").font(.headline)
+                                WasteEntryList(date: date, entries: wasteEntries)
+                                if !locked {
+                                    Button { openWaste(nil) } label: { Label(WasteText.addTitle, systemImage: "plus") }
+                                        .buttonStyle(SoftButtonStyle())
+                                }
+                            }
+                            .padding(16).frame(width: 380)
+                            .environmentObject(store)
+                        }
                 }
             }
             .font(.callout)
@@ -128,6 +173,12 @@ struct DailyView: View {
             .buttonStyle(SoftButtonStyle(tint: note.isEmpty ? .primary : Brand.accent))
             .help(note.isEmpty ? "Güne not ekleyin, sayımı yapanı seçin" : note)
             .popover(isPresented: $showNote, arrowEdge: .bottom) { DayNotePopover(date: date).environmentObject(store) }
+
+            // Elle zayi: kapatılmış günde kapalı (nedeni ipucunda)
+            Button { openWaste(nil) } label: { Label(WasteText.addTitle, systemImage: "plus.circle") }
+                .buttonStyle(SoftButtonStyle())
+                .disabled(locked)
+                .help(locked ? WasteText.lockedNote : "Bozulan, yanan, düşen ya da iade edilen malı girin")
 
             if !locked {
                 // Satış raporu olmadan hangi kalemin hareketsiz olduğu bilinemez: düğme kapalı, nedeni ipucunda
@@ -262,7 +313,7 @@ private struct DayNotePopover: View {
                 .frame(width: 360, height: 110)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Brand.line))
                 .disabled(readOnly)
-            Text("Örn: \"Dondurucu arızası, 3 kg patates atıldı\" — Excel'e ve raporlara not olarak geçer.")
+            Text(String(WasteText.noteHint.prefix(1)).uppercased() + String(WasteText.noteHint.dropFirst()) + ". Not Excel'e ve raporlara geçer.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
@@ -296,6 +347,9 @@ private struct DailyRow: View {
     let date: String
     @FocusState.Binding var focus: CellID?
     @Binding var detail: String?
+    @Binding var wasteDetail: String?
+    /// Bu kalem seçili "Zayi Ekle"
+    var onAddWaste: (String) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -325,7 +379,7 @@ private struct DailyRow: View {
             cell(4, \.closing)
 
             calcText(calc.sold)
-            calcText(calc.waste)
+            wasteCell
             if calc.isBaseline {
                 baselinePill
             } else if let a = calc.actual {
@@ -353,6 +407,37 @@ private struct DailyRow: View {
                    placeholder: placeholder, maxFraction: item.maxFraction,
                    label: "\(item.name) \(Self.columnNames[min(col, Self.columnNames.count - 1)])", focus: $focus)
             .frame(width: W.input + 8)
+    }
+
+    /// Zayi: 0 ise düz metin; değilse ModPos ve elle girilen zayinin dökümünü açan düğme (elle girilen varsa turuncu nokta)
+    @ViewBuilder private var wasteCell: some View {
+        if calc.waste == 0 {
+            calcText(0)
+        } else {
+            Button { wasteDetail = item.id } label: {
+                HStack(spacing: 3) {
+                    if calc.manualWaste > 0 { Circle().fill(Brand.warn).frame(width: 5, height: 5) }
+                    Text(Fmt.number(calc.waste, maxFraction: item.maxFraction)).monospacedDigit().underline(pattern: .dot)
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(width: W.calc)
+            .help(wasteHelp)
+            .accessibilityLabel("\(item.name) zayi dökümü")
+            .popover(isPresented: Binding(get: { wasteDetail == item.id }, set: { if !$0 { wasteDetail = nil } }), arrowEdge: .bottom) {
+                WastePopover(itemID: item.id, date: date, onAdd: onAddWaste).environmentObject(store)
+            }
+        }
+    }
+
+    /// "Zayi 1,5 kg (ModPos 0,4 + elle 1,1)" (web `wasteTitle` ile aynı)
+    private var wasteHelp: String {
+        let f: (Double) -> String = { Fmt.number($0, maxFraction: item.maxFraction) }
+        let total = "\(f(calc.waste)) \(item.unit.lowercased())"
+        guard calc.manualWaste > 0 else { return "Zayi \(total) (ModPos) — dökümü görmek için tıklayın" }
+        let pos = calc.waste - calc.manualWaste
+        let parts = pos > 0 ? "ModPos \(f(pos)) + elle \(f(calc.manualWaste))" : "elle girildi"
+        return "Zayi \(total) (\(parts)) — dökümü görmek için tıklayın"
     }
 
     /// Giriş sütunlarının ekran okuyucudaki adları (sütun sırasıyla)
@@ -547,6 +632,15 @@ struct ItemDetailView: View {
                     if let m = item.minStock, m > 0 { line("Kritik seviye", f(m)) }
                 }
                 .font(.callout)
+                let manual = WasteLog.entries(store.data.days[date], itemID: itemID)
+                if !manual.isEmpty {
+                    Divider()
+                    Text(WasteText.manualSection).font(.subheadline.weight(.semibold))
+                    ForEach(manual) { e in
+                        Text(([WasteText.amount(e.qty, item: item), WasteText.detail(e)] + [WasteLog.time(e)].compactMap { $0 }).joined(separator: " · "))
+                            .font(.callout).monospacedDigit()
+                    }
+                }
                 if !carry.isEmpty {
                     Divider()
                     Text("Devreden günler").font(.subheadline.weight(.semibold))

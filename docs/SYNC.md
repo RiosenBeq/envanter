@@ -25,9 +25,20 @@ Bir **çalışma alanı** (workspace) bir şube/işletmedir. Verisi `AppData`'n�
 | `day:YYYY-MM-DD` | o günün kaydı | `DayRecord` |
 
 - JSON biçimi Swift `JSONEncoder` çıktısıyla aynıdır (`Persistence.encoder()`): `nil` alanlar yazılmaz, tarihler (`salesImportedAt`) ISO 8601 (`2026-08-01T10:15:00Z`), sayılar ondalık.
-- Boşalan gün (`DayRecord.isEmpty` ve kilitli değil) silinir: `deleted = true`, `body = {}`. **İstisna:** gövdede istemcinin bilmediği dolu bir alan varsa (ör. eski sürümlerin `shifts`/`otherLabor` alanları) gün silinmez; bilinen alanları temizlenmiş gövde yazılır. Katalog belgeleri (`items/products/settings/employees/orders`) silinmez. `DayRecord.isEmpty`: sayım, satış, not ve sayan yok.
+- Boşalan gün (`DayRecord.isEmpty` ve kilitli değil) silinir: `deleted = true`, `body = {}`. **İstisna:** gövdede istemcinin bilmediği dolu bir alan varsa (ör. eski sürümlerin `shifts`/`otherLabor` alanları) gün silinmez; bilinen alanları temizlenmiş gövde yazılır. Katalog belgeleri (`items/products/settings/employees/orders`) silinmez. `DayRecord.isEmpty`: sayım, satış, elle zayi, not ve sayan yok (boş zayi listesi `[]` boş sayılır).
 - Okurken bilinmeyen alanlar korunmalıdır (ileriki ya da eski sürüm alanları kaybolmasın). İstemci bir belgeyi değiştirirken yalnızca bildiği alanlara dokunur; bilmediği alanlar sunucudaki halinden aynen gider. Mac bunu her gönderimde `merge3(taban = sunucu gövdesinin Mac karşılığı, yerel, uzak = sunucunun ham gövdesi)` ile yapar; dizi elemanları burada `id`, `code` ya da `itemID` ile eşlenir (sipariş satırlarındaki bilinmeyen alanlar da kalır). Web, normalleştirirken bilmediği alanları olduğu gibi taşır.
 - **Kaldırılan alanlar** yeni istemciler için "bilinmeyen" alandır; bulutta durur, okunmaz, silinmez: `Item.unitCost/costHistory`, `OrderLine.unitPrice`, `SaleLine.amount`, `Employee.payType/rate/costFactor/defaultHours/payHistory`, `DayRecord.shifts/otherLabor`, `AppSettings.targetFoodCostPct/targetLaborPct/targetPrimeCostPct/priceAlertPct`. Eski Mac sürümleri yeni belgeleri okumaya devam eder (eksik alanlar varsayılanla dolar). Yeni sürümün aldığı yerel yedek eski sürümde açılmayabilir (ekip üyelerinde ücret alanı yok); bulut yolu geriye dönük uyumludur.
+
+### Elle zayi (`wasteLog`)
+
+Gün kaydının isteğe bağlı `wasteLog` alanı, "Zayi Ekle" ile elle girilen zayi kayıtlarıdır (bozulan, yanan, düşen, iade edilen mal; ModPos'taki ZAYİ ürünlerinden ayrı). Swift `WasteEntry` / `WasteLog` / `WasteText` (`Waste.swift`), TS `WasteEntry` (`model.ts`) ve `src/lib/engine/waste.ts`. Ortak test vektörleri `waste-vectors.json` (Mac `Tests/EnvanterCoreTests/Fixtures/`, web `test/fixtures/`, aynı içerik).
+
+- **Eleman:** `{ id, itemID, qty, reason, note?, by?, at? }`. `qty` kalemin envanter biriminde, > 0. `reason`: `spoiled` (Bozuldu / SKT geçti), `burnt` (Yandı / hatalı üretim), `dropped` (Düştü / döküldü), `returned` (Müşteri iadesi), `staffMeal` (Personel yemeği), `training` (Deneme / eğitim), `other` (Diğer); bilinmeyen değer korunur ve "Diğer" görünür. `note` en fazla 200 karakter, `by` kaydı giren kişi (varsayılan günün sayanı), `at` saniye hassasiyetinde UTC (`2026-10-13T19:40:00Z`).
+- **Okuma:** dizi değilse alan yok sayılır. Eleman `id` ya da `itemID` metin değilse veya `qty` sonlu ve > 0 değilse atılır; `reason` yoksa `other`. Elemanların bilinmeyen alanları korunur (web normalleştirirken taşır, Mac `merge3` tabanıyla).
+- **Yazma:** yeni kayıt dizinin sonuna eklenir; silme kimliğe göre yapılır. **Son kayıt silinince `[]` yazılır, anahtar silinmez** ve okurken `[]` olduğu gibi kalır: anahtar silinseydi `merge3` (taban `[e1]`, yerel yok, uzak `[e1, e2]`) yereli seçer ve başka cihazın eklediği `e2` kaybolurdu; `[]` ile kimliğe göre birleştirme `[e2]` verir (`merge3-vectors.json`). Günde başka veri yoksa boş gün olağan kuralla silinir (aynı anda başka cihazdan eklenen kayıt kaybolmaz, silinen kayıt geri gelebilir). İki istemcide de kapatılmış günde yapılmaz; personel açık güne yazabilir (gün belgesi).
+- **Hesap:** `ItemCalc.manualWaste` = günün o kaleme ait kayıtlarının toplamı (bilinmeyen kaleme ait ya da miktarı > 0 olmayan kayıtlar atlanır); `waste` = ModPos ZAYİ ürünleri (ya da Excel'den gelen Zaiyat) + `manualWaste`. Fark, dönem özeti, devreden açılış (günün hareketi), sipariş önerisinin satıştan tüketimi ve "Hareketsizleri Doldur" toplam zayiyi kullanır: elle zayisi olan kalem hareketsiz sayılmaz.
+- **Ekranlar:** Günlük Sayım'da "Zayi Ekle" (aranabilir kalem listesi, miktar, neden, not, kim; seçilen kalemin o günkü ModPos zayisi ve önceden elle girilenler gösterilir: aynı zayi iki kez girilmesin), Zayi hücresi dökümü açar (ModPos ZAYİ ürünleri + elle girilenler, düzenlenebilir günde silme), "Zayi kayıtları (N)". Dönem Excel'inde (`Exporter.history` / web `historySheets`) aralıkta kayıt varsa "Zayi Kayıtları" sayfası `[Tarih, Kalem, Miktar, Birim, Neden, Not, Kim]` (Notlar'dan sonra, Ekip'ten önce). Değişiklik geçmişi: "31.08.2026 zayi eklendi: Patates 1,5 kg (Bozuldu / SKT geçti)", "… zayi silindi: Patates 1,5 kg".
+- **Eski sürümler:** bu sürümden önceki Mac'ler alanı bilinmeyen alan olarak korur (yalnızca zayi kaydı olan gün de silinmez) ama Zayi'ye eklemez; o Mac'te Açılış, Fark ve dönem toplamları farklı görünür ve "Hareketsizleri Doldur" yalnızca elle zayisi olan kaleme kapanış = açılış yazabilir (yeni istemcilerde yanlış fazla stok). Mağaza bilgisayarları birlikte güncellenmelidir.
 
 ### Ekip (`employees`) ve eski sayım listesi
 
@@ -198,7 +209,7 @@ Girdiler JSON değerleridir: `base`, `local`, `remote`. Herhangi biri yok (`unde
    - Sonucu `undefined` olan eleman (bir tarafta silinmiş, diğerinde değişmemiş) çıkarılır.
 6. Diğer her durumda (sayı, metin, kimliksiz dizi, tip farkı) **yerel kazanır** → `local`.
 
-Eşitlik, JSON değerlerinin derin eşitliğidir: sayılar sayı olarak, nesnelerde anahtar sırası önemsiz. Test vektörleri `docs/merge3-vectors.json` dosyasındadır. İki istemci de bu vektörlerin tamamını geçmelidir.
+Eşitlik, JSON değerlerinin derin eşitliğidir: sayılar sayı olarak, nesnelerde anahtar sırası önemsiz. Boş dizi kimlikli dizi sayılır (silinen son eleman `[]` ile birleşir; bkz. §1 "Elle zayi"). Test vektörleri `docs/merge3-vectors.json` dosyasındadır (Mac `Tests/EnvanterCoreTests/Fixtures/` ve web `test/fixtures/` altında aynı içerik). İki istemci de bu vektörlerin tamamını geçmelidir.
 
 ## 4. Hesap motoru eşliği
 
@@ -212,7 +223,7 @@ EnvanterTool metrics --data-dir D --date 2026-08-31 --from 2026-08-01 --to 2026-
 `metrics.json` ve demo verisi (`envanter-verisi.json`) web deposunda test fikstürü olarak tutulur. TS motoru aynı sonuçları üretmelidir (±0,01 tolerans). Alanlar:
 
 - kök: `date, from, to, calc, overview, summary, period, daily, orders, trend, estimates, thresholds`
-- `calc[]`: `itemID, opening, openingIsAuto, incoming, transferIn, transferOut, closing, sold, waste, actual, diff, severity, belowMinimum, openingSource, openingBaseDate, carriedNet, carriedDays, isBaseline, openingJump`
+- `calc[]`: `itemID, opening, openingIsAuto, incoming, transferIn, transferOut, closing, sold, waste, actual, diff, severity, belowMinimum, openingSource, openingBaseDate, carriedNet, carriedDays, isBaseline, openingJump, manualWaste`
 - `overview`: `itemCount, countedItems, hasSales, salesLines, unknownLines, problemItems, shortageItems, belowMinimumItems, isLocked, isFullyCounted, hasNotableProblems, hasSignificantProblems`
 - `summary[]`: `itemID, daysCounted, firstOpening, lastClosing, incoming, transferIn, transferOut, sold, waste, actual, diff, shortageQty, shortageDays, openingAdjust`
 - `period`: `days, countedDays, salesDays`
@@ -222,13 +233,13 @@ EnvanterTool metrics --data-dir D --date 2026-08-31 --from 2026-08-01 --to 2026-
 - `estimates[]` (`--date` günü, aktif kalemler, dayanağı olanlar): `itemID, stock, baseDate, counted, below`
 - `thresholds[]` (`--date` dahil son 28 gün): `itemID, tolerance, countedDays, minStock, dailyUsage, usageDays`
 
-Kök yalnızca yeni alanlarla genişletilir; mevcut alanların adı değişmez. Demo verisi her günü saydığından yeni kurallar eski sonuçları değiştirmez (fikstürlerde yalnızca yeni alanlar eklendi).
+Kök yalnızca yeni alanlarla genişletilir; mevcut alanların adı değişmez. Demo verisi her günü saydığından devir kuralları eski sonuçları değiştirmez. Demo verisinde 26.08'de (Dondurucu arızası) Patates için elle 2 kg zayi vardır (`demo-zayi-1`): o günün ve dönem özetinin Patates zayisi ve farkı buna göre.
 
 ### Açılış devri (sayılmayan günler) ve ilk sayım
 
 Swift `Engine` ve TS `Engine` aynı kuralı uygular; ortak test vektörleri `carry-vectors.json` (Mac `Tests/EnvanterCoreTests/Fixtures/`, web `test/fixtures/`, aynı içerik). Veri değişmez: hepsi türetilmiş değerdir.
 
-- **Günün hareketi:** `net(gün)[kalem] = Gelen + Gelen transfer − Giden transfer − Satılan − Zayi`. Satılan / Zayi `calc` ile aynı kaynaktan (satış dökümü; döküm yoksa Excel'den gelen `legacySold/legacyWaste`).
+- **Günün hareketi:** `net(gün)[kalem] = Gelen + Gelen transfer − Giden transfer − Satılan − Zayi`. Satılan / Zayi `calc` ile aynı kaynaktan (satış dökümü; döküm yoksa Excel'den gelen `legacySold/legacyWaste`; Zayi'ye elle girilen zayi eklenir).
 - **Dayanak:** `D` gününden önceki en yakın gün; kapanışı varsa (`closing`) o kapanış, kapanışı yok ama elle açılışı varsa (`manualOpening`) o açılış. Dayanak `D`'den **31 günden** (`Engine.carryMaxDays` / `CARRY_MAX_DAYS`) eskiyse geçersizdir.
 - **Tahmini açılış:** `dayanak değeri + Σ net(d)` (dayanak < d < D; elle açılışta dayanak gününün kendi hareketi de eklenir). `carriedDays` = net hareketi sıfırdan farklı yürünen gün sayısı. Sınırlanmaz: eksi tahmin girilmemiş Gelen işaretidir.
 - **Satır:** `opening = elle açılış ?? tahmin ?? 0`. `openingSource`: `manual` (elle), `closing` (tahmin var, `carriedDays = 0` ve dayanak kapanış), `carried` (aksi halde), `none` (dayanak yok ya da eski). `openingBaseDate` dayanağın günü (eskiyse de yazılır), `carriedNet/carriedDays` yalnızca `closing/carried` iken dolu. `openingIsAuto = elle açılış yok`.
@@ -237,7 +248,7 @@ Swift `Engine` ve TS `Engine` aynı kuralı uygular; ortak test vektörleri `car
 - **Dönem özeti:** sayılmış (ilk sayım hariç) günlere ek olarak, dönem içinde kendisinden sonra gelen ilk sayımın **geçerli dayanağından** sonraki sayılmayan günler eklenir: gelen, transfer, satılan, zayi toplanır ve fiili tüketime `satılan + zayi` eklenir (`Σfark = Σsatılan + Σzayi − Σfiili` korunur). Geçerli dayanak: sayımın açılışı `closing/carried` ise `openingBaseDate`, elle (`manual`) ise 31 gün içindeki tahminin dayanağı; `none` (ilk sayım) devralmaz. Yani hareketleri birbirini götüren (net 0) günler ve elle açılışlı sayımdan önceki günler de girer (açılış farkı `openingAdjust`'ta); dayanak 31 günden eskiyse girmez. `firstOpening` ilk sayılan ya da devredilen günün açılışıdır; `daysCounted`, `daily`, fazla çıkış alanları yalnızca sayılan günlerdendir. `openingAdjust` = dönemdeki açılış sıçramalarının toplamı.
 - **Sipariş önerisi:** `estimate = stockEstimate(kalem, D)` (aşağıda); `stock` = o gün sayıldıysa kapanış, değilse tahmin, sıfırın altına inmez (elle açılışa dayanan tahmin de). Dayanak yok ya da eskiyse `estimate` ve `stock` boş (stok bilinmiyor). `stockDate/countedStock` son sayımdır (değişmedi). "Mevcut stok" hücresi: değer ("18", "≈ 25", "—"), not ("sayım 28.08 + hareket", "açılış 02.08", "sayım 01.06 · 62 gün önce") ve ipucu (Stok Kalemleri'ndeki tahmin metni + "≈ N"; eskiyse "Son sayım N gün önce (…); stok bilinmiyor, öneri stok 0 kabul edilerek hesaplanır"). Günlük tüketim örnekleri değişmedi (sayılan günün fiilisi; ilk sayım örnek değildir): seyrek sayılan kalemde fiili artık yalnızca o günü kapsar.
 - **Tahmini stok:** `stockEstimate(kalem, D)`: `D`'de sayıldıysa kapanış (`counted`), değilse `tahmini açılış(D + 1)` (sınırlanmaz); dayanak yoksa yok. `below = minStock > 0 && stock < minStock`. Genel Bakış "Kritik seviye altı" kartı: sayım varsa sayılanlar ("+N tahmini (sayılmayan)"), yoksa tahmini altta kalanlar ("tahmini · sayım girilmedi").
-- **Hareketsizleri Doldur:** kapatılmış günde (`locked`) ve günün satış verisi yokken (`noSales`) yapılmaz. Yalnızca sayılmamış, hiç hareketi olmayan (gelen, transfer, satış, zayi), açılışı > 0 ve açılışı `closing` ya da `manual` olan satırlara `kapanış = açılış` yazılır; tahmini (devreden) açılış sayım yerine geçmez.
+- **Hareketsizleri Doldur:** kapatılmış günde (`locked`) ve günün satış verisi yokken (`noSales`) yapılmaz. Yalnızca sayılmamış, hiç hareketi olmayan (gelen, transfer, satış, zayi — elle girilen zayi dahil), açılışı > 0 ve açılışı `closing` ya da `manual` olan satırlara `kapanış = açılış` yazılır; tahmini (devreden) açılış sayım yerine geçmez.
 - **Metinler** (açılış ipucu, "≈ 25", "İlk sayım", devreden günler, tahmini stok, Sipariş'teki mevcut stok) iki istemcide aynıdır: Swift `OpeningText` / `StockEstimateText` / `OrderStockText`, TS `src/lib/engine/stockText.ts`.
 
 ### Eşik önerileri ve kurulum listesi

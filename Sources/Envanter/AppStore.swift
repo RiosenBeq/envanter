@@ -889,11 +889,9 @@ final class AppStore: ObservableObject {
 
     // MARK: - Dışa / içe aktarma
 
-    /// "NextGen Envanter – Kadıköy – 01.08.2026.xlsx"
+    /// "NextGen Envanter – Kadıköy – 01.08.2026.xlsx" (web paneliyle aynı kural: Exporter.fileName)
     private func fileName(_ base: String, ext: String = "xlsx") -> String {
-        let branch = settings.branchName.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        return ([Brand.appName] + (branch.isEmpty ? [] : [branch]) + [base]).joined(separator: " – ") + ".\(ext)"
+        Exporter.fileName(branch: settings.branchName, base: base, ext: ext)
     }
 
     func exportDayExcel() {

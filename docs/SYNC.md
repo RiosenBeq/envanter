@@ -75,6 +75,20 @@ Satış raporu yalnızca ekranda okunur; gün belgesine yalnızca birleştirilmi
 - **Uyarılar (sıra):** ① aynı rapor (birleştirilmiş kod → adet kümesi aynı) seçili günden ±10 gün içindeki başka bir güne aktarılmışsa (en yakın gün, eşitlikte önceki) — onay ister; ② tek günlük raporun dönemi başka bir günün `salesPeriod`'u ile aynıysa; ③ son 14 günde en az 5 satışlı gün varsa toplam adet ortancanın 3 katından fazla ya da %30'undan azsa; ④ tek günlük raporun tarihi seçili günden farklıysa (rapor seçili günden bir önceki günün ise bilgi "Sayım ertesi sabah yapılıyorsa bu normaldir"; seçili günden sonraki bir günün ya da daha eski bir günün ise gün farkıyla uyarı); ⑤ okunamayan satırlar (kodlu satırların %20'sini aşarsa onay ister). Onay gereken uyarıda "Yine de bu güne aktar" işaretlenmeden aktarılmaz; gün değişince onay yeniden istenir.
 - Test vektörleri: Mac `Tests/EnvanterCoreTests/Fixtures/sales-vectors.json` ve `salesimport-vectors.json`, web `test/fixtures/` altında aynı adlarla (aynı içerik).
 
+### Tanımları kopyalama ve hazır tanımlar
+
+Tanımlar = stok kalemleri (`items`), reçeteler (`products`) ve sipariş ayarları (`settings.orderLookbackDays`, `orderCoverDays`). Şube adı, eski sayan listesi (`settings.staff`), günler, ekip ve siparişler **hiçbir zaman** kopyalanmaz (Mac'in boş şubeye "Yalnızca tanımları kopyala"sı da böyledir). Kurallar web `src/lib/definitions.ts` (`copyDefinitions`):
+
+- **Eksikleri ekle (`merge`):** kaynağın hedefte kimliği (`id`) olmayan kalemleri ve kodu (`code`) olmayan reçeteleri, kaynak sırasıyla sona eklenir; hedefteki mevcut değerler kalır. **Tümünü değiştir (`replace`):** hedefin kalemleri / reçeteleri kaynağınkilerin kopyası olur.
+- Reçeteler kalemsiz kopyalanırsa kopyalanan reçetelerde kullanılan ve hedefte olmayan kalemler de eklenir.
+- Yazma: değişen belgeler (`items`, `products`, `settings`) tek seferde (`applyMany`) ve geri alınabilir yazılır. Yeni şubede sıra: kaynak okunur (okunamazsa şube açılmaz) → şube açılır → ilk verisi yüklenince yazılır; `settings.branchName` boşsa yeni şubenin adı olur. Şube açıldıktan sonraki hata "Şube açıldı ama tanımlar kopyalanamadı: …" ile bildirilir.
+- Yetki: hedefte tanım yazabilen rol (patron, müdür); kaynakta üyelik yeter (yalnızca okunur).
+- **Hazır tanımlar:** Mac `AppData.seeded()` (`SeedData.swift`) = web `src/lib/seed.ts` (`test/fixtures/seed-data.json` ile birebir; yalnızca gerektiğinde yüklenir). "Eksik varsayılanları geri ekle" (Mac `AppStore.restoreMissingDefaults`) = hazır tanımlardan `merge` (sipariş ayarları hariç). Hazır kalemlerde kritik seviye ve tolerans yoktur.
+
+### Excel dışa aktarımı
+
+Web paneli Mac'in `Exporter`'ıyla aynı dosyaları üretir: dönem kitabı (`history`), **sayım formu** (`countSheet`: "Sayım Formu" sayfası; `<şube> · Sayım GG.AA.YYYY`, Birim, Açılış, Gelen, Gelen/Giden Transfer, Kapanış (sayım), Not; aktif kalemler Stok Kalemleri sırasıyla, Açılış motorun açılışı), **gün kitabı** (`day`: Envanter + Satışlar; durum "Reçeteli / Stok etkisi yok / Reçete tanımsız") ve **sipariş önerisi** (`orders`: durum "Sipariş ver / Yeterli"). Dosya adı `Exporter.fileName` / web `exportFileName`: `NextGen Envanter – <şube> – <ad>.xlsx` (şube adı kırpılır; `/`, `:` ve ters eğik çizgi yerine `-`; boşsa atlanır). Web'de ayrıca yazdırılabilir sayım formu: `/sayim/form?tarih=YYYY-MM-DD` (A4; Gelen ve Kapanış boş kutular). Test vektörleri (sayfa adları, başlıklar, sütun genişlikleri, satış/sipariş durumu, dosya adları): Mac `Tests/EnvanterCoreTests/Fixtures/export-vectors.json`, web `test/fixtures/export-vectors.json` (aynı içerik).
+
 ## 2. Supabase şeması
 
 Tablolar `public` şemasında `envanter_` önekiyle durur. Migration dosyası `envantersite/supabase/migrations/20261009120000_envanter.sql`'dir. Supabase GitHub entegrasyonu bu dosyayı `main`'e birleştirmede `postgres` rolüyle, tek işlem (transaction) içinde otomatik uygular. Dosya idempotenttir; tekrar uygulanması zarar vermez.
@@ -222,6 +236,13 @@ Girdiler JSON değerleridir: `base`, `local`, `remote`. Herhangi biri yok (`unde
 Sipariş satırları (`lines`) `id` ya da `code` taşımadığı için ortak sözleşmede kimliksiz dizidir: aynı sipariş iki yerde aynı anda düzenlenirse web'de satırlar bütün olarak yerel kopyadan gelir (kural 6). Mac, gönderimde bilinmeyen alanları korumak için satırları ayrıca `itemID` ile eşler (§1); sonuç kalemleri yine yerel listedir. Düzenleme ve teslim alma denetimleri (`notOpen`, `alreadyReceiving`) istemcinin o anki verisiyle yapılır.
 
 Eşitlik, JSON değerlerinin derin eşitliğidir: sayılar sayı olarak, nesnelerde anahtar sırası önemsiz. Test vektörleri `docs/merge3-vectors.json` dosyasındadır. İki istemci de bu vektörlerin tamamını geçmelidir.
+
+### Geri alma
+
+Mac (`UndoManager`, Düzen → Geri Al) ve web (bildirimdeki "Geri al", Ctrl/⌘+Z; yineleme Ctrl/⌘+Shift+Z, Ctrl+Y) aynı kuralla geri alır: Swift `DocCodec.undoing(keys, old, new, current)` = web `undoing` (`src/lib/store/undo.ts`). İşlemin değiştirdiği her belge için: işlemden sonra belge değişmediyse (`new == current`) eski hali birebir gelir (sıra dahil); değiştiyse `merge3(taban = new, yerel = current, uzak = old)` — işlemin değiştirdiği alanlar eski haline döner, sonradan (ör. Mac'ten ya da başka bir panelden) gelen değişiklikler korunur, aynı alan iki tarafta da değiştiyse sonradan gelen kalır. Yineleme aynı işlevle `old` ile `new` yer değiştirerek yapılır. Sonuç olağan yazma gibi gönderilir (yeni `rev`, değişiklik geçmişinde yeni satır).
+
+- Web: şube başına en çok 30 adım; yalnızca adı verilen yerel işlemler kaydedilir (sunucudan gelenler ve yedek yükleme kaydedilmez). Aynı sayım hücresine 2 sn içinde art arda yazılanlar tek adımdır. Yığın şube değişince, çıkışta ve yedek yüklenince temizlenir. Geri alma da yetki ve kapatılmış gün kuralına uyar: personel sonradan kapatılmış güne geri alamaz; patron / müdür önce kilidi açmalıdır.
+- Test vektörleri: Mac `Tests/EnvanterCoreTests/Fixtures/undo-vectors.json`, web `test/fixtures/undo-vectors.json` (aynı içerik; gövdeler belge anahtarına göre, `expected`'da `null` = belge yok).
 
 ## 4. Hesap motoru eşliği
 

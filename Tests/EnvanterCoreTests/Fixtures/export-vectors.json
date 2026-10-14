@@ -1,0 +1,201 @@
+{
+  "comment": "Sayım formu, gün kitabı ve sipariş önerisi Excel'inin sayfa adı, başlıkları ve sütun genişlikleri; satış durumu metinleri ve dosya adları. Mac: Exporter (Tests/EnvanterCoreTests/ExportVectorTests.swift), web: src/components/people/reports/excel.ts (test/people/exportVectors.test.ts); aynı dosya.",
+  "date": "2026-08-31",
+  "branch": "Tuzla Marina",
+  "countSheet": {
+    "name": "Sayım Formu",
+    "header": [
+      "Tuzla Marina · Sayım 31.08.2026",
+      "Birim",
+      "Açılış",
+      "Gelen",
+      "Gelen Transfer (+)",
+      "Giden Transfer (-)",
+      "Kapanış (sayım)",
+      "Not"
+    ],
+    "widths": [
+      30,
+      8,
+      11,
+      11,
+      14,
+      14,
+      16,
+      30
+    ]
+  },
+  "countSheetTitleWithoutBranch": "Sayım 31.08.2026",
+  "daySheets": [
+    {
+      "name": "Envanter",
+      "header": [
+        "Tarih",
+        "Ürün",
+        "Açılış",
+        "Gelen",
+        "Gelen Transfer (+)",
+        "Giden Transfer (-)",
+        "Kapanış",
+        "Satılan",
+        "Zaiyat",
+        "Fiili Tüketim",
+        "Fark"
+      ],
+      "widths": [
+        12,
+        28,
+        11,
+        11,
+        14,
+        14,
+        11,
+        11,
+        11,
+        13,
+        11
+      ]
+    },
+    {
+      "name": "Satışlar",
+      "header": [
+        "Kodu",
+        "Ürün",
+        "Adedi",
+        "Durum"
+      ],
+      "widths": [
+        10,
+        40,
+        10,
+        18
+      ]
+    }
+  ],
+  "orderSheet": {
+    "name": "Sipariş",
+    "header": [
+      "Ürün (31.08.2026)",
+      "Mevcut Stok (tahmini)",
+      "Son Sayım",
+      "Sayım Tarihi",
+      "Siparişte",
+      "Günlük Tüketim",
+      "Kaç Gün Yeter",
+      "Kritik Seviye",
+      "Hedef Stok",
+      "Durum",
+      "Önerilen Sipariş"
+    ],
+    "widths": [
+      28,
+      14,
+      11,
+      12,
+      10,
+      13,
+      12,
+      12,
+      11,
+      11,
+      14
+    ]
+  },
+  "sales": {
+    "items": [
+      {
+        "id": "g90",
+        "name": "90 Gr",
+        "unit": "Adet",
+        "recipeUnit": "adet",
+        "factor": 1,
+        "active": true
+      }
+    ],
+    "products": [
+      {
+        "code": "11100",
+        "name": "MEDIUM BURGER",
+        "category": "BURGERLER",
+        "amounts": {
+          "g90": 1
+        }
+      },
+      {
+        "code": "19991",
+        "name": "KAÇMAZ MENÜ",
+        "category": "MENÜLER",
+        "amounts": {}
+      }
+    ],
+    "sales": [
+      {
+        "code": "11100",
+        "name": "MEDIUM BURGER",
+        "qty": 12
+      },
+      {
+        "code": "19991",
+        "name": "KAÇMAZ MENÜ",
+        "qty": 2
+      },
+      {
+        "code": "55555",
+        "name": "YENİ ÜRÜN",
+        "qty": 1.5
+      }
+    ],
+    "rows": [
+      [
+        "11100",
+        "MEDIUM BURGER",
+        12,
+        "Reçeteli"
+      ],
+      [
+        "19991",
+        "KAÇMAZ MENÜ",
+        2,
+        "Stok etkisi yok"
+      ],
+      [
+        "55555",
+        "YENİ ÜRÜN",
+        1.5,
+        "Reçete tanımsız"
+      ]
+    ]
+  },
+  "orderStatus": {
+    "order": "Sipariş ver",
+    "enough": "Yeterli"
+  },
+  "fileNames": [
+    {
+      "branch": "Kadıköy",
+      "base": "Sayım Formu 31.08.2026",
+      "expected": "NextGen Envanter – Kadıköy – Sayım Formu 31.08.2026.xlsx"
+    },
+    {
+      "branch": "Burger Yiyelim · Tuzla Marina",
+      "base": "31.08.2026",
+      "expected": "NextGen Envanter – Burger Yiyelim · Tuzla Marina – 31.08.2026.xlsx"
+    },
+    {
+      "branch": "  A/B:C\\D  ",
+      "base": "Sipariş 31.08.2026",
+      "expected": "NextGen Envanter – A-B-C-D – Sipariş 31.08.2026.xlsx"
+    },
+    {
+      "branch": "",
+      "base": "01.08.2026 - 31.08.2026",
+      "expected": "NextGen Envanter – 01.08.2026 - 31.08.2026.xlsx"
+    },
+    {
+      "branch": "Kadıköy",
+      "base": "Yedek 31.08.2026",
+      "ext": "json",
+      "expected": "NextGen Envanter – Kadıköy – Yedek 31.08.2026.json"
+    }
+  ]
+}

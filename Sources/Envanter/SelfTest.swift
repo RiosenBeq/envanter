@@ -326,6 +326,9 @@ enum SelfTest {
         } else { check(false, "geçmiş Excel'i okunabilir") }
         check((try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: d2)))?.first?.name == "Sayım Formu", "sayım formu")
         check((try? XlsxReader.read(data: Exporter.day(engine: store.engine, date: d1)))?.count == 2, "gün Excel'i 2 sayfa")
+        // Web paneliyle aynı dosya adı kuralı (Fixtures/export-vectors.json)
+        check(Exporter.fileName(branch: " A/B:C ", base: "Sayım Formu 01.08.2026") == "NextGen Envanter – A-B-C – Sayım Formu 01.08.2026.xlsx",
+              "dışa aktarım dosya adı (web ile aynı)")
         if let o = try? XlsxReader.read(data: Exporter.orders(store.orderSuggestions(date: d2), date: d2)) {
             let cells = o.flatMap { $0.rows.values.flatMap { $0.values } }
             check(o.first?.name == "Sipariş" && !cells.contains { $0.contains("₺") || $0.contains("Tutar") }, "sipariş Excel'inde tutar sütunu yok")

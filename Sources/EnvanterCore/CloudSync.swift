@@ -176,24 +176,17 @@ public enum DayLockAction: Equatable, Sendable {
     /// Menü öğesi / düğme etkin mi
     public var isAvailable: Bool { self != .nothingCounted && self != .unlockNotAllowed }
 
-    /// Personelin gün kapatma onayı
-    public static func confirmTitle(date: String) -> String { "\(DateKey.short(date)) günü kapatılsın mı?" }
-    public static let confirmMessage = "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+    /// Gün kapatma onayının başlığı (`DayCloseCheck.title`)
+    public static func confirmTitle(date: String) -> String { DayCloseCheck.title(date: date) }
+    public static let confirmMessage = DayCloseCheck.staffRule
 
-    /// Onay penceresinin metni: günün sayım ve satış durumu (kapatmadan önce eksik kalan görülsün), sonra kural.
+    /// Personelin onay penceresinin metni (`DayCloseCheck` üzerine): günün sayım ve satış durumu, sonra kural.
     /// - Parameters:
     ///   - counted, total: kapanışı girilmiş ve toplam aktif kalem sayısı
     ///   - hasSales: satış raporu (ya da Excel'den gelen satış) var mı
     public static func confirmDetail(counted: Int, total: Int, hasSales: Bool) -> String {
-        var lines: [String] = []
-        if total > 0 {
-            lines.append(counted >= total
-                         ? "Sayım tamam: \(total) / \(total) kalem sayıldı."
-                         : "Sayım eksik: \(counted) / \(total) kalem sayıldı, \(total - counted) kalem sayılmadı.")
-        }
-        lines.append(hasSales ? "Satış raporu aktarıldı."
-                              : "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır.")
-        return lines.joined(separator: "\n") + "\n\n" + confirmMessage
+        DayCloseCheck.evaluate(counted: counted, total: total, hasSales: hasSales, unknownLines: 0, problemItems: 0,
+                               canChangeLockedDay: false).message
     }
 
     /// Hiç sayım girilmemiş gün kapatılamaz: düğmenin yanında gösterilen açıklama

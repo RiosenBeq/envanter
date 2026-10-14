@@ -65,6 +65,32 @@ Patron web panelinde (Yönetim → Kullanıcılar → **Bilgisayar Bağla**) bir
 - **Ekranlar:** `isDeviceAccount(e-posta)` = boşluklar atılıp küçük harfe çevrildikten sonra `^pc-[2-9a-hjkmnp-z]{6}@envanter\.local$`. Bu hesaplar Kullanıcılar listesinde kişilerden ayrı, "Bağlı bilgisayarlar" bölümünde gösterilir; "Şifre belirle" sunulmaz.
 - Test vektörleri: Mac `Tests/EnvanterCoreTests/Fixtures/pair-vectors.json`, web `test/fixtures/pair-vectors.json` (aynı içerik).
 
+### Paylaşılan bilgisayarda çalışan
+
+Bağlantı koduyla bağlanan mağaza bilgisayarı cihaz hesabıyla (`pc-…`) yazar; değişiklik geçmişinde kişi görünmez. Swift `SessionWorker` (`Worker.swift`), TS `src/lib/worker.ts`; ortak test vektörleri `worker-vectors.json` (Mac `Tests/EnvanterCoreTests/Fixtures/`, web `test/fixtures/`, aynı içerik). Veri modeli ve sunucu değişmez.
+
+- **Soru:** cihaz hesabı (`isDeviceAccount`) şubeyi açınca oturumda bir kez "Şu an kim çalışıyor?": aktif ekip üyelerinin adları (liste sırasıyla; boş ad ve `nameKey`'i aynı olan ikinci ad atlanır) ve "Atla". Yan menüdeki ad ("Değiştir") pencereyi yeniden açar. Seçim yalnızca o bilgisayarda tutulur ve eşitlenmez: Mac'te uygulama açık kaldıkça (bellekte), web / Windows'ta tarayıcı oturumunda (`sessionStorage` `envanter.worker.<kullanıcı kimliği>`, `""` = atlandı). Ad, boşlukları kırpılarak kullanılır; boşsa seçilmemiş sayılır.
+- **Değişiklik geçmişi:** özet boş değilse sonuna `" · " + ad` eklenir: "09.10.2026 sayımı: 90 Gr kapanış 120 → 110 · Murat A." (`p_summary` yine 500 karakterde kırpılır).
+- **Sayan:** bir kalemin kapanışı girilince ya da değişince günün `countedBy`'ı boşsa çalışan yazılır; doluysa değişmez (aynı işlemde, ayrı geri alma adımı yok).
+- **Zayi Ekle "Kim" varsayılanı:** günün sayanı, yoksa çalışan, yoksa bu hesaba bağlı ekip üyesi (cihaz hesabının bağlı üyesi aranmaz), yoksa boş.
+
+### Günü kapatma: kontrol listesi, kapatılmamış günler, eski gün uyarısı
+
+Swift `DayCloseCheck` / `UnclosedDays` / `OldDayWarning` (`DayClose.swift`), TS `src/lib/engine/dayClose.ts`; ortak test vektörleri `dayclose-vectors.json`. Kapatma yine yalnızca `"locked": true` yazar; sunucu kuralı (aşağıda "Kapatılmış gün") değişmedi.
+
+- **Kontrol listesi** (`Engine.overview` değerlerinden): sırayla `counted` (aktif kalem varsa: "Sayım tamam: 21 / 21 kalem sayıldı." ✓ ya da "Sayım eksik: 18 / 21 kalem sayıldı, 3 kalem sayılmadı." ⚠), `sales` ("Satış raporu aktarıldı." ✓ ya da "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır." ⚠), `unknown` (yalnızca varsa: "2 satış ürününün reçetesi tanımlı değil: stoğa yansımadı." ⚠; personelde sonuna "Reçetesini patron veya müdür tanımlar."), `problems` (yalnızca varsa: "Tolerans dışı fark: 3 kalem." — bilgi, onay gerektirmez).
+- **Onay:** `needsConfirm = personel || sayılan < toplam || satış yok || tanımsız reçete > 0`. Gerekmezse gün hemen kapanır ("13.10.2026 günü kapatıldı"). Pencere: "13.10.2026 günü kapatılsın mı?", satırlar, kural (personel "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir.", patron / müdür "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."). Düğme uyarı yoksa "Günü Kapat", varsa "Yine de Kapat"; sayılmayan kalem varsa "Sayılmayanları Göster" (Günlük Sayım, Sayılmayan filtresi; gün açık kalır), web'de satış raporu yoksa "Satış raporu aktar". Mac'in metin penceresi satırları ✓ / ⚠ / • ile yazar; onay gerekiyorsa menüde "Günü Kapat…".
+- **Kapatılmamış günler:** seçili gün dahil son 60 günde verisi olan, en az bir kalemi sayılmış ve kapatılmamış günler, yeniden eskiye, her biri kontrol listesiyle. Mac: Genel Bakış'taki "N sayılmış gün kapatılmadı" ya da Gün → Kapatılmamış Günler…; web: Genel Bakış → Bu ay → Kapatılmamış gün. Patron / müdür seçtiklerini "Seçilenleri Kapat" ile tek işlemde (tek geri alma adımı) kapatır; uyarısı olmayan günler önceden seçilidir; kapatılmış ya da sayımı olmayan gün atlanır ("3 gün kapatıldı"). Personel listeyi görür, günü açıp tek tek kapatır.
+- **Eski gün uyarısı:** personel hesabı bugünden 7 günden eski (`bugün − gün > 7`) bir gün kaydını değiştirince uyarılır, yazma engellenmez: "7 günden eski bir güne giriş yapıyorsunuz" / "02.08.2026 günü seçili. Doğru günü seçtiğinizden emin olun; bu uyarı oturum başına bir kez gösterilir." (birden çok gün yazıldıysa en eskisi). Oturum: Mac'te uygulama açık kaldıkça, web'de tarayıcı oturumu (`sessionStorage` `envanter.oldDayWarned`).
+
+### Sayım girişi: kalem arama ve toplayarak giriş
+
+Swift `Fmt.parseCountExpression` (`Format.swift`), `ItemSearch` / `CountEntryText` (`CountEntry.swift`); TS `parseCountExpression` (`src/lib/format.ts`), `src/lib/countEntry.ts`. Ortak test vektörleri `count-vectors.json`; `format-vectors.json`'ın `countExpression` bölümü Swift'in ürettiği çıktıdır.
+
+- **Toplayarak giriş** (Günlük Sayım'ın sayı hücreleri; web'de teslim alma ve Zayi Ekle miktarı da): boşluklar atılır; yalnızca `0-9 . , + x X * ×`; `+` ile en çok 20 terim, terimde en çok bir çarpma (`x`, `X`, `*`, `×`); boş terim geçersiz. Sayılar adet kalemde `parseQuantity` ("1.200" → 1200), kg kalemde `parse` ("1.200" → 1,2; "2,5" → 2,5) ile okunur. Sonuç `clean` ile yuvarlanır; sonlu, ≥ 0 ve < 10¹² olmalı. Eksi, bölme, parantez geçersizdir (hücre eski değerinde kalır). "12+8+5" → 25, "3x24+7" → 79, kg "2,5+1,25" → 3,75. İşlem kaydedilince ipucu ve ekran okuyucu "12+8+5 = 25" der (`countExpressionText`). Ayrı "+" düğmesi yoktur.
+- **Kalem arama** (Günlük Sayım; Mac ⌘F ya da Gün → Kalem Ara, web `/` ya da Ctrl/⌘+F): arama ve ad boşlukları kırpılıp ASCII'ye katlanır (`TextFold.ascii` / `foldAscii`); kalem adı ya da kimliği aramayı içeriyorsa eşleşir; Tümü / Sayılmayan / Sorunlu filtresiyle birlikte uygulanır. Enter görünen ilk kalemin kapanışına gider, Esc aramayı temizler. Eşleşme yoksa "“pat” ile eşleşen kalem yok" ve "Aramayı temizle". Mac Stok Kalemleri'nde de aynı arama vardır (ararken sürükleyerek sıralama kapalı).
+- **Dokunmatik (web):** kaba işaretçili (`pointer: coarse`) cihazlarda giriş alanlarının yazısı 16 px'tir (iOS odaklanınca yakınlaştırmasın); sayım hücrelerinde `enterkeyhint="next"`.
+
 ## 2. Supabase şeması
 
 Tablolar `public` şemasında `envanter_` önekiyle durur. Migration dosyası `envantersite/supabase/migrations/20261009120000_envanter.sql`'dir. Supabase GitHub entegrasyonu bu dosyayı `main`'e birleştirmede `postgres` rolüyle, tek işlem (transaction) içinde otomatik uygular. Dosya idempotenttir; tekrar uygulanması zarar vermez.

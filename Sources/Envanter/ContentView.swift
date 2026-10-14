@@ -46,16 +46,30 @@ struct ContentView: View {
                presenting: store.alert) { _ in
             Button("Tamam", role: .cancel) {}
         } message: { a in Text(a.message) }
-        // Personel hesabıyla gün kapatma onayı (Gün menüsü ⌘L ve Günlük Sayım düğmesi): günün sayım ve satış durumu
-        // da yazılır, eksik sayımla kapatmadan önce görülsün (kilidi personel açamaz)
-        .confirmationDialog(store.pendingDayClose.map { DayLockAction.confirmTitle(date: $0) } ?? "",
+        // Gün kapatma onayı (Gün menüsü ⌘L, Günlük Sayım düğmesi, Bugün kartı): kontrol listesi (✓ / ⚠ / •: sayım, satış
+        // raporu, tanımsız reçete, tolerans dışı fark) ve kilit kuralı. Personel her zaman, patron / müdür eksik varsa görür;
+        // eksik varsa düğme "Yine de Kapat" (web paneliyle aynı kural: DayCloseCheck)
+        .confirmationDialog(store.pendingDayClose.map { DayCloseCheck.title(date: $0) } ?? "",
                             isPresented: Binding(get: { store.pendingDayClose != nil }, set: { if !$0 { store.pendingDayClose = nil } }),
                             titleVisibility: .visible, presenting: store.pendingDayClose) { date in
-            Button("Günü Kapat") { store.confirmDayClose(date) }
+            let check = store.dayCloseCheck(date)
+            Button(check.confirmLabel) { store.confirmDayClose(date) }
+            if check.hasUncounted {
+                Button(DayCloseCheck.showUncountedLabel) { store.showUncounted(date) }
+            }
             Button("Vazgeç", role: .cancel) { store.pendingDayClose = nil }
         } message: { date in
             Text(store.dayCloseConfirmMessage(date))
         }
+        // Genel Bakış → "N gün kapatılmadı" ve Gün menüsü: kapatılmamış günler (patron / müdür topluca kapatır)
+        .sheet(isPresented: $store.showUnclosedDays) {
+            UnclosedDaysSheet().environmentObject(store)
+        }
+        // Paylaşılan bilgisayar (bağlantı koduyla bağlı): "Şu an kim çalışıyor?"
+        .sheet(isPresented: $store.showWorkerPrompt) {
+            WorkerSheet().environmentObject(store)
+        }
+        .background(WorkerPromptTrigger(cloud: store.cloud))
         // "Web Paneline Bağlan" penceresi (Web'e Bağlan düğmeleri, menü komutu, envanter://baglan… bağlantısı)
         .sheet(item: $store.connectRequest) { request in
             ConnectPanel(cloud: store.cloud, request: request,
@@ -136,6 +150,8 @@ struct ContentView: View {
                 .padding(.horizontal, 10).padding(.bottom, 8)
             Divider()
             VStack(alignment: .leading, spacing: 8) {
+                // Paylaşılan bilgisayarda (cihaz hesabı) şu an çalışan; ada tıklayınca değiştirilir
+                WorkerRow(cloud: store.cloud)
                 // Web paneline bağlı değilken "Web'e Bağlan"; bağlıyken eşitleme satırı (kayıt durumunun altında)
                 SidebarConnectButton(cloud: store.cloud) { store.openConnect() }
                 VStack(alignment: .leading, spacing: 3) {

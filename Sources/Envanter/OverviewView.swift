@@ -180,10 +180,15 @@ struct OverviewView: View {
                     Text("Son 14 gün · sorunlu kalem sayısı").font(.headline)
                     InfoTip(term: .diff)
                     Spacer()
-                    let unlocked = trend.filter { $0.hasAnyCount && !$0.isLocked }.count
-                    if unlocked > 0 {
-                        Label("\(unlocked) sayılmış gün henüz kapatılmadı", systemImage: "lock.open").font(.callout).foregroundStyle(.secondary)
-                            .help(Term.lock.text)
+                    // Son 60 günde sayılmış ama kapatılmamış günler: listesi kontrol listesiyle açılır (patron / müdür
+                    // topluca kapatır; web panelinde Bu ay → Kapatılmamış gün)
+                    let unclosed = store.unclosedDays().count
+                    if unclosed > 0 {
+                        Button { store.showUnclosedDays = true } label: {
+                            Label("\(unclosed) sayılmış gün kapatılmadı", systemImage: "lock.open")
+                        }
+                        .buttonStyle(.link).font(.callout)
+                        .help("Son \(UnclosedDays.lookbackDays) günün kapatılmamış günleri: kontrol listesiyle aç, seçilenleri kapat")
                     }
                 }
                 Chart {
@@ -259,8 +264,9 @@ struct OverviewView: View {
                     if steps.closed {
                         quick("Günlük Sayımı Aç", "lock", primary: false) { store.section = .daily }
                     } else {
-                        // Gün menüsü (⌘L) ve Günlük Sayım düğmesiyle aynı kural: personel onaylar, boş gün kapatılmaz
-                        quick(lock == .confirmClose ? "Günü Kapat…" : "Günü Kapat", "lock", primary: steps.next == .close) {
+                        // Gün menüsü (⌘L) ve Günlük Sayım düğmesiyle aynı kural: kontrol listesinde eksik varsa (ya da
+                        // personelse) onay istenir ("…"), boş gün kapatılmaz
+                        quick(store.lockMenuTitle(o.date), "lock", primary: steps.next == .close) {
                             store.requestLockToggle(o.date)
                         }
                         .disabled(!lock.isAvailable)

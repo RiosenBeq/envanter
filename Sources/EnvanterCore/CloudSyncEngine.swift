@@ -221,8 +221,9 @@ public enum CloudSyncEngine {
     /// Bir eşitleme turu: önce çek, sonra gönder.
     /// Çekme hatası fırlatılır (durum değişmez). Gönderme hatası `SyncOutcome.error` ile döner: o ana kadar çekilen
     /// ve yazılan her şey `state`e ve `data`ya işlenmiştir; kalan anahtarlar "dirty" kalır.
+    /// `worker`: paylaşılan bilgisayarda şu an çalışan (`SessionWorker`); değişiklik geçmişi özetine eklenir.
     public static func syncOnce(local: AppData, state: inout SyncState, api: SupabaseAPIProtocol,
-                                client: String = CloudDefaults.client,
+                                client: String = CloudDefaults.client, worker: String? = nil,
                                 progress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil) async throws -> SyncOutcome {
         guard let ws = state.config?.workspaceID else { throw CloudSyncError.notConfigured }
         var out = SyncOutcome(data: local)
@@ -290,7 +291,7 @@ public enum CloudSyncEngine {
             for key in keys {
                 // Ekip gönderilemediyse (çakışma sınırı) eski adları boşaltan ayar da bekler: adlar sunucuda ayarda kalır
                 if key == DocKey.settings && settingsWaitsForTeam(state: state, data: out.data) { continue }
-                try await push(key: key, workspace: ws, state: &state, out: &out, api: api, client: client)
+                try await push(key: key, workspace: ws, state: &state, out: &out, api: api, client: client, worker: worker)
                 done += 1
                 progress?(done, keys.count)
             }
@@ -307,7 +308,7 @@ public enum CloudSyncEngine {
 
     /// Tek anahtarı gönderir; çakışmada merge3 ile birleştirip en fazla `maxConflictRetries` kez yeniden dener.
     static func push(key: String, workspace: String, state: inout SyncState, out: inout SyncOutcome,
-                     api: SupabaseAPIProtocol, client: String) async throws {
+                     api: SupabaseAPIProtocol, client: String, worker: String? = nil) async throws {
         guard DocKey.isValid(key) else { state.dirty.remove(key); return }
         var attempts = 0
         while true {
@@ -335,7 +336,7 @@ public enum CloudSyncEngine {
                 deleted = false
             }
             let after = deleted ? nil : (local ?? DocCodec.decoded(key: key, body: body))
-            let summary = ChangeSummary.summarize(key: key, before: baseN, after: after, data: out.data)
+            let summary = SessionWorker.summary(ChangeSummary.summarize(key: key, before: baseN, after: after, data: out.data), worker: worker)
             let r: PutResult
             do {
                 r = try await api.put(workspace: workspace, key: key, body: body, baseRev: base?.rev ?? 0,
@@ -385,7 +386,7 @@ public enum CloudSyncEngine {
                         unionLegacyStaff(remote: serverN, into: &out.data)
                         migrateLegacyStaff(&out, state: &state)
                         if state.dirty.contains(DocKey.employees) {
-                            try await push(key: DocKey.employees, workspace: workspace, state: &state, out: &out, api: api, client: client)
+                            try await push(key: DocKey.employees, workspace: workspace, state: &state, out: &out, api: api, client: client, worker: worker)
                             if settingsWaitsForTeam(state: state, data: out.data) { return }
                         }
                     }

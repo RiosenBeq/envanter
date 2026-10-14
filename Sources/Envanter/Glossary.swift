@@ -75,7 +75,7 @@ enum Term: String, CaseIterable, Identifiable {
         case .purchaseOrder:
             return "Önerilerden oluşturulan sipariş. Mal gelince \"Teslim al\" ile gelen miktarlar seçili günün Gelen sütununa işlenir."
         case .lock:
-            return "Sayım bitince günü kapatın: sayım, satış ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Hiç sayım girilmemiş gün kapatılamaz. Gerekirse kilit açılabilir; web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açar, bu yüzden kapatmadan önce günün sayım ve satış durumu gösterilip onay istenir."
+            return "Sayım bitince günü kapatın: sayım, satış ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Hiç sayım girilmemiş gün kapatılamaz. Kapatmadan önce kontrol listesi (sayılmayan kalem, satış raporu, tanımsız reçete) gösterilir; eksik varsa onay istenir. Gerekirse kilit açılabilir; web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açar, bu yüzden personel her zaman onaylar."
         }
     }
 }

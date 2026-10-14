@@ -17,6 +17,8 @@ struct ItemsView: View {
     @State private var newName = ""
     @State private var newUnit = "Adet"
     @State private var deleting: Item?
+    /// Kalem arama (ad ya da kimlik; Günlük Sayım'daki aramayla aynı kural: `ItemSearch`)
+    @State private var query = ""
 
     var body: some View {
         let activeCount = store.data.items.filter { $0.active }.count
@@ -42,6 +44,23 @@ struct ItemsView: View {
                     }
                     Pill(text: "\(activeCount) aktif kalem · \(withMin) kalemde kritik seviye tanımlı", color: Brand.positive)
                 }
+                HStack(spacing: 5) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(ItemSearch.placeholder, text: $query)
+                        .textFieldStyle(.plain)
+                        .onExitCommand { query = "" }
+                        .accessibilityLabel(ItemSearch.placeholder)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
+                            .help(ItemSearch.clearLabel)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(width: 240, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Brand.field))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Brand.line.opacity(0.6), lineWidth: 0.5))
+                .help("Ada ya da kimliğe göre ara · aramadayken sıralama sürüklenemez · Esc: temizle")
                 Text("Günlük Sayım ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !store.canEditCatalog { ReadOnlyNote() }
@@ -63,14 +82,24 @@ struct ItemsView: View {
             .font(.caption.weight(.semibold)).multilineTextAlignment(.center)
             .padding(.vertical, 6).padding(.horizontal, 12)
             .background(Color.primary.opacity(0.05))
-            List {
-                ForEach(store.data.items) { item in
-                    ItemRow(item: item, estimate: estimates[item.id]) { deleting = item }
-                        .disabled(!store.canEditCatalog)
+            let shown = store.data.items.filter { ItemSearch.matches($0, query: query) }
+            if shown.isEmpty && !query.isEmpty {
+                VStack(spacing: 10) {
+                    Text(ItemSearch.noMatchText(query)).font(.title3.weight(.semibold))
+                    Button(ItemSearch.clearLabel) { query = "" }.buttonStyle(SoftButtonStyle())
                 }
-                .onMove { store.moveItems(from: $0, to: $1) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(shown) { item in
+                        ItemRow(item: item, estimate: estimates[item.id]) { deleting = item }
+                            .disabled(!store.canEditCatalog)
+                    }
+                    // Aramadayken sıra sürüklenemez (görünen sıra tüm listenin sırası değildir)
+                    .onMove(perform: query.isEmpty ? { (from: IndexSet, to: Int) in store.moveItems(from: from, to: to) } : nil)
+                }
+                .listStyle(.plain)
             }
-            .listStyle(.plain)
             Divider()
             HStack(spacing: 10) {
                 TextField("Yeni stok kalemi adı", text: $newName).textFieldStyle(.roundedBorder).frame(width: 260)

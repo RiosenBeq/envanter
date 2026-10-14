@@ -77,6 +77,20 @@ enum ReportsTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// Günlük Sayım'daki kalem filtresi (gün kapatma onayındaki "Sayılmayanları Göster" de değiştirir)
+enum DailyRowFilter: String, CaseIterable, Identifiable {
+    case all = "Tümü", uncounted = "Sayılmayan", problems = "Sorunlu"
+    var id: String { rawValue }
+
+    func matches(_ c: ItemCalc) -> Bool {
+        switch self {
+        case .all: return true
+        case .uncounted: return !c.isCounted
+        case .problems: return c.severity?.isProblem == true || c.belowMinimum || c.openingJumpIsProblem
+        }
+    }
+}
+
 struct AppAlert: Identifiable {
     let id = UUID()
     var title: String
@@ -122,8 +136,19 @@ final class AppStore: ObservableObject {
     /// Web eşitlemesinde bu Mac'in şubedeki rolü (CloudSyncController günceller; eşleşme yoksa nil). Personel ise
     /// tanım belgeleri ve kapatılmış günler bu Mac'te de salt okunurdur (docs/SYNC.md §2).
     @Published var enforcedRole: String?
-    /// Onay bekleyen gün kapatma (personel: kapatılan günün kilidini yalnızca patron veya müdür açabilir)
+    /// Onay bekleyen gün kapatma: personel her zaman, patron / müdür kontrol listesinde eksik varsa (`DayCloseCheck`)
     @Published var pendingDayClose: String?
+    /// Günlük Sayım'daki kalem filtresi (Tümü / Sayılmayan / Sorunlu)
+    @Published var dailyFilter: DailyRowFilter = .all
+    /// Gün menüsündeki "Kalem Ara" (⌘F): Günlük Sayım arama kutusuna odaklanır (ekran açılınca da), sonra sıfırlanır
+    @Published var focusDailySearch = false
+    /// Genel Bakış'taki "Kapatılmamış günler" penceresi
+    @Published var showUnclosedDays = false
+    /// Paylaşılan mağaza bilgisayarında (cihaz hesabı) şu an çalışan: yalnızca bu uygulama açık kaldıkça tutulur, eşitlenmez
+    /// (`SessionWorker`); değişiklik geçmişi özetine eklenir, Sayan ve Zayi Ekle "Kim" varsayılanı olur
+    @Published private(set) var sessionWorker: String?
+    /// "Şu an kim çalışıyor?" penceresi
+    @Published var showWorkerPrompt = false
     /// Açık "Web Paneline Bağlan" penceresi (Web'e Bağlan düğmeleri, menü ya da envanter://baglan… bağlantısı)
     @Published var connectRequest: ConnectRequest?
     /// Ekran görüntüsü aracı: bağlanma penceresinin içeriği ana pencerenin üstünde gösterilir (pencere görüntüsüne
@@ -143,6 +168,10 @@ final class AppStore: ObservableObject {
     private var saveGeneration = 0
     private var lastBackupAt: Date?
     private var saveErrorReported = false
+    /// Çalışan bu uygulama oturumunda soruldu
+    private var workerAsked = false
+    /// Personelin eski güne giriş uyarısı bu oturumda gösterildi
+    private var oldDayWarned = false
 
     var engine: Engine {
         if let e = engineCache { return e }
@@ -317,6 +346,7 @@ final class AppStore: ObservableObject {
         }
         data = new
         cloud.noteLocalChange(keys)
+        warnOldDayIfNeeded(keys)
         guard let um = undoManager else { return true }
         // Geri alma yalnızca bu işlemin değiştirdiği belgelere ve onlarda yalnızca bu işlemin değiştirdiği alanlara
         // dokunur: arada web panelinden gelen değişiklikler (ör. aynı günde müdürün düzelttiği başka kalem, not ya da
@@ -328,6 +358,17 @@ final class AppStore: ObservableObject {
         }
         if let actionName { um.setActionName(actionName) }
         return true
+    }
+
+    /// Personel 7 günden eski bir güne yazdı: oturum başına bir kez uyarı (yanlış güne giriş olmasın; `OldDayWarning`)
+    private func warnOldDayIfNeeded(_ keys: Set<String>) {
+        guard !oldDayWarned, enforcedRole == CloudRole.staff else { return }
+        let today = DateKey.today()
+        guard let old = keys.compactMap({ DocKey.date(of: $0) }).sorted().first(where: {
+            OldDayWarning.applies(role: enforcedRole, date: $0, today: today)
+        }) else { return }
+        oldDayWarned = true
+        alert = AppAlert(title: OldDayWarning.title, message: OldDayWarning.message(date: old))
     }
 
     /// Web panelinden (buluttan) gelen veriyi uygular: geri alma geçmişine eklenmez ve yeniden gönderilmek üzere
@@ -395,13 +436,21 @@ final class AppStore: ObservableObject {
                 set: { v in self.updateEntry(item, date: date) { $0[keyPath: kp] = v } })
     }
 
+    /// Paylaşılan bilgisayarda çalışan seçildiyse ilk kapanış girilirken günün Sayan'ı boşsa çalışan yazılır
+    /// (`SessionWorker.countedBy`; aynı geri alma adımında)
     func updateEntry(_ itemID: String, date: String, _ mutate: (inout DayEntry) -> Void) {
         guard !isLocked(date) else { NSSound.beep(); return }
+        let worker = sessionWorker
         mutateData("Sayım Girişi") { d in
             var day = d.days[date] ?? DayRecord(date: date)
-            var e = day.entries[itemID] ?? DayEntry()
+            let before = day.entries[itemID] ?? DayEntry()
+            var e = before
             mutate(&e)
             if e.isEmpty { day.entries[itemID] = nil } else { day.entries[itemID] = e }
+            if let by = SessionWorker.countedBy(current: day.countedBy, worker: worker,
+                                                hasClosing: e.closing != nil && e.closing != before.closing) {
+                day.countedBy = by
+            }
             if day.isEmpty { d.days[date] = nil } else { d.days[date] = day }
         }
     }
@@ -424,27 +473,73 @@ final class AppStore: ObservableObject {
         DayLockAction.resolve(locked: isLocked(date), counted: engine.hasCount(date: date), role: enforcedRole)
     }
 
-    /// Personelin gün kapatma onayındaki metin: günün sayım ve satış durumu, sonra kural
-    func dayCloseConfirmMessage(_ date: String) -> String {
-        let o = engine.overview(date: date)
-        return DayLockAction.confirmDetail(counted: o.countedItems, total: o.itemCount, hasSales: o.hasSales)
+    /// Günü kapatmadan önceki kontrol listesi (sayım, satış raporu, tanımsız reçete, tolerans dışı fark; web ile aynı)
+    func dayCloseCheck(_ date: String) -> DayCloseCheck {
+        DayCloseCheck.evaluate(engine.overview(date: date), canChangeLockedDay: canChangeLockedDays)
     }
 
-    /// Gün menüsündeki öğenin adı (personel hesabıyla kapatma onay ister: "…")
+    /// Gün kapatma onayındaki metin: işaretli kontrol listesi (✓ / ⚠ / •), sonra kural
+    func dayCloseConfirmMessage(_ date: String) -> String {
+        dayCloseCheck(date).message
+    }
+
+    /// Gün menüsündeki öğenin adı (onay istenecekse "…")
     func lockMenuTitle(_ date: String) -> String {
         if isLocked(date) { return "Gün Kilidini Aç" }
-        return lockAction(date) == .confirmClose ? "Günü Kapat…" : "Günü Kapat"
+        return lockAction(date) == .confirmClose || dayCloseCheck(date).needsConfirm ? "Günü Kapat…" : "Günü Kapat"
     }
 
-    /// Gün menüsü (⌘L) ve Günlük Sayım düğmesi: sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz; personel
-    /// hesabıyla gün onaydan sonra kapatılır (kilidini yalnızca patron veya müdür açabilir), kilit açılamaz.
+    /// Gün menüsü (⌘L), Günlük Sayım düğmesi ve Bugün kartı: sayım yapılmamış (boş ya da ileri tarihli) gün kapatılmaz.
+    /// Kontrol listesinde eksik varsa (sayılmayan kalem, satış raporu yok, tanımsız reçete) ya da personelse önce onay
+    /// istenir (kilidini yalnızca patron veya müdür açabilir); patron / müdür eksiksiz günü hemen kapatır.
     func requestLockToggle(_ date: String) {
         switch lockAction(date) {
-        case .close: setLocked(date, true)
+        case .close, .confirmClose:
+            if dayCloseCheck(date).needsConfirm { pendingDayClose = date } else { setLocked(date, true) }
         case .unlock: setLocked(date, false)
-        case .confirmClose: pendingDayClose = date
         case .nothingCounted, .unlockNotAllowed: NSSound.beep()
         }
+    }
+
+    /// Onay penceresindeki "Sayılmayanları Göster": Günlük Sayım'da Sayılmayan filtresi
+    func showUncounted(_ date: String) {
+        pendingDayClose = nil
+        selectedDate = date
+        dailyFilter = .uncounted
+        section = .daily
+    }
+
+    /// Günlük Sayım'ın satırları: filtre (Tümü / Sayılmayan / Sorunlu) ve kalem araması (ad ya da kimlik; `ItemSearch`)
+    func dailyRows(date: String, filter: DailyRowFilter, query: String) -> [ItemCalc] {
+        let e = engine
+        return e.calc(date: date).rows.filter { c in
+            filter.matches(c) && (e.itemsByID[c.itemID].map { ItemSearch.matches($0, query: query) } ?? false)
+        }
+    }
+
+    /// Kapatılmamış günler (seçili gün dahil son 60 gün; `UnclosedDays`)
+    func unclosedDays() -> [UnclosedDay] {
+        UnclosedDays.list(engine: engine, asOf: selectedDate, canChangeLockedDay: canChangeLockedDays)
+    }
+
+    /// Gün menüsü → Kalem Ara (⌘F): Günlük Sayım açılır, arama kutusuna odaklanılır
+    func requestDailySearch() {
+        section = .daily
+        focusDailySearch = true
+    }
+
+    /// Seçilen günleri topluca kapatır (yalnızca patron / müdür; tek geri alma adımı). Kapatılmış ve sayımsız günler atlanır.
+    /// - Returns: kapatılan gün sayısı
+    @discardableResult
+    func closeDays(_ dates: [String]) -> Int {
+        guard canChangeLockedDays else { NSSound.beep(); return 0 }
+        let e = engine
+        let targets = Set(dates).filter { !isLocked($0) && e.hasCount(date: $0) }
+        guard !targets.isEmpty else { return 0 }
+        let applied = mutateData("Günleri Kapat") { d in
+            for date in targets { d.days[date]?.locked = true }
+        }
+        return applied ? targets.count : 0
     }
 
     /// Personelin onayladığı gün kapatma
@@ -506,12 +601,37 @@ final class AppStore: ObservableObject {
         return updateDay(date, actionName: "Zayi Sil") { $0 = WasteLog.removing(id: id, from: $0) }
     }
 
-    /// Zayi Ekle'deki "Kim" varsayılanı: günün sayımı yapanı; yoksa bu Mac'in web hesabına bağlı ekip üyesi (mağaza
-    /// bilgisayarının cihaz hesabı kişi değildir); yoksa boş
+    /// Zayi Ekle'deki "Kim" varsayılanı (`SessionWorker.defaultBy`): günün sayımı yapanı; yoksa paylaşılan bilgisayarda şu
+    /// an çalışan; yoksa bu Mac'in web hesabına bağlı ekip üyesi (mağaza bilgisayarının cihaz hesabı kişi değildir); yoksa boş
     func defaultWasteBy(date: String) -> String {
-        if let c = data.days[date]?.countedBy, !c.isEmpty { return c }
-        if let email = cloud.state.config?.email, !PairCode.isDeviceAccount(email), let e = employee(linkedTo: email) { return e.name }
-        return ""
+        var linked: String?
+        if let email = cloud.state.config?.email, !PairCode.isDeviceAccount(email) { linked = employee(linkedTo: email)?.name }
+        return SessionWorker.defaultBy(countedBy: data.days[date]?.countedBy, worker: sessionWorker, linkedName: linked)
+    }
+
+    // MARK: - Paylaşılan bilgisayarda çalışan
+
+    /// Bu Mac bağlantı koduyla (cihaz hesabı pc-…) web paneline bağlı: "Şu an kim çalışıyor?" sorulur
+    var asksWorker: Bool { cloud.isConnected && SessionWorker.asks(email: cloud.state.config?.email) }
+
+    /// Seçenekler: aktif ekip üyeleri
+    var workerOptions: [String] { SessionWorker.options(data.employees) }
+
+    /// Uygulama oturumunda bir kez sorar (cihaz hesabıyla bağlanınca). Başka bir pencere (bağlanma, satış aktarımı) açıkken
+    /// beklenir; o kapanınca yeniden denenir.
+    func askWorkerIfNeeded() {
+        guard asksWorker, !workerAsked, !showWorkerPrompt,
+              connectRequest == nil, importPreview == nil, workbookPreview == nil else { return }
+        showWorkerPrompt = true
+    }
+
+    /// Pencere göründü: bu oturumda bir daha kendiliğinden sorulmaz
+    func markWorkerAsked() { workerAsked = true }
+
+    /// Çalışanı seçer (nil / boş: "Atla"); pencere kapanır
+    func setWorker(_ name: String?) {
+        sessionWorker = SessionWorker.normalized(name)
+        showWorkerPrompt = false
     }
 
     // MARK: - Eşik önerileri ve kurulum

@@ -54,6 +54,27 @@ Patron web panelinde (Yönetim → Kullanıcılar → **Bilgisayar Bağla**) bir
 - **Ekranlar:** `isDeviceAccount(e-posta)` = boşluklar atılıp küçük harfe çevrildikten sonra `^pc-[2-9a-hjkmnp-z]{6}@envanter\.local$`. Bu hesaplar Kullanıcılar listesinde kişilerden ayrı, "Bağlı bilgisayarlar" bölümünde gösterilir; "Şifre belirle" sunulmaz.
 - Test vektörleri: Mac `Tests/EnvanterCoreTests/Fixtures/pair-vectors.json`, web `test/fixtures/pair-vectors.json` (aynı içerik).
 
+### Siparişler (`orders`)
+
+`PurchaseOrder = { id, date, supplier, lines: [{ itemID, qty, received? }], status: "open" | "received" | "cancelled", receivedOn?, note?, receivedWithoutIncoming? }`. Okurken yalnızca `id` zorunludur; bilinmeyen `status` `open` sayılır. `note` tedarikçiye nottur (boşsa yazılmaz; sipariş metninin sonuna `Not: …` olarak eklenir; giriş alanı en çok 300 karakter). `receivedWithoutIncoming` yalnızca `true` yazılır; mantıksal değer değilse okunmaz. Kurallar Swift `Purchasing` / web `src/lib/engine/purchasing.ts` (aynı adlar):
+
+- **Formdan sipariş (`orderFromDraft`) ve düzenleme (`updateOrder`):** satırlarda miktarı 0, negatif ya da geçersiz olan atılır, aynı kalem toplanır, kullanıcının sırası korunur; kalem kalmazsa `emptyOrder` ("Siparişte kalem yok."). Yalnızca açık sipariş düzenlenir (`notOpen`); teslim alınan miktarı (`received > 0`) olan satır varsa kalemler değişmez, tedarikçi ve not değişebilir (`alreadyReceiving`). Kalan satırların bilinmeyen alanları korunur. İptal edilen sipariş `reopen` ile yeniden açılır. Kısmi teslim ve teslimat geçmişi (`receipts`) bu sürümde yoktur: `receive` siparişi her zaman kapatır.
+- **"Teslim alındı say" (`receive(…, addToIncoming: false)`):** teslimat Günlük Sayım'da Gelen olarak elle girildiyse kullanılır. Miktarlar `lines[].received`'e, gün `receivedOn`'a yazılır, `status = received`, `receivedWithoutIncoming = true`; gün belgesine dokunulmaz (kapatılmış gün de seçilebilir, kaydı olmayan gün oluşturulmaz). Web yalnızca `orders` belgesini yazar. Eski sürümler alanı bilinmeyen alan olarak taşır ve siparişi düz "Teslim alındı" gösterir.
+- **Elle girilmiş Gelen ipucu (`incomingHint`):** açık siparişin kalemlerine sipariş gününden sonra (seçili güne kadar) Gelen girilmişse önce sipariş gününden sonraki ilk gün, yoksa sipariş günü önerilir: "Bu teslimat bu siparişten mi? Teslim alındı say". O gün teslim alınmış diğer siparişlerin (`receivedOn` = o gün) `received` miktarları Gelen'den düşülür. Başlangıç miktarı: o gün Gelen'i olan satırda en çok sipariş miktarı, diğerlerinde 0.
+- **Bekleyen sipariş:** yaş = seçili gün − sipariş günü; açık ve 3 günden eski (`> 3`) sipariş Sipariş ekranında ve Genel Bakış'ta uyarı alır ("N sipariş 3 günden uzun süredir bekliyor …"; açık sipariş öneriden düşülmeye devam eder). Açık siparişte "N gündür bekliyor" (aynı gün ve ileri tarihli siparişte yazılmaz).
+- **Değişiklik özeti:** düzenleme `Sipariş güncellendi (Et): 90 Gr 100 → 120, Patates 5 eklendi, Peynir çıkarıldı, tedarikçi "Fırın", not güncellendi` (tedarikçi ve not yalnızca değiştiyse; boşaltılınca "tedarikçi silindi" / "not silindi"); "Teslim alındı say" `Sipariş teslim alındı (Et, 1/2 kalem, Gelen'e eklenmeden)`.
+- Test vektörleri: Mac `Tests/EnvanterCoreTests/Fixtures/purchasing-vectors.json`, web `test/fixtures/purchasing-vectors.json` (aynı içerik).
+
+### Satış raporu aktarımı
+
+Satış raporu yalnızca ekranda okunur; gün belgesine yalnızca birleştirilmiş satırlar (`sales`), `salesSource`, `salesPeriod`, `salesImportedAt` yazılır. Okuma kuralları Swift `SalesParser` / web `src/lib/salesParser.ts`, uyarılar Swift `SalesImportCheck` / web `src/lib/salesImport.ts`:
+
+- **Başlık satırı:** kod yokken "Kodu / Kod / Ürün Kodu" ve "Adedi / Adet / Miktar / Miktarı" başlıkları olan satır sütunları belirler (metin ve Excel). Ad sütunu "Ürün Tipi / Ürün Adı / Ürün", yoksa "Ürün…" ile başlayan ilk başlık. Tutar başlıkları ve "Sıra, No, Fiyat, Birim Fiyat, KDV, … Fiyatı" sütunları okunmaz. Başlıksız metinde satırdaki ilk kod alanı kod, sonraki ilk sayı olmayan alan ad, ilk sayı adettir.
+- **Adet:** "1.120" (binlik), "12,5", birimli "12 adet", "12,00 Ad.", "3 porsiyon" (birimler: adet, ad, adt, tane, tn, porsiyon, pors, prs, kg, gr, g, lt, l, ml, pk, paket, kutu, koli); tek başına "-" sıfırdır. Kodu olup adedi okunamayan satır atlanır ve `skipped: [{row, text, reason: "Adet okunamadı"}]` olarak önizlemede gösterilir (satır numarası dosyadaki satır; CRLF tek satır sayılır).
+- **Tarih:** g.a.yyyy, g/a/yyyy, gg-aa-yyyy, yyyy-aa-gg ve gg.aa.yy (iki haneli yıl 20yy); ilk iki tarih dönemi verir.
+- **Uyarılar (sıra):** ① aynı rapor (birleştirilmiş kod → adet kümesi aynı) seçili günden ±10 gün içindeki başka bir güne aktarılmışsa (en yakın gün, eşitlikte önceki) — onay ister; ② tek günlük raporun dönemi başka bir günün `salesPeriod`'u ile aynıysa; ③ son 14 günde en az 5 satışlı gün varsa toplam adet ortancanın 3 katından fazla ya da %30'undan azsa; ④ tek günlük raporun tarihi seçili günden farklıysa (1 gün: bilgi "Sayım ertesi sabah yapılıyorsa bu normaldir", daha fazla: uyarı); ⑤ okunamayan satırlar (kodlu satırların %20'sini aşarsa onay ister). Onay gereken uyarıda "Yine de bu güne aktar" işaretlenmeden aktarılmaz; gün değişince onay yeniden istenir.
+- Test vektörleri: Mac `Tests/EnvanterCoreTests/Fixtures/sales-vectors.json` ve `salesimport-vectors.json`, web `test/fixtures/` altında aynı adlarla (aynı içerik).
+
 ## 2. Supabase şeması
 
 Tablolar `public` şemasında `envanter_` önekiyle durur. Migration dosyası `envantersite/supabase/migrations/20261009120000_envanter.sql`'dir. Supabase GitHub entegrasyonu bu dosyayı `main`'e birleştirmede `postgres` rolüyle, tek işlem (transaction) içinde otomatik uygular. Dosya idempotenttir; tekrar uygulanması zarar vermez.
@@ -197,6 +218,8 @@ Girdiler JSON değerleridir: `base`, `local`, `remote`. Herhangi biri yok (`unde
    - Sıra: önce `local` sırası, sonra yalnızca `remote`'ta yeni olanlar `remote` sırasıyla eklenir.
    - Sonucu `undefined` olan eleman (bir tarafta silinmiş, diğerinde değişmemiş) çıkarılır.
 6. Diğer her durumda (sayı, metin, kimliksiz dizi, tip farkı) **yerel kazanır** → `local`.
+
+Sipariş satırları (`lines`) `id` ya da `code` taşımadığı için ortak sözleşmede kimliksiz dizidir: aynı sipariş iki yerde aynı anda düzenlenirse web'de satırlar bütün olarak yerel kopyadan gelir (kural 6). Mac, gönderimde bilinmeyen alanları korumak için satırları ayrıca `itemID` ile eşler (§1); sonuç kalemleri yine yerel listedir. Düzenleme ve teslim alma denetimleri (`notOpen`, `alreadyReceiving`) istemcinin o anki verisiyle yapılır.
 
 Eşitlik, JSON değerlerinin derin eşitliğidir: sayılar sayı olarak, nesnelerde anahtar sırası önemsiz. Test vektörleri `docs/merge3-vectors.json` dosyasındadır. İki istemci de bu vektörlerin tamamını geçmelidir.
 

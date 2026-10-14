@@ -70,7 +70,7 @@ enum Term: String, CaseIterable, Identifiable {
         case .onOrder:
             return "Açık (henüz teslim alınmamış) siparişlerde bekleyen miktar. Aynı malın iki kez sipariş edilmemesi için öneriden düşülür."
         case .purchaseOrder:
-            return "Önerilerden oluşturulan sipariş. Mal gelince \"Teslim al\" ile gelen miktarlar seçili günün Gelen sütununa işlenir."
+            return "Önerilen miktarlarla başlayan formdan oluşturulan sipariş (miktarlar, kalemler ve tedarikçiye not değiştirilebilir; açıkken düzenlenebilir). Mal gelince \"Teslim al\" ile gelen miktarlar seçilen günün Gelen sütununa işlenir; teslimat Gelen olarak elle girildiyse \"Teslim alındı say\" siparişi Gelen'e eklemeden kapatır. 3 günden eski açık siparişler için uyarı çıkar."
         case .lock:
             return "Sayım bitince günü kapatın: sayım, satış ve teslimat girişleri kilitlenir ve yanlışlıkla değiştirilemez. Hiç sayım girilmemiş gün kapatılamaz. Gerekirse kilit açılabilir; web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açar, bu yüzden kapatmadan önce günün sayım ve satış durumu gösterilip onay istenir."
         }

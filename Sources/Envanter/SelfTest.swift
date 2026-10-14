@@ -121,6 +121,13 @@ enum SelfTest {
         check(near(calc?.waste, 1), "ZAYİ köfte → zayi 1")
         check(near(calc?.diff, -1), "fark = 28 + 1 − 30 = −1")
         check(store.engine.overview(date: d1).unknownLines == 1, "reçetesi tanımsız 1 ürün işaretlendi")
+        let again = SalesImportCheck.warnings(report: report, targetDate: DateKey.addDays(1, to: d1), data: store.data)
+        check(again.first?.kind == .duplicate && SalesImportCheck.needsConfirmation(again),
+              "aynı rapor ertesi güne aktarılırken uyarı ve \"Yine de bu güne aktar\" onayı")
+        let priced = SalesParser.parse(text: "Kodu;Ürün Tipi;Birim Fiyat;Adedi\n11101;DUBLEX;185;12 adet\n11103;CHEESE;210;?\n",
+                                       sourceName: "selftest")
+        check(priced.lines.first?.qty == 12 && priced.skipped.map { $0.row } == [3],
+              "başlıklı rapor: birim fiyat adet sanılmadı, okunamayan satır bildirildi")
         let json = (try? persistence.encode(store.data)).map { String(decoding: $0, as: UTF8.self) } ?? ""
         check(!json.isEmpty && !json.contains("\"amount\"") && !json.contains("\"salesRevenue\""), "satış tutarı saklanmıyor (yalnızca adet)")
 
@@ -285,6 +292,23 @@ enum SelfTest {
             check(store.data.purchaseOrders.first { $0.id == order.id }?.lines.first { $0.itemID == "g90" }?.received == 100,
                   "teslim alınan miktar siparişe yazıldı")
             check(store.openOrders.isEmpty, "sipariş kapandı")
+        }
+
+        print("10b) Sipariş formu, düzenleme ve \"Teslim alındı say\"")
+        let manual = store.createOrder(date: d2, supplier: "Sebzeci", note: "Sabah getirin",
+                                       lines: [OrderLine(itemID: "patates", qty: 5), OrderLine(itemID: "g90", qty: 0)])
+        check(manual && store.openOrders.first?.lines == [OrderLine(itemID: "patates", qty: 5)] && store.openOrders.first?.note == "Sabah getirin",
+              "formdan sipariş: miktarı 0 olan kalem atıldı, not yazıldı")
+        if let o = store.openOrders.first {
+            check(store.updateOrder(o.id, supplier: "Sebzeci", note: "", lines: [OrderLine(itemID: "patates", qty: 8)]), "açık sipariş düzenlendi")
+            check(store.openOrders.first?.lines.first?.qty == 8 && store.openOrders.first?.note == nil, "miktar 8 oldu, not silindi")
+            let before = store.data.days[d2]?.entries["patates"]?.incoming
+            store.alert = nil
+            check(store.receiveOrder(o.id, on: d2, quantities: ["patates": 8], addToIncoming: false), "\"Teslim alındı say\" uygulandı")
+            store.alert = nil
+            check(store.data.days[d2]?.entries["patates"]?.incoming == before, "Gelen'e eklenmedi (elle girilmişti)")
+            check(store.data.purchaseOrders.first { $0.id == o.id }?.receivedWithoutIncoming == true && store.openOrders.isEmpty,
+                  "sipariş kapandı ve \"Gelen'e eklenmeden\" olarak işaretlendi")
         }
 
         print("11) Ayarlar")

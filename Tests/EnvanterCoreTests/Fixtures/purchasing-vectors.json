@@ -1,0 +1,2324 @@
+{
+  "comment": "Sipariş taslağı, düzenleme, teslim alma (Gelen'e ekleyerek / eklemeden), elle girilmiş Gelen ipucu, bekleme süresi ve sipariş metni. Mac: Tests/EnvanterCoreTests/PurchasingVectorTests.swift, web: test/purchasingVectors.test.ts (aynı dosya).",
+  "items": [
+    {
+      "id": "g90",
+      "name": "90 Gr",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true
+    },
+    {
+      "id": "peynir",
+      "name": "Peynir",
+      "unit": "Kg",
+      "recipeUnit": "dilim",
+      "factor": 0.014,
+      "active": true
+    },
+    {
+      "id": "patates",
+      "name": "Patates",
+      "unit": "Kg",
+      "recipeUnit": "kg",
+      "factor": 1,
+      "active": true
+    },
+    {
+      "id": "ekmek",
+      "name": "Ekmek",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true
+    }
+  ],
+  "draft": [
+    {
+      "name": "0 ve negatif atılır, aynı kalem toplanır, sıra korunur, tedarikçi kırpılır, boş not yazılmaz",
+      "id": "T1",
+      "date": "2026-10-12",
+      "supplier": "  Et Tedarikçisi ",
+      "note": "   ",
+      "lines": [
+        {
+          "itemID": "g90",
+          "qty": 10
+        },
+        {
+          "itemID": "peynir",
+          "qty": 0
+        },
+        {
+          "itemID": "g90",
+          "qty": 2.5
+        },
+        {
+          "itemID": "patates",
+          "qty": -1
+        },
+        {
+          "itemID": "patates",
+          "qty": 3
+        }
+      ],
+      "expected": {
+        "order": {
+          "id": "T1",
+          "date": "2026-10-12",
+          "supplier": "Et Tedarikçisi",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 12.5
+            },
+            {
+              "itemID": "patates",
+              "qty": 3
+            }
+          ],
+          "status": "open"
+        }
+      }
+    },
+    {
+      "name": "not kırpılır",
+      "id": "T2",
+      "date": "2026-10-12",
+      "supplier": "",
+      "note": "  Sabah 9'dan önce getirin \n",
+      "lines": [
+        {
+          "itemID": "peynir",
+          "qty": 2.345
+        }
+      ],
+      "expected": {
+        "order": {
+          "id": "T2",
+          "date": "2026-10-12",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "peynir",
+              "qty": 2.345
+            }
+          ],
+          "status": "open",
+          "note": "Sabah 9'dan önce getirin"
+        }
+      }
+    },
+    {
+      "name": "kalem yok → emptyOrder",
+      "id": "T3",
+      "date": "2026-10-12",
+      "supplier": "Et",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "g90",
+          "qty": 0
+        },
+        {
+          "itemID": "peynir",
+          "qty": -2
+        }
+      ],
+      "expected": {
+        "error": "emptyOrder"
+      }
+    }
+  ],
+  "update": [
+    {
+      "name": "açık sipariş: miktar değişir, kalem eklenir ve çıkarılır, sıra kullanıcınınki, not silinir",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O1",
+      "supplier": " Et ",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "peynir",
+          "qty": 3
+        },
+        {
+          "itemID": "patates",
+          "qty": 4
+        },
+        {
+          "itemID": "g90",
+          "qty": 0
+        }
+      ],
+      "expected": {
+        "order": {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "peynir",
+              "qty": 3
+            },
+            {
+              "itemID": "patates",
+              "qty": 4
+            }
+          ],
+          "status": "open"
+        }
+      }
+    },
+    {
+      "name": "yalnızca tedarikçi ve not",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O1",
+      "supplier": "Yeni Tedarik",
+      "note": "Kapıya bırakın",
+      "lines": [
+        {
+          "itemID": "g90",
+          "qty": 100
+        },
+        {
+          "itemID": "peynir",
+          "qty": 2
+        }
+      ],
+      "expected": {
+        "order": {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Yeni Tedarik",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "Kapıya bırakın"
+        }
+      }
+    },
+    {
+      "name": "teslim alınmış sipariş → notOpen",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O2",
+      "supplier": "",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "patates",
+          "qty": 12
+        }
+      ],
+      "expected": {
+        "error": "notOpen"
+      }
+    },
+    {
+      "name": "iptal edilmiş sipariş → notOpen",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O3",
+      "supplier": "Sebze",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "patates",
+          "qty": 5
+        }
+      ],
+      "expected": {
+        "error": "notOpen"
+      }
+    },
+    {
+      "name": "kalem kalmadı → emptyOrder",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O1",
+      "supplier": "Et",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "g90",
+          "qty": 0
+        }
+      ],
+      "expected": {
+        "error": "emptyOrder"
+      }
+    },
+    {
+      "name": "teslimatı başlamış siparişin kalemleri değişmez → alreadyReceiving",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O4",
+      "supplier": "Ekmek",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "ekmek",
+          "qty": 60
+        }
+      ],
+      "expected": {
+        "error": "alreadyReceiving"
+      }
+    },
+    {
+      "name": "teslimatı başlamış siparişin tedarikçisi ve notu değişebilir (satır alanları korunur)",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O4",
+      "supplier": "Fırın",
+      "note": "Sıcak gelsin",
+      "lines": [
+        {
+          "itemID": "ekmek",
+          "qty": 50
+        }
+      ],
+      "expected": {
+        "order": {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Fırın",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open",
+          "note": "Sıcak gelsin"
+        }
+      }
+    },
+    {
+      "name": "olmayan sipariş → notFound",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "yok",
+      "supplier": "",
+      "note": "",
+      "lines": [
+        {
+          "itemID": "g90",
+          "qty": 1
+        }
+      ],
+      "expected": {
+        "error": "notFound"
+      }
+    }
+  ],
+  "reopen": [
+    {
+      "name": "iptal edilmiş sipariş yeniden açılır",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O3",
+      "expectedStatus": "open"
+    },
+    {
+      "name": "açık sipariş aynı kalır",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O1",
+      "expectedStatus": "open"
+    },
+    {
+      "name": "teslim alınmış sipariş açılmaz",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "orderID": "O2",
+      "expectedStatus": "received"
+    }
+  ],
+  "receive": [
+    {
+      "name": "Gelen'e eklenir (var olan Gelen'in üstüne); verilmeyen miktar sipariş miktarıdır",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 20,
+              "closing": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-13": {
+          "date": "2026-10-13",
+          "entries": {},
+          "sales": [],
+          "locked": true
+        }
+      },
+      "orderID": "O1",
+      "date": "2026-10-12",
+      "quantities": {
+        "g90": 90
+      },
+      "addToIncoming": true,
+      "expected": {
+        "lines": 2,
+        "order": {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100,
+              "received": 90
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2,
+              "received": 2
+            }
+          ],
+          "status": "received",
+          "note": "eski not",
+          "receivedOn": "2026-10-12"
+        },
+        "incoming": {
+          "2026-10-12": {
+            "g90": 110,
+            "peynir": 2
+          }
+        },
+        "absentDays": []
+      }
+    },
+    {
+      "name": "kapatılmış güne Gelen eklenmez → locked",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 20,
+              "closing": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-13": {
+          "date": "2026-10-13",
+          "entries": {},
+          "sales": [],
+          "locked": true
+        }
+      },
+      "orderID": "O1",
+      "date": "2026-10-13",
+      "quantities": {},
+      "addToIncoming": true,
+      "expected": {
+        "error": "locked"
+      }
+    },
+    {
+      "name": "Teslim alındı say: Gelen değişmez, kapatılmış gün de seçilebilir",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 20,
+              "closing": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-13": {
+          "date": "2026-10-13",
+          "entries": {},
+          "sales": [],
+          "locked": true
+        }
+      },
+      "orderID": "O1",
+      "date": "2026-10-13",
+      "quantities": {
+        "peynir": 0
+      },
+      "addToIncoming": false,
+      "expected": {
+        "lines": 1,
+        "order": {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100,
+              "received": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2,
+              "received": 0
+            }
+          ],
+          "status": "received",
+          "note": "eski not",
+          "receivedOn": "2026-10-13",
+          "receivedWithoutIncoming": true
+        },
+        "incoming": {
+          "2026-10-12": {
+            "g90": 20,
+            "peynir": null
+          },
+          "2026-10-13": {
+            "g90": null,
+            "peynir": null
+          }
+        },
+        "absentDays": []
+      }
+    },
+    {
+      "name": "Teslim alındı say: kaydı olmayan gün oluşturulmaz",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 20,
+              "closing": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-13": {
+          "date": "2026-10-13",
+          "entries": {},
+          "sales": [],
+          "locked": true
+        }
+      },
+      "orderID": "O1",
+      "date": "2026-10-20",
+      "quantities": {},
+      "addToIncoming": false,
+      "expected": {
+        "lines": 2,
+        "order": {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100,
+              "received": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2,
+              "received": 2
+            }
+          ],
+          "status": "received",
+          "note": "eski not",
+          "receivedOn": "2026-10-20",
+          "receivedWithoutIncoming": true
+        },
+        "incoming": {},
+        "absentDays": [
+          "2026-10-20"
+        ]
+      }
+    },
+    {
+      "name": "hiçbir şey gelmedi → nothingReceived",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 20,
+              "closing": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-13": {
+          "date": "2026-10-13",
+          "entries": {},
+          "sales": [],
+          "locked": true
+        }
+      },
+      "orderID": "O1",
+      "date": "2026-10-12",
+      "quantities": {
+        "g90": 0,
+        "peynir": -1
+      },
+      "addToIncoming": false,
+      "expected": {
+        "error": "nothingReceived"
+      }
+    },
+    {
+      "name": "teslim alınmış sipariş → notOpen",
+      "orders": [
+        {
+          "id": "O1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open",
+          "note": "eski not"
+        },
+        {
+          "id": "O2",
+          "date": "2026-10-08",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 10,
+              "received": 10
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-09"
+        },
+        {
+          "id": "O3",
+          "date": "2026-10-05",
+          "supplier": "Sebze",
+          "lines": [
+            {
+              "itemID": "patates",
+              "qty": 5
+            }
+          ],
+          "status": "cancelled"
+        },
+        {
+          "id": "O4",
+          "date": "2026-10-11",
+          "supplier": "Ekmek",
+          "lines": [
+            {
+              "itemID": "ekmek",
+              "qty": 50,
+              "received": 20
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 20,
+              "closing": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-13": {
+          "date": "2026-10-13",
+          "entries": {},
+          "sales": [],
+          "locked": true
+        }
+      },
+      "orderID": "O2",
+      "date": "2026-10-12",
+      "quantities": {},
+      "addToIncoming": true,
+      "expected": {
+        "error": "notOpen"
+      }
+    }
+  ],
+  "hint": [
+    {
+      "name": "sipariş gününden sonraki ilk Gelen; o gün teslim alınan siparişin miktarı düşülür",
+      "orders": [
+        {
+          "id": "H1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "R1",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 60,
+              "received": 60
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12"
+        }
+      ],
+      "days": {
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {
+            "g90": {
+              "incoming": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {
+            "g90": {
+              "incoming": 30
+            }
+          },
+          "sales": []
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {
+            "patates": {
+              "incoming": 5
+            }
+          },
+          "sales": []
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "peynir": {
+              "incoming": 2
+            },
+            "g90": {
+              "incoming": 100
+            }
+          },
+          "sales": []
+        }
+      },
+      "orderID": "H1",
+      "asOf": "2026-10-14",
+      "expected": {
+        "date": "2026-10-12",
+        "lines": [
+          {
+            "itemID": "g90",
+            "incoming": 40
+          },
+          {
+            "itemID": "peynir",
+            "incoming": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "sonraki günlerde yoksa sipariş günü (sipariş öncesi gün sayılmaz)",
+      "orders": [
+        {
+          "id": "H1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "R1",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 60,
+              "received": 60
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12"
+        }
+      ],
+      "days": {
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {
+            "g90": {
+              "incoming": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {
+            "g90": {
+              "incoming": 30
+            }
+          },
+          "sales": []
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {
+            "patates": {
+              "incoming": 5
+            }
+          },
+          "sales": []
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "peynir": {
+              "incoming": 2
+            },
+            "g90": {
+              "incoming": 100
+            }
+          },
+          "sales": []
+        }
+      },
+      "orderID": "H1",
+      "asOf": "2026-10-11",
+      "expected": {
+        "date": "2026-10-10",
+        "lines": [
+          {
+            "itemID": "g90",
+            "incoming": 30
+          }
+        ]
+      }
+    },
+    {
+      "name": "ileri tarihli sipariş: ipucu yok",
+      "orders": [
+        {
+          "id": "H1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "R1",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 60,
+              "received": 60
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12"
+        }
+      ],
+      "days": {
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {
+            "g90": {
+              "incoming": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {
+            "g90": {
+              "incoming": 30
+            }
+          },
+          "sales": []
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {
+            "patates": {
+              "incoming": 5
+            }
+          },
+          "sales": []
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "peynir": {
+              "incoming": 2
+            },
+            "g90": {
+              "incoming": 100
+            }
+          },
+          "sales": []
+        }
+      },
+      "orderID": "H1",
+      "asOf": "2026-10-09",
+      "expected": null
+    },
+    {
+      "name": "teslim alınmış sipariş: ipucu yok",
+      "orders": [
+        {
+          "id": "H1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "R1",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 60,
+              "received": 60
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12"
+        }
+      ],
+      "days": {
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {
+            "g90": {
+              "incoming": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {
+            "g90": {
+              "incoming": 30
+            }
+          },
+          "sales": []
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {
+            "patates": {
+              "incoming": 5
+            }
+          },
+          "sales": []
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "peynir": {
+              "incoming": 2
+            },
+            "g90": {
+              "incoming": 100
+            }
+          },
+          "sales": []
+        }
+      },
+      "orderID": "R1",
+      "asOf": "2026-10-14",
+      "expected": null
+    },
+    {
+      "name": "Teslim alındı say ile kapatılan sipariş de o günün Gelen'ini sahiplenir",
+      "orders": [
+        {
+          "id": "H1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "R1",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 60,
+              "received": 60
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12"
+        },
+        {
+          "id": "R2",
+          "date": "2026-10-11",
+          "supplier": "Fırın",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 40,
+              "received": 40
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12",
+          "receivedWithoutIncoming": true
+        }
+      ],
+      "days": {
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {
+            "g90": {
+              "incoming": 50
+            }
+          },
+          "sales": []
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {
+            "g90": {
+              "incoming": 30
+            }
+          },
+          "sales": []
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {
+            "patates": {
+              "incoming": 5
+            }
+          },
+          "sales": []
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "peynir": {
+              "incoming": 2
+            },
+            "g90": {
+              "incoming": 100
+            }
+          },
+          "sales": []
+        }
+      },
+      "orderID": "H1",
+      "asOf": "2026-10-14",
+      "expected": {
+        "date": "2026-10-12",
+        "lines": [
+          {
+            "itemID": "peynir",
+            "incoming": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "Gelen'in tamamı başka siparişin teslimatı: ipucu yok",
+      "orders": [
+        {
+          "id": "H1",
+          "date": "2026-10-10",
+          "supplier": "Et",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 100
+            },
+            {
+              "itemID": "peynir",
+              "qty": 2
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "R1",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 60,
+              "received": 60
+            }
+          ],
+          "status": "received",
+          "receivedOn": "2026-10-12"
+        }
+      ],
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "incoming": 60
+            }
+          },
+          "sales": []
+        }
+      },
+      "orderID": "H1",
+      "asOf": "2026-10-14",
+      "expected": null
+    }
+  ],
+  "age": [
+    {
+      "date": "2026-10-10",
+      "status": "open",
+      "asOf": "2026-10-10",
+      "expected": {
+        "age": 0,
+        "stale": false,
+        "text": null
+      }
+    },
+    {
+      "date": "2026-10-10",
+      "status": "open",
+      "asOf": "2026-10-11",
+      "expected": {
+        "age": 1,
+        "stale": false,
+        "text": "1 gündür bekliyor"
+      }
+    },
+    {
+      "date": "2026-10-10",
+      "status": "open",
+      "asOf": "2026-10-13",
+      "expected": {
+        "age": 3,
+        "stale": false,
+        "text": "3 gündür bekliyor"
+      }
+    },
+    {
+      "date": "2026-10-10",
+      "status": "open",
+      "asOf": "2026-10-14",
+      "expected": {
+        "age": 4,
+        "stale": true,
+        "text": "4 gündür bekliyor"
+      }
+    },
+    {
+      "date": "2026-09-28",
+      "status": "open",
+      "asOf": "2026-10-14",
+      "expected": {
+        "age": 16,
+        "stale": true,
+        "text": "16 gündür bekliyor"
+      }
+    },
+    {
+      "date": "2026-10-10",
+      "status": "received",
+      "asOf": "2026-10-20",
+      "expected": {
+        "age": 10,
+        "stale": false,
+        "text": null
+      }
+    },
+    {
+      "date": "2026-10-10",
+      "status": "cancelled",
+      "asOf": "2026-10-20",
+      "expected": {
+        "age": 10,
+        "stale": false,
+        "text": null
+      }
+    },
+    {
+      "date": "2026-10-12",
+      "status": "open",
+      "asOf": "2026-10-10",
+      "expected": {
+        "age": -2,
+        "stale": false,
+        "text": null
+      }
+    },
+    {
+      "date": "",
+      "status": "open",
+      "asOf": "2026-10-10",
+      "expected": {
+        "age": null,
+        "stale": false,
+        "text": null
+      }
+    }
+  ],
+  "stale": [
+    {
+      "name": "en eskisi önce; aynı günde liste sırası; teslim alınan ve yeni siparişler sayılmaz",
+      "orders": [
+        {
+          "id": "A",
+          "date": "2026-10-09",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "B",
+          "date": "2026-10-01",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "C",
+          "date": "2026-09-01",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "received"
+        },
+        {
+          "id": "D",
+          "date": "2026-10-12",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "E",
+          "date": "2026-10-01",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "F",
+          "date": "2026-10-11",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "open"
+        }
+      ],
+      "asOf": "2026-10-14",
+      "expected": {
+        "ids": [
+          "B",
+          "E",
+          "A"
+        ],
+        "notice": "3 sipariş 3 günden uzun süredir bekliyor. Mal geldiyse teslim alın, gelmeyecekse iptal edin: açık sipariş öneriden düşülmeye devam eder."
+      }
+    },
+    {
+      "name": "eski sipariş yok",
+      "orders": [
+        {
+          "id": "D",
+          "date": "2026-10-12",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "open"
+        },
+        {
+          "id": "C",
+          "date": "2026-09-01",
+          "supplier": "",
+          "lines": [
+            {
+              "itemID": "g90",
+              "qty": 1
+            }
+          ],
+          "status": "cancelled"
+        }
+      ],
+      "asOf": "2026-10-14",
+      "expected": {
+        "ids": [],
+        "notice": null
+      }
+    }
+  ],
+  "text": [
+    {
+      "name": "şube, tedarikçi, kg tek ondalık, silinmiş kalem ve not",
+      "order": {
+        "id": "X",
+        "date": "2026-10-12",
+        "supplier": "Et",
+        "lines": [
+          {
+            "itemID": "g90",
+            "qty": 140
+          },
+          {
+            "itemID": "peynir",
+            "qty": 2.25
+          },
+          {
+            "itemID": "silinmis",
+            "qty": 3
+          }
+        ],
+        "status": "open",
+        "note": "Sabah getirin"
+      },
+      "branch": " Tuzla ",
+      "expected": "Tuzla · Sipariş – 12.10.2026 · Et\n• 90 Gr: 140 adet\n• Peynir: 2,3 kg\n(1 kalem listede yok)\nNot: Sabah getirin"
+    },
+    {
+      "name": "tedarikçisiz, şubesiz, notsuz",
+      "order": {
+        "id": "Y",
+        "date": "2026-10-12",
+        "supplier": "",
+        "lines": [
+          {
+            "itemID": "ekmek",
+            "qty": 50
+          }
+        ],
+        "status": "open"
+      },
+      "branch": "",
+      "expected": "Sipariş – 12.10.2026\n• Ekmek: 50 adet"
+    }
+  ]
+}

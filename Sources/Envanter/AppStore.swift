@@ -803,16 +803,45 @@ final class AppStore: ObservableObject {
         return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
     }
 
-    /// Siparişi teslim alır: gelen miktarlar o günün Gelen sütununa eklenir (yalnızca miktar; fiyat yok).
-    /// - Returns: teslim alındı mı (sipariş açık değilse, gün kapatılmışsa ya da personel hesabıyla false)
+    /// Sipariş formundan yeni sipariş (miktarlar elle; öneri yalnızca başlangıç değeri)
     @discardableResult
-    func receiveOrder(_ id: String, on date: String, quantities: [String: Double]) -> Bool {
+    func createOrder(date: String, supplier: String, note: String, lines: [OrderLine]) -> Bool {
+        do {
+            let order = try Purchasing.orderFromDraft(date: date, supplier: supplier, note: note, lines: lines)
+            return mutateData("Sipariş Oluştur") { $0.purchaseOrders.append(order) }
+        } catch {
+            alert = AppAlert(title: "Sipariş oluşturulamadı", message: error.localizedDescription)
+            return false
+        }
+    }
+
+    /// Açık siparişi düzenler (tedarikçi, not, miktarlar, kalem ekle / çıkar). Değişiklik yoksa geri alma geçmişine
+    /// boş adım eklenmez.
+    @discardableResult
+    func updateOrder(_ id: String, supplier: String, note: String, lines: [OrderLine]) -> Bool {
         var copy = data
         do {
-            let lines = try Purchasing.receive(orderID: id, on: date, quantities: quantities, data: &copy)
-            guard mutateData("Teslim Al", { $0 = copy }) else { return false }
-            alert = AppAlert(title: "Teslim alındı",
-                             message: "\(lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi.")
+            try Purchasing.updateOrder(orderID: id, supplier: supplier, note: note, lines: lines, data: &copy)
+        } catch {
+            alert = AppAlert(title: "Sipariş kaydedilemedi", message: error.localizedDescription)
+            return false
+        }
+        guard copy.purchaseOrders != data.purchaseOrders else { return true }
+        return mutateData("Siparişi Düzenle") { $0 = copy }
+    }
+
+    /// Siparişi teslim alır: gelen miktarlar o günün Gelen sütununa eklenir (yalnızca miktar; fiyat yok).
+    /// `addToIncoming == false` ("Teslim alındı say"): Gelen elle girilmişti; yalnızca sipariş kapanır.
+    /// - Returns: teslim alındı mı (sipariş açık değilse, gün kapatılmışsa ya da personel hesabıyla false)
+    @discardableResult
+    func receiveOrder(_ id: String, on date: String, quantities: [String: Double], addToIncoming: Bool = true) -> Bool {
+        var copy = data
+        do {
+            let lines = try Purchasing.receive(orderID: id, on: date, quantities: quantities, addToIncoming: addToIncoming, data: &copy)
+            guard mutateData(addToIncoming ? "Teslim Al" : "Teslim Alındı Say", { $0 = copy }) else { return false }
+            alert = addToIncoming
+                ? AppAlert(title: "Teslim alındı", message: "\(lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi.")
+                : AppAlert(title: "Teslim alındı sayıldı", message: "\(lines) kalem · \(DateKey.short(date)) Gelen'ine dokunulmadı.")
             return true
         } catch {
             alert = AppAlert(title: "Teslim alınamadı", message: error.localizedDescription)
@@ -822,6 +851,11 @@ final class AppStore: ObservableObject {
 
     func cancelOrder(_ id: String) {
         mutateData("Siparişi İptal Et") { Purchasing.cancel(orderID: id, data: &$0) }
+    }
+
+    /// İptal edilmiş siparişi yeniden açar (miktarları yeniden öneriden düşülür)
+    func reopenOrder(_ id: String) {
+        mutateData("Siparişi Yeniden Aç") { Purchasing.reopen(orderID: id, data: &$0) }
     }
 
     func deleteOrder(_ id: String) {

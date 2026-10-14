@@ -1,10 +1,16 @@
 import SwiftUI
 import EnvanterCore
 
+/// Satış raporu aktarım önizlemesi (web: ImportPreview.tsx): rapor özeti, hedef gün ve uyarılar (aynı rapor başka güne
+/// aktarılmış, aynı dönem, anormal toplam, tarih farkı, okunamayan satırlar — `SalesImportCheck`; çok günlük rapor,
+/// kilitli gün, mevcut satışların değişmesi, reçetesi olmayan ürünler). Aynı rapor ya da çok sayıda okunamayan satır
+/// varsa "Yine de bu güne aktar" onayı istenir.
 struct ImportSheet: View {
     @EnvironmentObject var store: AppStore
     let report: SalesReport
     @State private var date: String
+    /// "Yine de bu güne aktar" hangi gün için işaretlendi (gün değişince yeniden sorulur)
+    @State private var confirmedFor: String? = nil
 
     init(report: SalesReport, initialDate: String) {
         self.report = report
@@ -19,6 +25,8 @@ struct ImportSheet: View {
         let analysis = store.engine.analyze(sales: report.lines)
         let existing = store.data.days[date]?.sales.count ?? 0
         let locked = store.isLocked(date)
+        let warnings = SalesImportCheck.warnings(report: report, targetDate: date, data: store.data)
+        let needsConfirm = SalesImportCheck.needsConfirmation(warnings)
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "tray.and.arrow.down.fill").font(.title).foregroundStyle(Brand.accent)
@@ -50,17 +58,10 @@ struct ImportSheet: View {
                 DatePicker("", selection: dateBinding, displayedComponents: .date).labelsHidden()
             }
 
+            ForEach(warnings, id: \.kind) { w in warningRow(w) }
             if report.isMultiDay {
                 notice(icon: "exclamationmark.triangle.fill", color: Brand.warn,
                        text: "Bu rapor birden fazla günü kapsıyor (\(report.periodText ?? "")). Günlük sayım için tek günlük rapor almanız gerekir; aksi halde fark sütunu anlamsız çıkar. Yine de seçili güne aktarabilirsiniz.")
-            } else if let d = report.dateFrom, d != date {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "info.circle.fill").foregroundStyle(Brand.positive)
-                    Text("Raporun tarihi \(DateKey.short(d)); seçili gün \(DateKey.short(date)). Sayım ertesi sabah yapılıyorsa bu normaldir.")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button("Rapor tarihini kullan") { date = d }.buttonStyle(SoftButtonStyle())
-                }
             }
             if locked {
                 notice(icon: "lock.fill", color: Brand.negative,
@@ -86,16 +87,60 @@ struct ImportSheet: View {
 
             Spacer(minLength: 4)
             HStack {
+                if needsConfirm {
+                    Toggle("Yine de bu güne aktar", isOn: Binding(get: { confirmedFor == date }, set: { confirmedFor = $0 ? date : nil }))
+                }
                 Spacer()
                 Button("Vazgeç") { store.importPreview = nil }.keyboardShortcut(.cancelAction)
                 Button("İçe Aktar") { store.confirmImport(report: report, date: date) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(locked)
+                    .disabled(locked || (needsConfirm && confirmedFor != date))
             }
         }
         .padding(22)
         .frame(width: 600)
+    }
+
+    /// Aktarım uyarısı: renk, simge, metin ve işlem ("O güne git" / "Rapor tarihini kullan"); okunamayan satırların listesi
+    @ViewBuilder
+    private func warningRow(_ w: SalesImportWarning) -> some View {
+        let color: Color = w.tone == .bad ? Brand.negative : (w.tone == .warn ? Brand.warn : Brand.positive)
+        let icon = w.tone == .info ? "info.circle.fill" : (w.kind == .skipped ? "questionmark.diamond.fill" : "exclamationmark.triangle.fill")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: icon).foregroundStyle(color)
+                Text(w.text).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                if let d = w.date, w.kind == .duplicate || w.kind == .samePeriod {
+                    Button("O güne git") {
+                        store.selectedDate = d
+                        store.importPreview = nil
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                } else if let d = w.date, w.kind == .dateGap {
+                    Button("Rapor tarihini kullan") { date = d }.buttonStyle(SoftButtonStyle())
+                }
+            }
+            if w.kind == .skipped {
+                DisclosureGroup("Okunamayan satırları göster") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(report.skipped.prefix(20)), id: \.self) { r in
+                            Text("Satır \(r.row): \(r.text.replacingOccurrences(of: "\t", with: " · "))")
+                                .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
+                        if report.skipped.count > 20 {
+                            Text("… ve \(report.skipped.count - 20) satır daha").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(.callout)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
     }
 
     private func notice(icon: String, color: Color, text: String) -> some View {

@@ -1,0 +1,912 @@
+{
+  "comment": "Satış aktarımı uyarıları: aynı rapor iki güne, aynı dönem, anormal toplam (son 14 günün ortancası), tarih farkı ve okunamayan satırlar. Mac: SalesVectorTests.swift, web: test/salesImport.test.ts (aynı dosya).",
+  "cases": [
+    {
+      "name": "aynı rapor dün aktarılmış (satır sırası farklı) + 1 gün fark bilgisi",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-12",
+        "dateTo": "2026-10-12",
+        "periodText": "12.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 7
+            },
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 12
+            }
+          ],
+          "salesPeriod": "12.10.2026"
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 3
+            }
+          ]
+        }
+      },
+      "expected": [
+        {
+          "kind": "duplicate",
+          "tone": "bad",
+          "text": "Bu rapor 12.10.2026 gününe zaten aktarılmış (2 satırın hepsi aynı).",
+          "date": "2026-10-12",
+          "blocking": true
+        },
+        {
+          "kind": "dateGap",
+          "tone": "info",
+          "text": "Raporun tarihi 12.10.2026; seçili gün 13.10.2026. Sayım ertesi sabah yapılıyorsa bu normaldir.",
+          "date": "2026-10-12",
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "10 günden uzak gün aynı rapor sayılmaz; aynı dönem uyarısı ve 13 gün fark",
+      "targetDate": "2026-10-25",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-12",
+        "dateTo": "2026-10-12",
+        "periodText": "12.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 12
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 7
+            }
+          ],
+          "salesPeriod": "12.10.2026"
+        }
+      },
+      "expected": [
+        {
+          "kind": "samePeriod",
+          "tone": "warn",
+          "text": "Raporun dönemi (12.10.2026) 12.10.2026 gününe aktarılan raporla aynı; aynı raporu iki güne aktarıyor olabilirsiniz.",
+          "date": "2026-10-12",
+          "blocking": false
+        },
+        {
+          "kind": "dateGap",
+          "tone": "warn",
+          "text": "Raporun tarihi 12.10.2026; seçili gün 25.10.2026 (13 gün fark). Doğru günü seçtiğinizden emin olun.",
+          "date": "2026-10-12",
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "bir adet farklı: aynı rapor değil, aynı dönem",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-12",
+        "dateTo": "2026-10-12",
+        "periodText": "12.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 13
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 7
+            }
+          ],
+          "salesPeriod": "12.10.2026"
+        }
+      },
+      "expected": [
+        {
+          "kind": "samePeriod",
+          "tone": "warn",
+          "text": "Raporun dönemi (12.10.2026) 12.10.2026 gününe aktarılan raporla aynı; aynı raporu iki güne aktarıyor olabilirsiniz.",
+          "date": "2026-10-12",
+          "blocking": false
+        },
+        {
+          "kind": "dateGap",
+          "tone": "info",
+          "text": "Raporun tarihi 12.10.2026; seçili gün 13.10.2026. Sayım ertesi sabah yapılıyorsa bu normaldir.",
+          "date": "2026-10-12",
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "seçili günün kendi raporu yeniden aktarılıyor: uyarı yok",
+      "targetDate": "2026-10-12",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-12",
+        "dateTo": "2026-10-12",
+        "periodText": "12.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 12
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 7
+            }
+          ],
+          "salesPeriod": "12.10.2026"
+        }
+      },
+      "expected": []
+    },
+    {
+      "name": "çok günlük rapor: toplam ortancanın 3 katından fazla (dönem ve tarih uyarısı yok)",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 500
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 200
+          }
+        ],
+        "dateFrom": "2026-10-01",
+        "dateTo": "2026-10-07",
+        "periodText": "01.10.2026 – 07.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {
+        "2026-10-06": {
+          "date": "2026-10-06",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-07": {
+          "date": "2026-10-07",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-08": {
+          "date": "2026-10-08",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 40
+            }
+          ]
+        }
+      },
+      "expected": [
+        {
+          "kind": "abnormalHigh",
+          "tone": "warn",
+          "text": "Toplam adet (700) son 14 günün ortancasının (100) 3 katından fazla; çok günlük rapor olabilir.",
+          "date": null,
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "toplam ortancanın %30'undan az (15 gün önceki gün sayılmaz)",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 25
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 1
+      },
+      "days": {
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 100
+            }
+          ]
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 120
+            }
+          ]
+        },
+        "2026-10-05": {
+          "date": "2026-10-05",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 80
+            }
+          ]
+        },
+        "2026-09-30": {
+          "date": "2026-09-30",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 110
+            }
+          ]
+        },
+        "2026-09-29": {
+          "date": "2026-09-29",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 90
+            }
+          ]
+        },
+        "2026-09-28": {
+          "date": "2026-09-28",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 1000
+            }
+          ]
+        }
+      },
+      "expected": [
+        {
+          "kind": "abnormalLow",
+          "tone": "warn",
+          "text": "Toplam adet (25) son 14 günün ortancasının (100) %30'undan az; eksik rapor olabilir.",
+          "date": null,
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "çift sayıda gün: ortanca iki ortadakinin ortalaması",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 106
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 1
+      },
+      "days": {
+        "2026-10-07": {
+          "date": "2026-10-07",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 10
+            }
+          ]
+        },
+        "2026-10-08": {
+          "date": "2026-10-08",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 20
+            }
+          ]
+        },
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 30
+            }
+          ]
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 40
+            }
+          ]
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 50
+            }
+          ]
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 60
+            }
+          ]
+        }
+      },
+      "expected": [
+        {
+          "kind": "abnormalHigh",
+          "tone": "warn",
+          "text": "Toplam adet (106) son 14 günün ortancasının (35) 3 katından fazla; çok günlük rapor olabilir.",
+          "date": null,
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "4 gün yetmez: anormal toplam bakılmaz",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 1000
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 1
+      },
+      "days": {
+        "2026-10-09": {
+          "date": "2026-10-09",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 10
+            }
+          ]
+        },
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 10
+            }
+          ]
+        },
+        "2026-10-11": {
+          "date": "2026-10-11",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 10
+            }
+          ]
+        },
+        "2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 10
+            }
+          ]
+        }
+      },
+      "expected": []
+    },
+    {
+      "name": "3 gün fark",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-10",
+        "dateTo": "2026-10-10",
+        "periodText": "10.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {},
+      "expected": [
+        {
+          "kind": "dateGap",
+          "tone": "warn",
+          "text": "Raporun tarihi 10.10.2026; seçili gün 13.10.2026 (3 gün fark). Doğru günü seçtiğinizden emin olun.",
+          "date": "2026-10-10",
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "rapor seçili günden sonra (2 gün fark)",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-15",
+        "dateTo": "2026-10-15",
+        "periodText": "15.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {},
+      "expected": [
+        {
+          "kind": "dateGap",
+          "tone": "warn",
+          "text": "Raporun tarihi 15.10.2026; seçili gün 13.10.2026 (2 gün fark). Doğru günü seçtiğinizden emin olun.",
+          "date": "2026-10-15",
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "okunamayan satır: 1/10 uyarı",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [
+          {
+            "row": 2,
+            "text": "10000\tX\t?",
+            "reason": "Adet okunamadı"
+          }
+        ],
+        "codeRows": 10
+      },
+      "days": {},
+      "expected": [
+        {
+          "kind": "skipped",
+          "tone": "warn",
+          "text": "1 satır okunamadı (adet boş ya da sayı değil); bu satırlar aktarılmaz.",
+          "date": null,
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "okunamayan satır: tam %20 onay istemez",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [
+          {
+            "row": 2,
+            "text": "10000\tX\t?",
+            "reason": "Adet okunamadı"
+          },
+          {
+            "row": 3,
+            "text": "10001\tX\t?",
+            "reason": "Adet okunamadı"
+          }
+        ],
+        "codeRows": 10
+      },
+      "days": {},
+      "expected": [
+        {
+          "kind": "skipped",
+          "tone": "warn",
+          "text": "2 satır okunamadı (adet boş ya da sayı değil); bu satırlar aktarılmaz.",
+          "date": null,
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "name": "okunamayan satır: %20'den fazlası onay ister",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [
+          {
+            "row": 2,
+            "text": "10000\tX\t?",
+            "reason": "Adet okunamadı"
+          },
+          {
+            "row": 3,
+            "text": "10001\tX\t?",
+            "reason": "Adet okunamadı"
+          },
+          {
+            "row": 4,
+            "text": "10002\tX\t?",
+            "reason": "Adet okunamadı"
+          }
+        ],
+        "codeRows": 10
+      },
+      "days": {},
+      "expected": [
+        {
+          "kind": "skipped",
+          "tone": "bad",
+          "text": "3 satır okunamadı (adet boş ya da sayı değil); bu satırlar aktarılmaz.",
+          "date": null,
+          "blocking": true
+        }
+      ]
+    },
+    {
+      "name": "aynı rapor iki günde: en yakın, eşitlikte önceki gün",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": null,
+        "dateTo": null,
+        "periodText": null,
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {
+        "2026-10-10": {
+          "date": "2026-10-10",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 12
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 7
+            }
+          ]
+        },
+        "2026-10-16": {
+          "date": "2026-10-16",
+          "entries": {},
+          "sales": [
+            {
+              "code": "11100",
+              "name": "MEDIUM",
+              "qty": 12
+            },
+            {
+              "code": "11103",
+              "name": "CHEESE",
+              "qty": 7
+            }
+          ]
+        }
+      },
+      "expected": [
+        {
+          "kind": "duplicate",
+          "tone": "bad",
+          "text": "Bu rapor 10.10.2026 gününe zaten aktarılmış (2 satırın hepsi aynı).",
+          "date": "2026-10-10",
+          "blocking": true
+        }
+      ]
+    }
+  ]
+}

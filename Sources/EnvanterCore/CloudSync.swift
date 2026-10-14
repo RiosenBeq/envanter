@@ -799,6 +799,7 @@ enum Lenient {
         o["status"] = .string(["open", "received", "cancelled"].contains(status ?? "") ? status! : "open")
         o["receivedOn"] = str(raw["receivedOn"])
         o["note"] = str(raw["note"])
+        o["receivedWithoutIncoming"] = raw["receivedWithoutIncoming"]?.boolValue.map { .bool($0) }
         return .object(o)
     }
 

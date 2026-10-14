@@ -56,7 +56,8 @@ enum VectorSupport {
     static func order(_ o: OrderSuggestion) -> [String: JSONValue] {
         ["stock": num(o.stock), "stockDate": str(o.stockDate), "countedStock": num(o.countedStock), "onOrder": .number(o.onOrder),
          "dailyUsage": .number(o.dailyUsage), "sampleDays": .number(Double(o.sampleDays)), "daysOfCover": num(o.daysOfCover),
-         "target": .number(o.target), "suggested": .number(o.suggested)]
+         "target": .number(o.target), "suggested": .number(o.suggested),
+         "estimate": o.estimate.map { JSONValue.object(estimate($0)) } ?? JSONValue.null]
     }
 
     static func estimate(_ e: StockEstimate) -> [String: JSONValue] {
@@ -139,6 +140,12 @@ final class CarryVectorTests: XCTestCase {
                                                    coverDays: v["coverDays"]?.doubleValue ?? 3)
                 guard let o = list.first(where: { $0.item.id == id }) else { XCTFail("\(name): öneri yok"); continue }
                 VectorSupport.check(VectorSupport.order(o), v["expect"], "\(name) sipariş \(date)")
+                // Stoğun dayanağı Stok Kalemleri'ndeki tahminle aynı
+                XCTAssertEqual(o.estimate, engine.stockEstimate(itemID: id, date: date), "\(name) sipariş tahmini \(date)")
+                if let text = v["text"] {
+                    VectorSupport.check(["value": .string(OrderStockText.value(o)), "note": VectorSupport.str(OrderStockText.note(o, date: date)),
+                                         "help": .string(OrderStockText.help(o, date: date))], text, "\(name) sipariş metni \(date)")
+                }
             }
 
             for v in c["estimates"]?.arrayValue ?? [] {

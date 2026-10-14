@@ -248,6 +248,9 @@ public struct OrderSuggestion: Identifiable {
     public var target: Double
     /// Önerilen sipariş miktarı (yukarı yuvarlanmış)
     public var suggested: Double
+    /// Stoğun dayanağı (`stockEstimate(date)` ile aynı: sınırlanmamış tahmin, dayanak günü ve türü); yoksa ya da
+    /// `carryMaxDays` günden eskiyse nil
+    public var estimate: StockEstimate? = nil
 }
 
 /// Dayanak noktası: kapanışı girilmiş ya da kapanışsız elle açılış girilmiş gün
@@ -596,7 +599,9 @@ public struct Engine {
 
     /// from...to (dahil) arasındaki günlerin toplamı. Sayılmış günler (ilk sayım hariç) ve hareketi sonraki sayıma
     /// devredilen sayılmayan günler hesaba katılır; devredilen günün fiili tüketimi Satılan + Zayi sayılır. Böylece
-    /// Fark = Satılan + Zayi - Fiili özdeşliği dönem toplamında da korunur.
+    /// Fark = Satılan + Zayi - Fiili özdeşliği dönem toplamında da korunur. Sayılmayan gün, sonraki sayımın geçerli
+    /// dayanağından sonraysa devredilir: hareketleri birbirini götürse de (net 0), sonraki sayımın açılışı elle
+    /// girilse de (sıçrama `openingAdjust`'ta).
     public func summary(from: String, to: String) -> [SummaryRow] {
         let dates = sortedDates.filter { $0 >= from && $0 <= to }
         var perDay: [(String, [String: ItemCalc])] = []
@@ -614,7 +619,7 @@ public struct Engine {
             for (d, calcs) in perDay.reversed() {
                 guard let c = calcs[item.id] else { continue }
                 if c.isCounted {
-                    carryBase = (!c.isBaseline && c.openingSource == .carried) ? c.openingBaseDate : nil
+                    carryBase = c.isBaseline ? nil : summaryCarryBase(c, date: d)
                 } else if let b = carryBase, d >= b {
                     carried.insert(d)
                 }
@@ -644,6 +649,15 @@ public struct Engine {
             r.waste = Self.clean(r.waste); r.actual = Self.clean(r.actual); r.diff = Self.clean(r.diff)
             r.shortageQty = Self.clean(r.shortageQty); r.openingAdjust = Self.clean(r.openingAdjust)
             return r
+        }
+    }
+
+    /// Sayılmış satırın geçerli dayanağının günü (`carryMaxDays` içinde): aradaki sayılmayan günler bu sayıma devreder
+    private func summaryCarryBase(_ c: ItemCalc, date: String) -> String? {
+        switch c.openingSource {
+        case .closing, .carried: return c.openingBaseDate
+        case .manual: return estimatedOpening(itemID: c.itemID, date: date)?.baseDate
+        case .noBase: return nil
         }
     }
 
@@ -708,8 +722,9 @@ public struct Engine {
     /// `date` itibarıyla her aktif kalem için sipariş önerisi.
     /// Günlük tüketim, son `lookbackDays` gün içinde sayımı yapılmış günlerin fiili tüketim ortalamasıdır;
     /// sayım yoksa satış raporundan (satılan + zayi) hesaplanır.
-    /// Mevcut stok = tahmini açılış (son sayım + sonraki sayılmayan günlerin gelen/transferi − satış ve zayisi; dayanak
-    /// `carryMaxDays` günden eskiyse bilinmiyor); açık siparişlerde bekleyen miktar öneriden düşülür.
+    /// Mevcut stok = `stockEstimate(date)`: o gün sayıldıysa kapanış, değilse son sayım (ya da elle açılış) + sonraki
+    /// gelen/transfer − satış ve zayi, sıfırın altına inmez; dayanak yoksa ya da `carryMaxDays` günden eskiyse
+    /// bilinmiyor. Açık siparişlerde bekleyen miktar öneriden düşülür.
     public func orderSuggestions(asOf date: String, lookbackDays: Int, coverDays: Double) -> [OrderSuggestion] {
         let lookback = max(1, lookbackDays)
         let window = (0..<lookback).map { DateKey.addDays(-$0, to: date) }.filter { data.days[$0] != nil }
@@ -724,15 +739,14 @@ public struct Engine {
         }
         let tomorrow = DateKey.addDays(1, to: date)
         let pending = onOrder(asOf: date)
+        let estimates = Dictionary(stockEstimates(date: date).map { ($0.itemID, $0) }, uniquingKeysWith: { a, _ in a })
         return activeItems.map { item in
             let samples = counted[item.id].flatMap { $0.isEmpty ? nil : $0 } ?? fromSales[item.id] ?? []
             let usage = samples.isEmpty ? 0 : samples.reduce(0, +) / Double(samples.count)
             let last = lastClosing(itemID: item.id, before: tomorrow)
-            var stock: Double?
-            if let est = estimatedOpening(itemID: item.id, date: tomorrow) {
-                // Sayımdan sonraki günlerin hareketleri (ör. sabah gelen mal, gün içi satış); bugünkü sayım olduğu gibi
-                stock = est.baseDate < date ? max(est.value, 0) : est.value
-            }
+            let est = estimates[item.id]
+            // Bugünkü sayım olduğu gibi; tahmin (sayımdan ya da elle açılıştan sonraki hareketler) sıfırın altına inmez
+            let stock: Double? = est.map { $0.counted ? $0.stock : max($0.stock, 0) }
             let onOrder = pending[item.id] ?? 0
             let target = usage * max(coverDays, 0) + max(item.minStock ?? 0, 0)
             var suggested = max(0, target - (stock ?? 0) - onOrder)
@@ -743,7 +757,7 @@ public struct Engine {
                 item: item, stock: stock.map(Self.clean), stockDate: last?.date, countedStock: last?.value, onOrder: Self.clean(onOrder),
                 dailyUsage: Self.clean(usage), sampleDays: samples.count,
                 daysOfCover: (stock != nil && usage > 0) ? Self.clean(stock! / usage) : nil,
-                target: Self.clean(target), suggested: Self.clean(suggested))
+                target: Self.clean(target), suggested: Self.clean(suggested), estimate: est)
         }
     }
 }

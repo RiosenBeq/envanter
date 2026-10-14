@@ -178,6 +178,10 @@ enum SelfTest {
             check(OpeningText.help(d4row, item: g90, date: d4, breakdown: store.engine.carryBreakdown(itemID: "g90", date: d4))
                     == "Son sayım 02.08.2026: 120 + sayılmayan 1 günün hareketleri (Gelen +30) ≈ 150",
                   "açılış ipucu dayanağı ve devreden hareketi gösteriyor")
+            // Sipariş'teki mevcut stok aynı tahmin ve aynı dayanak (Stok Kalemleri ile ortak metin)
+            let o3 = store.orderSuggestions(date: d3).first { $0.item.id == "g90" }
+            check(o3.map { OrderStockText.value($0) } == "≈ 150" && o3.flatMap { OrderStockText.note($0, date: d3) } == "sayım 02.08 + hareket",
+                  "Sipariş: mevcut stok tahmini (≈ 150 · sayım 02.08 + hareket)")
         } else { check(false, "04.08 satırı hesaplandı") }
         // Sayım girilmemiş gün: Genel Bakış'taki "Kritik seviye altı" kartı tahmini stoğa göre
         store.updateItem("g90", actionName: "Kritik Seviye") { $0.minStock = 200 }

@@ -1,5 +1,5 @@
 {
-  "about": "Sayılmayan gün devri, ilk sayım, devir sınırı, açılış sıçraması, dönem özeti, sipariş stoğu, tahmini stok ve 'Hareketsizleri Doldur' için ortak test vektörleri. Mac (EnvanterCoreTests/CarryVectorTests) ve web (test/carry.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. 'expect' içindeki alanlar kontrol edilir (sayılar ±1e-6, null = nil); 'text' paylaşılan metinlerdir (OpeningText / stockText.ts).",
+  "about": "Sayılmayan gün devri, ilk sayım, devir sınırı, açılış sıçraması, dönem özeti, sipariş stoğu, tahmini stok ve 'Hareketsizleri Doldur' için ortak test vektörleri. Mac (EnvanterCoreTests/CarryVectorTests) ve web (test/carry.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. 'expect' içindeki alanlar kontrol edilir (sayılar ±1e-6, null = nil); 'text' paylaşılan metinlerdir (OpeningText, StockEstimateText, OrderStockText / stockText.ts).",
   "carryMaxDays": 31,
   "cases": [
     {
@@ -275,6 +275,11 @@
             "target": 43,
             "suggested": 25,
             "daysOfCover": 2.571429
+          },
+          "text": {
+            "value": "18",
+            "note": null,
+            "help": "Sayım 03.08.2026: 18 kg"
           }
         },
         {
@@ -290,6 +295,11 @@
             "sampleDays": 1,
             "target": 37,
             "suggested": 12
+          },
+          "text": {
+            "value": "≈ 25",
+            "note": "sayım 01.08 + hareket",
+            "help": "Son sayım 01.08.2026: 20 kg + sonraki hareketler ≈ 25 kg"
           }
         }
       ],
@@ -1065,7 +1075,13 @@
             "sampleDays": 0,
             "target": 10,
             "suggested": 10,
-            "daysOfCover": null
+            "daysOfCover": null,
+            "estimate": null
+          },
+          "text": {
+            "value": "—",
+            "note": "sayım 01.06 · 38 gün önce",
+            "help": "Son sayım 38 gün önce (01.06.2026: 40 adet); stok bilinmiyor, öneri stok 0 kabul edilerek hesaplanır"
           }
         },
         {
@@ -1078,6 +1094,11 @@
             "stockDate": "2026-06-01",
             "countedStock": 40,
             "suggested": 0
+          },
+          "text": {
+            "value": "≈ 40",
+            "note": "sayım 01.06",
+            "help": "Son sayım 01.06.2026: 40 adet + sonraki hareketler ≈ 40 adet"
           }
         }
       ],
@@ -1287,6 +1308,11 @@
             "target": 1,
             "suggested": 1,
             "daysOfCover": null
+          },
+          "text": {
+            "value": "≈ 0",
+            "note": "sayım 01.08 + hareket",
+            "help": "Tahmin sıfırın altında: girilmemiş Gelen olabilir. Son sayım 01.08.2026: 2 kg + sonraki hareketler ≈ 0 kg"
           }
         }
       ],
@@ -1326,6 +1352,470 @@
             "value": "0",
             "detail": "+1 tahmini (sayılmayan)",
             "warn": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "ozet-ve-siparis-stogu: hareketleri birbirini götüren (net 0) ve elle açılışlı sayıma devreden sayılmayan günler dönem özetine girer; geçerli dayanak yoksa girmez; Sipariş stoğu tahminle aynı dayanağı gösterir ve sıfırın altına inmez",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "a",
+            "name": "Ekmek",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "b",
+            "name": "Köfte",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "c",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "d",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "g",
+            "name": "Tavuk",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 5
+          },
+          {
+            "id": "h",
+            "name": "Tuz",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "A",
+            "name": "EKMEK",
+            "category": "TEST",
+            "amounts": {
+              "a": 1
+            }
+          },
+          {
+            "code": "B",
+            "name": "KÖFTE",
+            "category": "TEST",
+            "amounts": {
+              "b": 1
+            }
+          },
+          {
+            "code": "C",
+            "name": "SOS",
+            "category": "TEST",
+            "amounts": {
+              "c": 1
+            }
+          },
+          {
+            "code": "G",
+            "name": "TAVUK",
+            "category": "TEST",
+            "amounts": {
+              "g": 1
+            }
+          }
+        ],
+        "days": {
+          "2026-06-01": {
+            "date": "2026-06-01",
+            "entries": {
+              "d": {
+                "closing": 40
+              }
+            },
+            "sales": []
+          },
+          "2026-07-10": {
+            "date": "2026-07-10",
+            "entries": {
+              "d": {
+                "incoming": 5
+              }
+            },
+            "sales": []
+          },
+          "2026-07-12": {
+            "date": "2026-07-12",
+            "entries": {
+              "d": {
+                "opening": 30,
+                "closing": 28
+              }
+            },
+            "sales": []
+          },
+          "2026-08-01": {
+            "date": "2026-08-01",
+            "entries": {
+              "a": {
+                "opening": 20,
+                "closing": 20
+              },
+              "b": {
+                "closing": 20
+              },
+              "c": {
+                "closing": 20
+              },
+              "g": {
+                "closing": 20
+              }
+            },
+            "sales": []
+          },
+          "2026-08-02": {
+            "date": "2026-08-02",
+            "entries": {
+              "a": {
+                "incoming": 10
+              },
+              "b": {
+                "incoming": 10
+              },
+              "c": {
+                "incoming": 10
+              },
+              "g": {
+                "opening": 10
+              }
+            },
+            "sales": [
+              {
+                "code": "A",
+                "name": "EKMEK",
+                "qty": 10
+              },
+              {
+                "code": "B",
+                "name": "KÖFTE",
+                "qty": 5
+              },
+              {
+                "code": "C",
+                "name": "SOS",
+                "qty": 5
+              },
+              {
+                "code": "G",
+                "name": "TAVUK",
+                "qty": 15
+              }
+            ]
+          },
+          "2026-08-03": {
+            "date": "2026-08-03",
+            "entries": {
+              "a": {
+                "closing": 18
+              },
+              "b": {
+                "opening": 25,
+                "closing": 18
+              },
+              "c": {
+                "opening": 28,
+                "closing": 18
+              }
+            },
+            "sales": [
+              {
+                "code": "A",
+                "name": "EKMEK",
+                "qty": 2
+              },
+              {
+                "code": "B",
+                "name": "KÖFTE",
+                "qty": 6
+              },
+              {
+                "code": "C",
+                "name": "SOS",
+                "qty": 6
+              }
+            ]
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "calc": [
+        {
+          "date": "2026-08-02",
+          "itemID": "a",
+          "expect": {
+            "opening": 20,
+            "openingSource": "closing",
+            "incoming": 10,
+            "sold": 10,
+            "isCounted": false
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "a",
+          "expect": {
+            "opening": 20,
+            "openingSource": "closing",
+            "openingBaseDate": "2026-08-01",
+            "carriedNet": 0,
+            "carriedDays": 0,
+            "actual": 2,
+            "diff": 0
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "b",
+          "expect": {
+            "opening": 25,
+            "openingSource": "manual",
+            "openingBaseDate": "2026-08-01",
+            "openingJump": 0,
+            "actual": 7,
+            "diff": -1
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "c",
+          "expect": {
+            "opening": 28,
+            "openingSource": "manual",
+            "openingBaseDate": "2026-08-01",
+            "openingJump": 3,
+            "actual": 10,
+            "diff": -4
+          }
+        },
+        {
+          "date": "2026-07-12",
+          "itemID": "d",
+          "expect": {
+            "opening": 30,
+            "openingSource": "manual",
+            "openingBaseDate": "2026-06-01",
+            "openingJump": null,
+            "actual": 2,
+            "diff": -2
+          }
+        }
+      ],
+      "summary": [
+        {
+          "from": "2026-08-01",
+          "to": "2026-08-03",
+          "itemID": "a",
+          "expect": {
+            "daysCounted": 2,
+            "firstOpening": 20,
+            "lastClosing": 18,
+            "incoming": 10,
+            "transferIn": 0,
+            "transferOut": 0,
+            "sold": 12,
+            "waste": 0,
+            "actual": 12,
+            "diff": 0,
+            "openingAdjust": 0,
+            "daily": [
+              {
+                "date": "2026-08-01",
+                "diff": 0
+              },
+              {
+                "date": "2026-08-03",
+                "diff": 0
+              }
+            ]
+          }
+        },
+        {
+          "from": "2026-08-01",
+          "to": "2026-08-03",
+          "itemID": "b",
+          "expect": {
+            "daysCounted": 1,
+            "firstOpening": 20,
+            "lastClosing": 18,
+            "incoming": 10,
+            "sold": 11,
+            "waste": 0,
+            "actual": 12,
+            "diff": -1,
+            "openingAdjust": 0,
+            "daily": [
+              {
+                "date": "2026-08-03",
+                "diff": -1
+              }
+            ]
+          }
+        },
+        {
+          "from": "2026-08-01",
+          "to": "2026-08-03",
+          "itemID": "c",
+          "expect": {
+            "daysCounted": 1,
+            "firstOpening": 20,
+            "lastClosing": 18,
+            "incoming": 10,
+            "sold": 11,
+            "actual": 15,
+            "diff": -4,
+            "openingAdjust": 3
+          }
+        },
+        {
+          "from": "2026-08-02",
+          "to": "2026-08-03",
+          "itemID": "a",
+          "expect": {
+            "daysCounted": 1,
+            "firstOpening": 20,
+            "incoming": 10,
+            "sold": 12,
+            "actual": 12,
+            "diff": 0
+          }
+        },
+        {
+          "from": "2026-07-01",
+          "to": "2026-07-12",
+          "itemID": "d",
+          "expect": {
+            "daysCounted": 1,
+            "firstOpening": 30,
+            "lastClosing": 28,
+            "incoming": 0,
+            "sold": 0,
+            "actual": 2,
+            "diff": -2,
+            "openingAdjust": 0
+          }
+        }
+      ],
+      "orders": [
+        {
+          "date": "2026-08-02",
+          "lookbackDays": 7,
+          "coverDays": 3,
+          "itemID": "g",
+          "expect": {
+            "stock": 0,
+            "stockDate": "2026-08-01",
+            "countedStock": 20,
+            "dailyUsage": 15,
+            "sampleDays": 1,
+            "daysOfCover": 0,
+            "target": 50,
+            "suggested": 50,
+            "estimate": {
+              "itemID": "g",
+              "stock": -5,
+              "baseDate": "2026-08-02",
+              "baseKind": "manualOpening",
+              "baseValue": 10,
+              "counted": false,
+              "minStock": 5,
+              "below": true
+            }
+          },
+          "text": {
+            "value": "≈ 0",
+            "note": "açılış 02.08 + hareket",
+            "help": "Tahmin sıfırın altında: girilmemiş Gelen olabilir. Elle girilen açılış 02.08.2026: 10 adet + sonraki hareketler ≈ 0 adet"
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "lookbackDays": 7,
+          "coverDays": 3,
+          "itemID": "a",
+          "expect": {
+            "stock": 18,
+            "stockDate": "2026-08-03",
+            "countedStock": 18
+          },
+          "text": {
+            "value": "18",
+            "note": null,
+            "help": "Sayım 03.08.2026: 18 adet"
+          }
+        },
+        {
+          "date": "2026-08-02",
+          "lookbackDays": 7,
+          "coverDays": 3,
+          "itemID": "h",
+          "expect": {
+            "stock": null,
+            "stockDate": null,
+            "countedStock": null,
+            "suggested": 0,
+            "estimate": null
+          },
+          "text": {
+            "value": "—",
+            "note": null,
+            "help": "Henüz sayım yok; öneri stok 0 kabul edilerek hesaplanır"
+          }
+        }
+      ],
+      "estimates": [
+        {
+          "date": "2026-08-02",
+          "itemID": "g",
+          "expect": {
+            "stock": -5,
+            "baseDate": "2026-08-02",
+            "baseKind": "manualOpening",
+            "baseValue": 10,
+            "counted": false,
+            "minStock": 5,
+            "below": true
+          },
+          "text": {
+            "value": "≈ 0 adet",
+            "help": "Tahmin sıfırın altında: girilmemiş Gelen olabilir. Elle girilen açılış 02.08.2026: 10 adet + sonraki hareketler",
+            "attention": "≈ 0 adet · kritik 5 · açılış 02.08"
           }
         }
       ]

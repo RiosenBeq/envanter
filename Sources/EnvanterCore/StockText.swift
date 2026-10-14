@@ -138,6 +138,41 @@ public enum StockEstimateText {
     }
 }
 
+/// Sipariş ekranının "Mevcut stok" hücresi. Dayanak `OrderSuggestion.estimate`, metin Stok Kalemleri ile aynı.
+/// Web `stockText.ts` (orderStock…) ile birebir.
+public enum OrderStockText {
+    /// "18" (o gün sayıldı), "≈ 25" (tahmini; eksi tahmin "≈ 0") ya da "—" (stok bilinmiyor)
+    public static func value(_ s: OrderSuggestion) -> String {
+        guard let e = s.estimate, let v = s.stock else { return "—" }
+        return (e.counted ? "" : "≈ ") + OpeningText.num(v, s.item)
+    }
+
+    /// Değerin altındaki not: "sayım 28.08 + hareket", "açılış 02.08", "sayım 01.06 · 62 gün önce"; o gün sayıldıysa nil
+    public static func note(_ s: OrderSuggestion, date: String) -> String? {
+        if let e = s.estimate {
+            if e.counted { return nil }
+            let who = e.baseKind == .manualOpening ? "açılış" : "sayım"
+            return "\(who) \(DateKey.dayMonth(e.baseDate))" + (e.stock != e.baseValue ? " + hareket" : "")
+        }
+        guard let d = s.stockDate else { return nil }
+        guard let gap = DateKey.distance(from: d, to: date) else { return "sayım \(DateKey.dayMonth(d))" }
+        return "sayım \(DateKey.dayMonth(d)) · \(gap) gün önce"
+    }
+
+    /// İpucu: tahminin dayanağı (Stok Kalemleri ile aynı) ya da stokun neden bilinmediği
+    public static func help(_ s: OrderSuggestion, date: String) -> String {
+        let u = OpeningText.unit(s.item)
+        if let e = s.estimate {
+            let base = StockEstimateText.help(e, item: s.item)
+            guard !e.counted, let v = s.stock else { return base }
+            return "\(base) ≈ \(OpeningText.num(v, s.item)) \(u)"
+        }
+        guard let counted = s.countedStock, let d = s.stockDate else { return "Henüz sayım yok; öneri stok 0 kabul edilerek hesaplanır" }
+        let ago = DateKey.distance(from: d, to: date).map { " \($0) gün önce" } ?? ""
+        return "Son sayım\(ago) (\(DateKey.short(d)): \(OpeningText.num(counted, s.item)) \(u)); stok bilinmiyor, öneri stok 0 kabul edilerek hesaplanır"
+    }
+}
+
 /// Genel Bakış "Kritik seviye altı" kartı: sayım varsa sayılanlar (+ tahmini sayılmayanlar), yoksa tahminler
 public struct BelowMinimumCard: Equatable, Sendable {
     public var value: String

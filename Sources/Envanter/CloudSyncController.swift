@@ -65,6 +65,9 @@ final class CloudSyncController: ObservableObject {
     /// Canlı bağlantının (Supabase Realtime) durumu: `.connected` iken web panelindeki değişiklikler anında gelir;
     /// değilse 60 sn'lik düzenli eşitleme sürer. Bağlı değilken ya da bu modda kapalıyken `.disconnected`.
     @Published private(set) var realtimeStatus: RealtimeStatus = .disconnected
+    /// Canlı kanalda bu sürümden yeni bir veri biçimi bildiren istemci (web paneli, Windows ya da başka Mac) görüldüyse o
+    /// düzey (`DataFormat.newerPeerLevel`): kenar çubuğunda ve eşitleme kartında "uygulamayı güncelleyin" uyarısı
+    @Published private(set) var newerFormat: Int?
     /// Kapatılmış gün uyarısı bu oturumda gösterildi mi (bir kez)
     private var lockedDayNoticeShown = false
 
@@ -354,6 +357,7 @@ final class CloudSyncController: ObservableObject {
         realtimeKey = nil
         realtimeBox.client?.stop()
         if realtimeStatus != .disconnected { realtimeStatus = .disconnected }
+        if newerFormat != nil { newerFormat = nil }
     }
 
     /// Canlı bağlantının anahtar kaynağı için geçerli istemci (oturum yoksa nil)
@@ -372,6 +376,9 @@ final class CloudSyncController: ObservableObject {
         c.onStatus = { [weak self] status in
             MainActor.assumeIsolated { self?.realtimeStatusChanged(status) }
         }
+        c.onPresence = { [weak self] state in
+            MainActor.assumeIsolated { self?.presenceChanged(state) }
+        }
         realtimeBox.client = c
         return c
     }
@@ -386,6 +393,13 @@ final class CloudSyncController: ObservableObject {
             return
         }
         scheduleSync(after: RealtimeClient.coalesceSeconds)
+    }
+
+    /// Kanaldakiler değişti: bu Mac'ten yeni bir veri biçimi bildiren var mı (kendi kaydı sayılmaz)
+    private func presenceChanged(_ state: [String: [JSONValue]]) {
+        guard realtimeKey != nil else { return }
+        let level = DataFormat.newerPeerLevel(in: state, ownKey: Self.deviceKey())
+        if newerFormat != level { newerFormat = level }
     }
 
     private func realtimeStatusChanged(_ status: RealtimeStatus) {

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 import UniformTypeIdentifiers
 import EnvanterCore
 
@@ -83,6 +84,14 @@ struct AppAlert: Identifiable {
     var message: String
 }
 
+/// Gün dönümü bildirimi (ana pencerenin üstündeki şerit): "Yeni gün başladı: 15.10.2026 · Dünkü güne dön"
+struct DayRolloverNotice: Equatable {
+    /// Önceki gün ("Dünkü güne dön")
+    let from: String
+    /// Geçilen yeni gün
+    let to: String
+}
+
 struct ImportPreview: Identifiable {
     let id = UUID()
     var report: SalesReport
@@ -127,6 +136,12 @@ final class AppStore: ObservableObject {
     /// Ekran görüntüsü aracı: bağlanma penceresinin içeriği ana pencerenin üstünde gösterilir (pencere görüntüsüne
     /// sayfa pencereleri girmez)
     @Published var previewConnectPanel = false
+    /// Gün dönümünde "bugün" seçiliyken yeni güne geçildi (şerit; `checkDayRollover`)
+    @Published var dayRollover: DayRolloverNotice?
+    /// Son bakıldığında "bugün" olan gün (gün dönümü)
+    private(set) var knownToday = DateKey.today()
+    /// Dakikada bir gün dönümü denetimi (mağaza bilgisayarı gün boyu açık kalır)
+    private var rolloverTimer: Timer?
 
     let persistence: Persistence
     /// Web paneliyle (Supabase) arka planda eşitleme
@@ -189,6 +204,19 @@ final class AppStore: ObservableObject {
         alert = startupAlert
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.flush() }
+        }
+        // Gün dönümü: uygulama öne gelince, Mac uykudan uyanınca, takvim günü değişince ve dakikada bir (otomatik test ve
+        // ekran görüntüsü modlarında kapalı; sistem testi `checkDayRollover`ı doğrudan çağırır)
+        if !automated {
+            let check: @Sendable (Notification) -> Void = { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkDayRollover() }
+            }
+            NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main, using: check)
+            NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main, using: check)
+            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: check)
+            rolloverTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkDayRollover() }
+            }
         }
         // İlk açılışta dosyayı hemen oluştur
         if !FileManager.default.fileExists(atPath: persistence.dataFile.path) {
@@ -383,6 +411,42 @@ final class AppStore: ObservableObject {
     }
     func shiftDay(_ n: Int) { selectedDate = DateKey.addDays(n, to: selectedDate) }
     func goToday() { selectedDate = DateKey.today() }
+
+    // MARK: - Gün dönümü
+
+    /// Gün dönümü (`DayRollover`, web ile aynı kural): takvim günü değiştiyse ve "bugün" seçiliyse yeni güne geçilir ve
+    /// "Yeni gün başladı" şeridi gösterilir; başka gün seçiliyse hiçbir şey değişmez. Biri o an bir alana yazıyorsa geçiş
+    /// bir sonraki denemeye kalır.
+    func checkDayRollover(today: String = DateKey.today(), editing: Bool? = nil) {
+        let previous = knownToday
+        guard today != previous else { return }
+        switch DayRollover.decide(selected: selectedDate, previousToday: previous, today: today, editing: editing ?? Self.isEditingText()) {
+        case .wait:
+            return
+        case .none:
+            knownToday = today
+        case .move(let to):
+            knownToday = today
+            selectedDate = to
+            dayRollover = DayRolloverNotice(from: previous, to: to)
+        }
+    }
+
+    /// Şeritteki "Dünkü güne dön"
+    func returnFromRollover() {
+        if let r = dayRollover { selectedDate = r.from }
+        dayRollover = nil
+    }
+
+    /// Sistem testi: bilinen "bugün"ü ayarlar
+    func setKnownToday(_ day: String) { knownToday = day }
+
+    /// Biri şu an yazıyor mu: uygulama önde, odakta bir yazı alanı ve son 30 sn içinde tuşa basılmış (odak bir hücrede
+    /// kalıp kimse yazmıyorsa gün dönümü beklemez)
+    private static func isEditingText() -> Bool {
+        guard NSApp.isActive, NSApp.keyWindow?.firstResponder is NSText else { return false }
+        return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) < 30
+    }
 
     // MARK: - Günlük giriş
 
@@ -637,26 +701,62 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func addItem(name: String, unit: String) {
-        var base = name.lowercased(with: Locale(identifier: "tr_TR")).filter { $0.isLetter || $0.isNumber }
-        if base.isEmpty { base = "kalem" }
-        var id = base, n = 2
-        while data.items.contains(where: { $0.id == id }) { id = "\(base)\(n)"; n += 1 }
-        let isKg = unit == "Kg"
-        mutateData("Stok Kalemi Ekle") { $0.items.append(Item(id: id, name: name, unit: unit, recipeUnit: isKg ? "kg" : "adet", factor: 1)) }
+    /// Yeni stok kalemi (`CatalogOps`): aynı adlı kalem varsa eklenmez ("Bu adla bir kalem zaten var"); kimlik silinmiş
+    /// kalemlerinkini de almaz (kapatılmış günlerde kalan kayıtları devralmasın).
+    /// - Returns: eklendi mi
+    @discardableResult
+    func addItem(name: String, unit: String) -> Bool {
+        guard !CatalogOps.hasItemNamed(name, in: data.items) else {
+            alert = AppAlert(title: CatalogOps.duplicateTitle, message: CatalogOps.duplicateMessage(name))
+            return false
+        }
+        let item = CatalogOps.newItem(name: name, unit: unit, data: data)
+        return mutateData("Stok Kalemi Ekle") { $0.items.append(item) }
     }
 
-    func deleteItem(_ id: String) {
-        mutateData("Stok Kalemi Sil") { d in
-            d.items.removeAll { $0.id == id }
-            for i in d.products.indices { d.products[i].amounts[id] = nil }
-            for (k, var day) in d.days {
-                day.entries[id] = nil
-                day.legacySold?[id] = nil
-                day.legacyWaste?[id] = nil
-                if day.isEmpty { d.days[k] = nil } else { d.days[k] = day }
-            }
+    /// Kalemin adını değiştirir; aynı adlı başka kalem varsa değiştirmez ve uyarır
+    @discardableResult
+    func renameItem(_ id: String, to name: String) -> Bool {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, data.items.first(where: { $0.id == id })?.name != n else { return false }
+        guard !CatalogOps.hasItemNamed(n, in: data.items, except: id) else {
+            alert = AppAlert(title: CatalogOps.duplicateTitle, message: CatalogOps.duplicateMessage(n))
+            return false
         }
+        updateItem(id) { $0.name = n }
+        return true
+    }
+
+    /// Kalemi kalıcı olarak siler (`CatalogOps.deleteItem`): reçete miktarları ve açık günlerdeki kayıtlar da silinir;
+    /// kapatılmış günlere dokunulmaz. ⌘Z ile geri alınır.
+    @discardableResult
+    func deleteItem(_ id: String) -> CatalogOps.DeleteResult? {
+        let r = CatalogOps.deleteItem(id, in: data)
+        let applied = mutateData("Stok Kalemi Sil") { $0 = r.data }
+        return applied ? r : nil
+    }
+
+    /// Kalemi pasif yapar (silmek yerine önerilen: günlük sayımda ve raporlarda görünmez, geçmişi korunur)
+    @discardableResult
+    func deactivateItem(_ id: String) -> Bool {
+        guard data.items.first(where: { $0.id == id })?.active == true else { return false }
+        return mutateData("Kalemi Pasif Yap") { d in
+            if let i = d.items.firstIndex(where: { $0.id == id }) { d.items[i].active = false }
+        }
+    }
+
+    /// "Yeni kalem olarak aç" (`CatalogOps.splitForUnit`): eski kalem "Patates (adet)" adıyla pasif kalır, aynı adla yeni
+    /// birimli kalem açılır, reçete miktarları ona taşınır. Sonuç bildirimle gösterilir.
+    @discardableResult
+    func splitItemForUnit(_ id: String, unit: String) -> Bool {
+        guard let item = data.items.first(where: { $0.id == id }),
+              let r = CatalogOps.splitForUnit(id, unit: unit, in: data) else { return false }
+        let moved = CatalogOps.history(id, in: data).recipes
+        guard mutateData("Yeni Kalem Olarak Aç", { $0 = r.data }) else { return false }
+        alert = AppAlert(title: "Yeni kalem açıldı",
+                         message: CatalogOps.splitMessage(name: item.name, unit: unit, oldName: r.oldName, recipeUnit: item.recipeUnit,
+                                                          movedRecipes: moved) + " Düzen > Geri Al (⌘Z) ile geri alınabilir.")
+        return true
     }
 
     func moveItems(from: IndexSet, to: Int) {

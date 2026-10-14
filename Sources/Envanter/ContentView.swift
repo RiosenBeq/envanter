@@ -20,6 +20,10 @@ struct ContentView: View {
                 .padding(.leading, 10).padding(.vertical, 10)
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Gün dönümü: "bugün" seçiliyken yeni güne geçildi
+                .overlay(alignment: .top) {
+                    if let notice = store.dayRollover { DayRolloverBanner(notice: notice) }
+                }
         }
         .background(AmbientBackground())
         .onAppear { store.undoManager = undoManager }
@@ -179,6 +183,38 @@ struct ContentView: View {
             return open > 0 ? ("\(open)", Brand.positive) : nil
         default:
             return nil
+        }
+    }
+}
+
+/// Gün dönümü şeridi: "Yeni gün başladı: 15.10.2026 · Dünkü güne dön" (bir dakika sonra kendiliğinden kapanır)
+private struct DayRolloverBanner: View {
+    @EnvironmentObject var store: AppStore
+    let notice: DayRolloverNotice
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sunrise.fill").foregroundStyle(Brand.accent)
+            Text(DayRollover.title(notice.to)).fontWeight(.semibold)
+            Button(DayRollover.backLabel) { store.returnFromRollover() }
+                .buttonStyle(SoftButtonStyle())
+            Button {
+                store.dayRollover = nil
+            } label: {
+                Image(systemName: "xmark").font(.caption.weight(.bold))
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Kapat")
+            .accessibilityLabel("Kapat")
+        }
+        .font(.callout)
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
+        .padding(.top, 12)
+        .task(id: notice) {
+            try? await Task.sleep(for: .seconds(60))
+            if store.dayRollover == notice { store.dayRollover = nil }
         }
     }
 }

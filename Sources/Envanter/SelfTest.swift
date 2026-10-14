@@ -358,6 +358,35 @@ enum SelfTest {
         let restored = store.restoreMissingDefaults()
         check(restored.products == 1 && store.product("11101") != nil, "silinen varsayılan ürün geri eklendi")
 
+        print("14b) Stok kalemi: aynı ad, silme, silinen kimlik, birim (CatalogOps; web ile aynı)")
+        store.alert = nil
+        check(!store.addItem(name: " 90 GR ", unit: "Adet") && store.alert?.title == CatalogOps.duplicateTitle, "aynı adlı kalem eklenmedi (uyarı)")
+        store.alert = nil
+        check(store.addItem(name: "Turşu", unit: "Adet") && store.data.items.last?.id == "turşu", "yeni kalem eklendi (turşu)")
+        check(!store.renameItem("turşu", to: "peynir") && store.alert?.title == CatalogOps.duplicateTitle
+              && store.data.items.last?.name == "Turşu", "başka kalemin adı verilemiyor")
+        store.alert = nil
+        let lockedDay = "2026-07-10", openDay = "2026-07-11"
+        setClosings(lockedDay, ["turşu": 4])
+        setClosings(openDay, ["turşu": 3])
+        store.setLocked(lockedDay, true)
+        let lockedBefore = store.data.days[lockedDay]
+        check(CatalogOps.history("turşu", in: store.data).suggestsDeactivate, "sayım geçmişi olan kalemde silmek yerine \"Pasif Yap\" öneriliyor")
+        let removed = store.deleteItem("turşu")
+        check(removed?.days == 1 && removed?.keptLockedDays == 1 && store.data.days[openDay] == nil && store.data.days[lockedDay] == lockedBefore,
+              "silme: açık gündeki kayıt silindi, kapatılmış gün olduğu gibi kaldı")
+        check(store.addItem(name: "Turşu", unit: "Kg") && store.data.items.last?.id == "turşu2",
+              "yeniden eklenen kalem silinenin kimliğini almadı (turşu2: kapatılmış gündeki kayıtları devralmaz)")
+        setClosings(openDay, ["turşu2": 2])
+        check(CatalogOps.unitChangeNeedsConfirmation(CatalogOps.history("turşu2", in: store.data)), "sayım geçmişi olan kalemde birim değişikliği onay istiyor")
+        check(store.splitItemForUnit("turşu2", unit: "Adet") && store.data.items.first { $0.id == "turşu2" }?.active == false
+              && store.data.items.first { $0.id == "turşu2" }?.name == "Turşu (kg)"
+              && store.data.items.contains { $0.name == "Turşu" && $0.unit == "Adet" && $0.active },
+              "Yeni Kalem Olarak Aç: eski kalem \"Turşu (kg)\" adıyla pasif, yeni birimli kalem açık")
+        store.alert = nil
+        check(store.deactivateItem("turşu2") == false, "pasif kalem yeniden pasif yapılmıyor")
+        store.setLocked(lockedDay, false)
+
         print("15) Takip şeridi renkleri (sayılanların kaçında fark var; web paneliyle aynı kural)")
         check(TrackerState.legendOrder.prefix(3).map { $0.label }
               == ["Sayım tam, fark az", "Eksik sayım ya da sayılanların %10'unda fark", "Sayılanların %20'sinde fark"],
@@ -527,5 +556,25 @@ enum SelfTest {
         let empty = DaySteps(store.engine.overview(date: DateKey.addDays(60, to: d2)))
         check(empty.next == .sales && store.lockAction(DateKey.addDays(60, to: d2)) == .nothingCounted,
               "boş gün: sıradaki adım satış raporu, gün kapatılamaz")
+
+        print("21) Sürüm uyumu ve gün dönümü")
+        check(DataFormat.level == 2 && DataFormat.level(ofPresence: RealtimePresence.mac(branch: "Tuzla", app: "2.1", since: Date())) == 2,
+              "canlı durum bilgisi veri biçimi düzeyini bildiriyor (fmt 2)")
+        check(Brand.version == "2.1" || Brand.version == "geliştirme", "uygulama sürümü 2.1 (\(Brand.version))")
+        check(DataFormat.newerPeerLevel(in: ["web-1": [.object(["client": .string("web"), "fmt": .number(3)])]], ownKey: "mac-1") == 3,
+              "kanalda daha yeni sürüm görülünce uyarı düzeyi")
+        let day0 = "2026-10-14", day1 = "2026-10-15"
+        store.setKnownToday(day0)
+        store.selectedDate = day0
+        store.checkDayRollover(today: day1, editing: true)
+        check(store.selectedDate == day0 && store.dayRollover == nil, "gün dönümü: biri yazarken beklenir")
+        store.checkDayRollover(today: day1, editing: false)
+        check(store.selectedDate == day1 && store.dayRollover == DayRolloverNotice(from: day0, to: day1),
+              "gün dönümü: bugün seçiliyken yeni güne geçildi, şerit gösterildi (\(DayRollover.title(day1)))")
+        store.returnFromRollover()
+        check(store.selectedDate == day0 && store.dayRollover == nil, "\"\(DayRollover.backLabel)\" önceki güne döndü")
+        store.checkDayRollover(today: "2026-10-16", editing: false)
+        check(store.selectedDate == day0 && store.dayRollover == nil, "başka gün görüntülenirken gün değişmez")
+        store.setKnownToday(DateKey.today())
     }
 }

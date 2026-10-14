@@ -545,6 +545,8 @@ struct SaveStatusView: View {
             }
             // Web paneline bağlıyken: "Web ile eşitlendi · 14:05" / "Eşitleniyor…" / "Eşitleme hatası"
             CloudStatusLine(cloud: store.cloud)
+            // Şubede bu Mac'ten yeni bir sürüm çalışıyorsa
+            CloudFormatWarning(cloud: store.cloud)
         }
         .font(.caption).foregroundStyle(.secondary)
     }

@@ -1,0 +1,1043 @@
+{
+  "about": "Stok kalemi işlemleri (Swift CatalogOps / web src/lib/catalog.ts). Ortak veri: items, products, days, orders. delete.expected.days: her giriş günü için null (silindi) ya da {entries, legacySold?, legacyWaste?}.",
+  "items": [
+    {
+      "id": "g90",
+      "name": "90 Gr",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true,
+      "minStock": 40,
+      "tolerance": 2
+    },
+    {
+      "id": "peynir",
+      "name": "Peynir",
+      "unit": "Kg",
+      "recipeUnit": "dilim",
+      "factor": 0.014,
+      "active": true,
+      "tolerance": 0.1
+    },
+    {
+      "id": "patates",
+      "name": "Patates",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true
+    },
+    {
+      "id": "sos",
+      "name": "Sos",
+      "unit": "Adet",
+      "recipeUnit": "adet",
+      "factor": 1,
+      "active": true
+    }
+  ],
+  "products": [
+    {
+      "code": "11101",
+      "name": "Dublex",
+      "category": "Burger",
+      "amounts": {
+        "g90": 2,
+        "peynir": 2
+      }
+    },
+    {
+      "code": "11102",
+      "name": "Patates Kızartması",
+      "category": "Yan Ürün",
+      "amounts": {
+        "patates": 1
+      }
+    },
+    {
+      "code": "11103",
+      "name": "Cheddar Sos",
+      "category": "Ekstra",
+      "amounts": {
+        "peynir": 0,
+        "sos": 1
+      }
+    }
+  ],
+  "days": {
+    "2026-08-01": {
+      "date": "2026-08-01",
+      "entries": {
+        "g90": {
+          "closing": 10
+        },
+        "peynir": {
+          "closing": 3
+        }
+      },
+      "sales": [
+        {
+          "code": "11101",
+          "name": "Dublex",
+          "qty": 4
+        }
+      ],
+      "locked": true
+    },
+    "2026-08-02": {
+      "date": "2026-08-02",
+      "entries": {
+        "g90": {
+          "opening": 10,
+          "closing": 8
+        },
+        "peynir": {
+          "closing": 2.5
+        }
+      },
+      "sales": [
+        {
+          "code": "11101",
+          "name": "Dublex",
+          "qty": 1
+        },
+        {
+          "code": "11102",
+          "name": "Patates Kızartması",
+          "qty": 3
+        }
+      ],
+      "note": "Dondurucu kontrol edildi"
+    },
+    "2026-08-03": {
+      "date": "2026-08-03",
+      "entries": {
+        "peynir": {
+          "closing": 2
+        }
+      },
+      "sales": []
+    },
+    "2026-08-04": {
+      "date": "2026-08-04",
+      "entries": {
+        "g90": {
+          "closing": 7
+        }
+      },
+      "sales": [],
+      "legacySold": {
+        "peynir": 1.2,
+        "g90": 3
+      },
+      "legacyWaste": {
+        "peynir": 0.1
+      }
+    },
+    "2026-08-05": {
+      "date": "2026-08-05",
+      "entries": {},
+      "sales": [
+        {
+          "code": "11103",
+          "name": "Cheddar Sos",
+          "qty": 2
+        }
+      ]
+    },
+    "2026-08-06": {
+      "date": "2026-08-06",
+      "entries": {
+        "patates": {
+          "closing": 20
+        }
+      },
+      "sales": [
+        {
+          "code": "11102",
+          "name": "Patates Kızartması",
+          "qty": 5
+        }
+      ],
+      "locked": true
+    }
+  },
+  "orders": [
+    {
+      "id": "o1",
+      "date": "2026-08-02",
+      "supplier": "Et",
+      "lines": [
+        {
+          "itemID": "g90",
+          "qty": 50
+        }
+      ],
+      "status": "open"
+    },
+    {
+      "id": "o2",
+      "date": "2026-07-30",
+      "supplier": "Eski",
+      "lines": [
+        {
+          "itemID": "eskikalem",
+          "qty": 5,
+          "received": 5
+        }
+      ],
+      "status": "received",
+      "receivedOn": "2026-07-31"
+    }
+  ],
+  "delete": [
+    {
+      "name": "peynir: kapatılmış gün korunur, boşalan gün silinir, Excel satılan/zayi kaldırılır",
+      "itemID": "peynir",
+      "expected": {
+        "items": [
+          "g90",
+          "patates",
+          "sos"
+        ],
+        "products": {
+          "11101": {
+            "g90": 2
+          },
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "sos": 1
+          }
+        },
+        "days": {
+          "2026-08-01": {
+            "entries": {
+              "g90": {
+                "closing": 10
+              },
+              "peynir": {
+                "closing": 3
+              }
+            }
+          },
+          "2026-08-02": {
+            "entries": {
+              "g90": {
+                "opening": 10,
+                "closing": 8
+              }
+            }
+          },
+          "2026-08-03": null,
+          "2026-08-04": {
+            "entries": {
+              "g90": {
+                "closing": 7
+              }
+            },
+            "legacySold": {
+              "g90": 3
+            },
+            "legacyWaste": {}
+          },
+          "2026-08-05": {
+            "entries": {}
+          },
+          "2026-08-06": {
+            "entries": {
+              "patates": {
+                "closing": 20
+              }
+            }
+          }
+        },
+        "counts": {
+          "products": 2,
+          "days": 3,
+          "keptLockedDays": 1
+        }
+      }
+    },
+    {
+      "name": "patates: yalnızca kapatılmış günde kaydı var (dokunulmaz)",
+      "itemID": "patates",
+      "expected": {
+        "items": [
+          "g90",
+          "peynir",
+          "sos"
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {},
+          "11103": {
+            "peynir": 0,
+            "sos": 1
+          }
+        },
+        "days": {
+          "2026-08-01": {
+            "entries": {
+              "g90": {
+                "closing": 10
+              },
+              "peynir": {
+                "closing": 3
+              }
+            }
+          },
+          "2026-08-02": {
+            "entries": {
+              "g90": {
+                "opening": 10,
+                "closing": 8
+              },
+              "peynir": {
+                "closing": 2.5
+              }
+            }
+          },
+          "2026-08-03": {
+            "entries": {
+              "peynir": {
+                "closing": 2
+              }
+            }
+          },
+          "2026-08-04": {
+            "entries": {
+              "g90": {
+                "closing": 7
+              }
+            },
+            "legacySold": {
+              "peynir": 1.2,
+              "g90": 3
+            },
+            "legacyWaste": {
+              "peynir": 0.1
+            }
+          },
+          "2026-08-05": {
+            "entries": {}
+          },
+          "2026-08-06": {
+            "entries": {
+              "patates": {
+                "closing": 20
+              }
+            }
+          }
+        },
+        "counts": {
+          "products": 1,
+          "days": 0,
+          "keptLockedDays": 1
+        }
+      }
+    },
+    {
+      "name": "sos: gün kaydı yok, yalnızca reçete",
+      "itemID": "sos",
+      "expected": {
+        "items": [
+          "g90",
+          "peynir",
+          "patates"
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "peynir": 0
+          }
+        },
+        "days": {
+          "2026-08-01": {
+            "entries": {
+              "g90": {
+                "closing": 10
+              },
+              "peynir": {
+                "closing": 3
+              }
+            }
+          },
+          "2026-08-02": {
+            "entries": {
+              "g90": {
+                "opening": 10,
+                "closing": 8
+              },
+              "peynir": {
+                "closing": 2.5
+              }
+            }
+          },
+          "2026-08-03": {
+            "entries": {
+              "peynir": {
+                "closing": 2
+              }
+            }
+          },
+          "2026-08-04": {
+            "entries": {
+              "g90": {
+                "closing": 7
+              }
+            },
+            "legacySold": {
+              "peynir": 1.2,
+              "g90": 3
+            },
+            "legacyWaste": {
+              "peynir": 0.1
+            }
+          },
+          "2026-08-05": {
+            "entries": {}
+          },
+          "2026-08-06": {
+            "entries": {
+              "patates": {
+                "closing": 20
+              }
+            }
+          }
+        },
+        "counts": {
+          "products": 1,
+          "days": 0,
+          "keptLockedDays": 0
+        }
+      }
+    }
+  ],
+  "reserved": [
+    {
+      "name": "tüm veri",
+      "deleteFirst": null,
+      "expected": [
+        "eskikalem",
+        "g90",
+        "patates",
+        "peynir",
+        "sos"
+      ]
+    },
+    {
+      "name": "peynir silindikten sonra (kapatılmış günde kaydı kalır)",
+      "deleteFirst": "peynir",
+      "expected": [
+        "eskikalem",
+        "g90",
+        "patates",
+        "peynir",
+        "sos"
+      ]
+    },
+    {
+      "name": "sos silindikten sonra (hiçbir yerde kalmaz)",
+      "deleteFirst": "sos",
+      "expected": [
+        "eskikalem",
+        "g90",
+        "patates",
+        "peynir"
+      ]
+    }
+  ],
+  "newID": [
+    {
+      "name": "silinen kalemin adıyla yeniden ekleme",
+      "deleteFirst": "peynir",
+      "itemName": "Peynir",
+      "expected": "peynir2"
+    },
+    {
+      "name": "silinen ve hiç izi kalmayan kalem",
+      "deleteFirst": "sos",
+      "itemName": "Sos",
+      "expected": "sos"
+    },
+    {
+      "name": "Türkçe küçük harf",
+      "deleteFirst": null,
+      "itemName": "Soğan Halkası",
+      "expected": "soğanhalkası"
+    },
+    {
+      "name": "İ → i, harf ve rakam dışı atılır",
+      "deleteFirst": null,
+      "itemName": "İNCE Kesim 1/2",
+      "expected": "incekesim12"
+    },
+    {
+      "name": "I → ı",
+      "deleteFirst": null,
+      "itemName": "ISPANAK",
+      "expected": "ıspanak"
+    },
+    {
+      "name": "boş taban",
+      "deleteFirst": null,
+      "itemName": "  --  ",
+      "expected": "kalem"
+    },
+    {
+      "name": "yalnızca siparişte geçen kimlik",
+      "deleteFirst": null,
+      "itemName": "Eski Kalem",
+      "expected": "eskikalem2"
+    },
+    {
+      "name": "başka kalemin kimliğine benzemeyen ad",
+      "deleteFirst": null,
+      "itemName": "90 Gr",
+      "expected": "90gr"
+    }
+  ],
+  "named": [
+    {
+      "name": "peynir",
+      "exceptID": null,
+      "expected": true
+    },
+    {
+      "name": "PEYNİR",
+      "exceptID": null,
+      "expected": true
+    },
+    {
+      "name": "PEYNIR",
+      "exceptID": null,
+      "expected": false
+    },
+    {
+      "name": "  Peynir  ",
+      "exceptID": null,
+      "expected": true
+    },
+    {
+      "name": "Peynir",
+      "exceptID": "peynir",
+      "expected": false
+    },
+    {
+      "name": "90 gr",
+      "exceptID": null,
+      "expected": true
+    },
+    {
+      "name": "Peynirli",
+      "exceptID": null,
+      "expected": false
+    }
+  ],
+  "history": [
+    {
+      "itemID": "peynir",
+      "expected": {
+        "days": 4,
+        "lockedDays": 1,
+        "products": 2,
+        "recipes": 1,
+        "orders": 0,
+        "salesDays": 2,
+        "lockedSalesDays": 1,
+        "suggestsDeactivate": true
+      }
+    },
+    {
+      "itemID": "g90",
+      "expected": {
+        "days": 3,
+        "lockedDays": 1,
+        "products": 1,
+        "recipes": 1,
+        "orders": 1,
+        "salesDays": 2,
+        "lockedSalesDays": 1,
+        "suggestsDeactivate": true
+      }
+    },
+    {
+      "itemID": "patates",
+      "expected": {
+        "days": 1,
+        "lockedDays": 1,
+        "products": 1,
+        "recipes": 1,
+        "orders": 0,
+        "salesDays": 2,
+        "lockedSalesDays": 1,
+        "suggestsDeactivate": true
+      }
+    },
+    {
+      "itemID": "sos",
+      "expected": {
+        "days": 0,
+        "lockedDays": 0,
+        "products": 1,
+        "recipes": 1,
+        "orders": 0,
+        "salesDays": 1,
+        "lockedSalesDays": 0,
+        "suggestsDeactivate": true
+      }
+    },
+    {
+      "itemID": "eskikalem",
+      "expected": {
+        "days": 0,
+        "lockedDays": 0,
+        "products": 0,
+        "recipes": 0,
+        "orders": 1,
+        "salesDays": 0,
+        "lockedSalesDays": 0,
+        "suggestsDeactivate": true
+      }
+    },
+    {
+      "itemID": "yok",
+      "expected": {
+        "days": 0,
+        "lockedDays": 0,
+        "products": 0,
+        "recipes": 0,
+        "orders": 0,
+        "salesDays": 0,
+        "lockedSalesDays": 0,
+        "suggestsDeactivate": false
+      }
+    }
+  ],
+  "deleteText": [
+    {
+      "openDays": 34,
+      "products": 12,
+      "lockedDays": 20,
+      "expected": "Kalem, 34 günün sayım kayıtları ve 12 reçetedeki miktarlarıyla birlikte silinir. Kapatılmış 20 gündeki kayıtlar olduğu gibi kalır."
+    },
+    {
+      "openDays": 5,
+      "products": 0,
+      "lockedDays": 0,
+      "expected": "Kalem, 5 günün sayım kayıtlarıyla birlikte silinir."
+    },
+    {
+      "openDays": 0,
+      "products": 3,
+      "lockedDays": 0,
+      "expected": "Kalem, 3 reçetedeki miktarlarıyla birlikte silinir."
+    },
+    {
+      "openDays": 0,
+      "products": 0,
+      "lockedDays": 0,
+      "expected": "Kalem silinir."
+    },
+    {
+      "openDays": 0,
+      "products": 0,
+      "lockedDays": 2,
+      "expected": "Kalem silinir. Kapatılmış 2 gündeki kayıtlar olduğu gibi kalır."
+    }
+  ],
+  "historyDeleteText": [
+    {
+      "itemID": "peynir",
+      "expected": "Kalem, 3 günün sayım kayıtları ve 2 reçetedeki miktarlarıyla birlikte silinir. Kapatılmış 1 gündeki kayıtlar olduğu gibi kalır."
+    },
+    {
+      "itemID": "yok",
+      "expected": "Kalem silinir."
+    }
+  ],
+  "unit": [
+    {
+      "itemID": "patates",
+      "newUnit": "Kg",
+      "needsConfirmation": true,
+      "expected": "“Patates” kaleminin 1 günlük sayım kaydı adet olarak girildi; birimi Kg yapmak geçmişi kg olarak okutur."
+    },
+    {
+      "itemID": "peynir",
+      "newUnit": "Adet",
+      "needsConfirmation": true,
+      "expected": "“Peynir” kaleminin 4 günlük sayım kaydı kg olarak girildi; birimi Adet yapmak geçmişi adet olarak okutur. Kritik seviye ve tolerans da adet olarak okunur."
+    },
+    {
+      "itemID": "sos",
+      "newUnit": "Kg",
+      "needsConfirmation": false,
+      "expected": "“Sos” kaleminin 0 günlük sayım kaydı adet olarak girildi; birimi Kg yapmak geçmişi kg olarak okutur."
+    }
+  ],
+  "factor": [
+    {
+      "itemID": "peynir",
+      "needsConfirmation": true,
+      "expected": "Katsayı 2 günün (kapatılmış 1 gün dahil) Satılan ve Fark değerlerini değiştirir."
+    },
+    {
+      "itemID": "sos",
+      "needsConfirmation": true,
+      "expected": "Katsayı 1 günün Satılan ve Fark değerlerini değiştirir."
+    },
+    {
+      "itemID": "yok",
+      "needsConfirmation": false,
+      "expected": "Katsayı 0 günün Satılan ve Fark değerlerini değiştirir."
+    }
+  ],
+  "split": [
+    {
+      "name": "patates adet → kg",
+      "itemID": "patates",
+      "unit": "Kg",
+      "extraItems": [],
+      "expected": {
+        "newID": "patates2",
+        "oldName": "Patates (adet)",
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true,
+            "tolerance": 0.1
+          },
+          {
+            "id": "patates",
+            "name": "Patates (adet)",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": false
+          },
+          {
+            "id": "patates2",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {
+            "patates2": 1
+          },
+          "11103": {
+            "peynir": 0,
+            "sos": 1
+          }
+        },
+        "message": "“Patates” kg olarak yeni kalem açıldı; eski kayıtlar “Patates (adet)” adıyla pasif kaldı. 1 reçetedeki miktar yeni kaleme taşındı: katsayıyı (1 adet kaç kg) kontrol edin."
+      }
+    },
+    {
+      "name": "peynir kg → adet: kritik seviye / tolerans taşınmaz, 0 miktar da taşınır",
+      "itemID": "peynir",
+      "unit": "Adet",
+      "extraItems": [],
+      "expected": {
+        "newID": "peynir2",
+        "oldName": "Peynir (kg)",
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir (kg)",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": false,
+            "tolerance": 0.1
+          },
+          {
+            "id": "peynir2",
+            "name": "Peynir",
+            "unit": "Adet",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir2": 2
+          },
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "peynir2": 0,
+            "sos": 1
+          }
+        },
+        "message": "“Peynir” adet olarak yeni kalem açıldı; eski kayıtlar “Peynir (kg)” adıyla pasif kaldı. 1 reçetedeki miktar yeni kaleme taşındı: katsayıyı (1 dilim kaç adet) kontrol edin."
+      }
+    },
+    {
+      "name": "eski ad dolu: “Patates (adet) 2”",
+      "itemID": "patates",
+      "unit": "Kg",
+      "extraItems": [
+        {
+          "id": "x",
+          "name": "patates (ADET)",
+          "unit": "Adet",
+          "recipeUnit": "adet",
+          "factor": 1,
+          "active": false
+        }
+      ],
+      "expected": {
+        "newID": "patates2",
+        "oldName": "Patates (adet) 2",
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true,
+            "tolerance": 0.1
+          },
+          {
+            "id": "patates",
+            "name": "Patates (adet) 2",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": false
+          },
+          {
+            "id": "patates2",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "x",
+            "name": "patates (ADET)",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": false
+          }
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {
+            "patates2": 1
+          },
+          "11103": {
+            "peynir": 0,
+            "sos": 1
+          }
+        },
+        "message": "“Patates” kg olarak yeni kalem açıldı; eski kayıtlar “Patates (adet) 2” adıyla pasif kaldı. 1 reçetedeki miktar yeni kaleme taşındı: katsayıyı (1 adet kaç kg) kontrol edin."
+      }
+    },
+    {
+      "name": "reçetesiz kalem",
+      "itemID": "buz",
+      "unit": "Adet",
+      "extraItems": [
+        {
+          "id": "buz",
+          "name": "Buz",
+          "unit": "Kg",
+          "recipeUnit": "kg",
+          "factor": 1,
+          "active": true
+        }
+      ],
+      "expected": {
+        "newID": "buz2",
+        "oldName": "Buz (kg)",
+        "items": [
+          {
+            "id": "g90",
+            "name": "90 Gr",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 40,
+            "tolerance": 2
+          },
+          {
+            "id": "peynir",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "dilim",
+            "factor": 0.014,
+            "active": true,
+            "tolerance": 0.1
+          },
+          {
+            "id": "patates",
+            "name": "Patates",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "sos",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "buz",
+            "name": "Buz (kg)",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": false
+          },
+          {
+            "id": "buz2",
+            "name": "Buz",
+            "unit": "Adet",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": {
+          "11101": {
+            "g90": 2,
+            "peynir": 2
+          },
+          "11102": {
+            "patates": 1
+          },
+          "11103": {
+            "peynir": 0,
+            "sos": 1
+          }
+        },
+        "message": "“Buz” adet olarak yeni kalem açıldı; eski kayıtlar “Buz (kg)” adıyla pasif kaldı."
+      }
+    },
+    {
+      "name": "aynı birim: değişiklik yok",
+      "itemID": "patates",
+      "unit": "Adet",
+      "extraItems": [],
+      "expected": null
+    },
+    {
+      "name": "olmayan kalem",
+      "itemID": "yok",
+      "unit": "Kg",
+      "extraItems": [],
+      "expected": null
+    }
+  ],
+  "duplicate": {
+    "title": "Bu adla bir kalem zaten var",
+    "cases": [
+      {
+        "name": " Peynir ",
+        "expected": "“Peynir” adı başka bir kalemde kullanılıyor."
+      }
+    ]
+  }
+}

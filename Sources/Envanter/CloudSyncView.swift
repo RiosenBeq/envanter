@@ -21,6 +21,12 @@ struct CloudSyncCard: View {
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 // Hata kartın üstünde bir kez: ne oldu, ne yapılmalı (bağlıyken değişikliklerin bu Mac'te beklediği)
                 if let issue = cloud.issue { CloudIssueBox(issue: issue) }
+                // Şubede bu Mac'ten yeni bir sürüm çalışıyor (canlı kanaldaki veri biçimi düzeyi)
+                if let level = cloud.newerFormat {
+                    Label(DataFormat.newerPeerMessage(level), systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(Brand.warn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 content
                 if let notice = cloud.notice {
                     Label(notice, systemImage: "info.circle")
@@ -317,6 +323,21 @@ struct CloudIssueBox: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.10)))
         .textSelection(.enabled)
+    }
+}
+
+/// Kenar çubuğu: şubede bu Mac'ten yeni bir sürüm çalışıyorsa "Yeni sürüm var" (ayrıntı ipucunda)
+struct CloudFormatWarning: View {
+    @ObservedObject var cloud: CloudSyncController
+
+    var body: some View {
+        if let level = cloud.newerFormat {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.warn)
+                Text("Yeni sürüm var: güncelleyin")
+            }
+            .help(DataFormat.newerPeerMessage(level))
+        }
     }
 }
 

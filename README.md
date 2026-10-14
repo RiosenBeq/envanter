@@ -17,7 +17,7 @@ Uygulama şubedeki bilgisayara kurulur; patron ve müdürler aynı veriyi **web 
 | **Satış Dökümü** | ModPos satırlarını *reçeteli / stok etkisi yok / reçete tanımsız* olarak ayırır. Her satırın stoktan düşürdüğü miktarlar görünür; reçete tek tıkla tanımlanır. |
 | **Sipariş** | Öneri = son 7/14/30 günün ortalama tüketimi × istenen gün + kritik seviye − mevcut stok − **siparişte bekleyen**. Mevcut stok, son sayıma sonraki günlerin gelen/transfer ve satışları eklenerek tahmin edilir. **Sipariş Oluştur** önerilen miktarlarla başlayan bir form açar (öneri yoksa boş): miktarlar değiştirilir, **Kalem ekle** (arama) ile kalem eklenir, çöp kutusuyla çıkarılır, tedarikçiye **not** yazılır (kopyalanan metnin sonuna eklenir). Açık sipariş **Düzenle…** ile aynı formda değiştirilir, iptal edilen **Yeniden Aç** ile açılır; iptal ve silme onay ister. Teslim alınınca miktarlar seçilen **teslim gününün** *Gelen* sütununa işlenir; o günde kalemin Gelen'i zaten varsa uyarı çıkar. Teslimat Günlük Sayım'da elle girildiyse **Gelen'e eklemeden teslim alındı say** (Gelen iki kez sayılmaz); siparişten sonra elle Gelen girilmişse sipariş satırında "Bu teslimat bu siparişten mi? **Teslim alındı say**" önerisi görünür. Açık siparişlerde bekleme süresi ("5 gündür bekliyor"); 3 günden eski açık siparişler için Sipariş ekranında ve Genel Bakış'ta uyarı (açık sipariş öneriden düşülmeye devam eder). Liste WhatsApp için kopyalanabilir veya Excel'e aktarılabilir. |
 | **Raporlar** | *Dönem Özeti:* dönem toplamları (ilk açılış, gelen, net transfer, satılan, zayi, fiili tüketim, fark, **fazla çıkış**) ve kalem bazında günlük fark grafiği (tolerans bandıyla). *Kalem Analizi:* beklenen ve fiili tüketim, günlük fark ve stok seviyesi. |
-| **Stok Kalemleri** | Birim, reçete birimi ve katsayı, **kritik seviye**, **tolerans (± adet/kg)**; sıralama ve gizleme. |
+| **Stok Kalemleri** | Birim, reçete birimi ve katsayı, **kritik seviye**, **tolerans (± adet/kg)**; sıralama ve gizleme. Aynı adla ikinci kalem açılmaz. Sayım geçmişi, siparişi ya da reçetesi olan kalemi silerken önerilen işlem **Pasif Yap**tır; **Kalıcı Olarak Sil** kapatılmış günlere dokunmaz ve silinen kalemin kimliği yeniden kullanılmaz (aynı adla eklenen yeni kalem eski kayıtları devralmaz). Sayım geçmişi olan kalemin birimi değişirken sorulur: **Yeni Kalem Olarak Aç** (önerilen; eski kalem "Patates (adet)" adıyla pasif kalır, reçeteler yeni kaleme geçer) ya da **Yine de Değiştir**; katsayı değişikliği geçmiş günlerin Satılan ve Fark'ını değiştireceği için onay ister. |
 | **Reçeteler** | Hazır reçeteler; hammadde ekleme/çıkarma, başka üründen kopyalama. |
 | **Ekip** | **Eleman ekleme**, düzenleme, pasif yapma ve silme (ad, görev, telefon, işe giriş/çıkış, not). Sayımı yapan kişi ekipten seçilir. Patron web paneline bağlıyken **Kullanıcılar** bölümünden **hesap oluşturur** (e-posta ya da yalnızca kullanıcı adıyla, geçici şifreyle), yetki değiştirir, şifre belirler ve şubeden çıkarır; hesap bir ekip üyesine bağlanabilir. |
 | **Ayarlar** | Şube adı, sipariş varsayılanları, **web paneli ile eşitleme** (bkz. aşağıda), otomatik kayıt ve yedekler, yedek dosyası, Excel'e aktarım, **sayım formu** ve eski Excel dosyasından içe aktarım. |
@@ -29,6 +29,8 @@ Diğer:
 - **Terim açıklamaları:** tolerans, fazla çıkış, fiili tüketim gibi terimlerin yanındaki ⓘ işaretinin üzerine gelince kısa açıklama çıkar, tıklayınca ayrıntılı açıklama açılır.
 - **Liquid Glass tasarım:** macOS 26'da Apple'ın yerel Liquid Glass yüzeyleri; macOS 14–15'te aynı yüzeyler buzlu cam malzemesiyle çizilir.
 - **Geri al / Yinele** (⌘Z / ⇧⌘Z) tüm veri değişikliklerinde çalışır.
+- **Gün dönümü:** Uygulama gece açık kalırsa ve "bugün" seçiliyse gece yarısından sonra (uygulama öne gelince, Mac uyanınca ya da dakikada bir) yeni güne geçilir; üstte "Yeni gün başladı: … · **Dünkü güne dön**" şeridi çıkar. Başka bir gün açıksa ya da o an bir hücreye yazılıyorsa seçili gün değişmez.
+- **Sürüm uyumu:** Uygulama canlı bağlantıda veri biçimi düzeyini (`fmt`, bu sürümde 2) bildirir; web paneli düzeyi düşük (eski sürüm) bir Mac'i "Mac eski sürüm" diye uyarır. Şubede bu Mac'ten yeni bir sürüm çalışıyorsa kenar çubuğunda **Yeni sürüm var: güncelleyin** görünür (docs/SYNC.md §2 "Sürüm uyumu").
 - **Kayıt ve yedek:** Otomatik kayıt yapılır, kayıt durumu yan menüde görünür. Günlük yedekler son 30 günü kapsar ve riskli işlemlerden önce anlık kopya alınır. Dosya bozulursa en son yedekten otomatik dönülür; o da okunamazsa bozuk dosya kenara alınır, üzerine yazılmaz.
 - **Satış raporu:** `.xlsx`, `.csv` ve `.txt` (UTF-8, UTF-16, Windows-1254) dosyaları ya da pano kabul edilir; dosya hangi ekranda olursa olsun pencereye sürüklenip bırakılabilir. Raporda *Tutar* sütunu varsa yok sayılır. Başlık satırı varsa (*Kodu*, *Adedi*) sütunlar ondan okunur: *Sıra*, *Birim Fiyat*, *KDV* gibi sütunlar adet ya da kod sanılmaz; "12 adet", "12,00 Ad." gibi birimli adetler ve 01-08-2026, 2026-08-01, 01.08.26 tarih yazımları tanınır. Adedi okunamayan satırlar önizlemede satır numarasıyla listelenir.
 - **Aktarım uyarıları:** Önizleme aynı raporun yakın bir güne (±10 gün) zaten aktarıldığını, aynı dönemin raporunun başka güne aktarıldığını, toplam adedin son 14 günün ortancasının 3 katından fazla / %30'undan az olduğunu ve rapor tarihi ile seçili gün arasındaki farkı (1 gün: bilgi, daha fazla: uyarı) gösterir. Aynı rapor ya da okunamayan satırlar %20'yi aşarsa **Yine de bu güne aktar** onayı istenir; **O güne git** raporun aktarıldığı günü açar.
@@ -63,7 +65,7 @@ Görüntüler CI'da, uygulama `EnvanterTool demo` ile üretilen örnek veriyle �
 
 1. Bir Mac'te (macOS 14+, Xcode 15+ veya Swift 5.9+ araç zinciri) derleyin:
    ```bash
-   ./Scripts/build_app.sh          # build/NextGen Envanter.app + build/NextGen-Envanter-2.0.zip
+   ./Scripts/build_app.sh          # build/NextGen Envanter.app + build/NextGen-Envanter-2.1.zip
    ./Scripts/build_app.sh --dmg    # ayrıca .dmg
    ```
    Hazır paket, GitHub Actions'taki her başarılı çalışmanın **NextGen-Envanter** artifact'ında da bulunur.
@@ -161,7 +163,7 @@ ENVANTER_SELFTEST=1 ".build/debug/Envanter" # uygulama içi sistem testi (geçic
 
 CI (`.github/workflows/ci.yml`) şu adımları çalıştırır:
 - **Linux:** çekirdek testleri ve komut satırı uçtan uca testi.
-- **macOS:** uygulamanın derlenmesi, testler, dağıtım paketi, komut satırı testi ve **uygulama içi sistem testi** (sayım, satış aktarımı ve aktarım uyarıları, geri al/yinele, tolerans, gün kilidi, ekip, sipariş formu, düzenleme, teslim alma ve "Teslim alındı say", Excel ve diske kayıt gerçek uygulama durumu üzerinden doğrulanır).
+- **macOS:** uygulamanın derlenmesi, testler, dağıtım paketi, komut satırı testi ve **uygulama içi sistem testi** (sayım, satış aktarımı ve aktarım uyarıları, geri al/yinele, tolerans, gün kilidi, ekip, sipariş formu, düzenleme, teslim alma ve "Teslim alındı say", stok kalemi silme / aynı ad / birim değişikliği, sürüm düzeyi ve gün dönümü, Excel ve diske kayıt gerçek uygulama durumu üzerinden doğrulanır).
 - **Ekran görüntüleri:** demo veriyle macOS'ta otomatik alınır.
 
 ## Yol haritası / öneriler

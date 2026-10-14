@@ -11,11 +11,27 @@ private enum IW {
     static let delete: CGFloat = 36
 }
 
+/// Onay bekleyen birim değişikliği (kalemin sayım geçmişi var)
+private struct UnitChangeRequest {
+    let item: Item
+    let unit: String
+    let history: CatalogOps.ItemHistory
+}
+
+/// Onay bekleyen katsayı değişikliği (kalemi kullanan ürünlerin satıldığı günler var)
+private struct FactorChangeRequest {
+    let item: Item
+    let factor: Double
+    let history: CatalogOps.ItemHistory
+}
+
 struct ItemsView: View {
     @EnvironmentObject var store: AppStore
     @State private var newName = ""
     @State private var newUnit = "Adet"
     @State private var deleting: Item?
+    @State private var unitChange: UnitChangeRequest?
+    @State private var factorChange: FactorChangeRequest?
 
     var body: some View {
         let activeCount = store.data.items.filter { $0.active }.count
@@ -49,7 +65,7 @@ struct ItemsView: View {
             .background(Color.primary.opacity(0.05))
             List {
                 ForEach(store.data.items) { item in
-                    ItemRow(item: item) { deleting = item }
+                    ItemRow(item: item, onUnit: { requestUnit(item, $0) }, onFactor: { requestFactor(item, $0) }) { deleting = item }
                         .disabled(!store.canEditCatalog)
                 }
                 .onMove { store.moveItems(from: $0, to: $1) }
@@ -69,43 +85,109 @@ struct ItemsView: View {
             .disabled(!store.canEditCatalog)
         }
         .navigationTitle("Stok Kalemleri")
+        // Silme: geçmişi olan aktif kalemde önerilen işlem "Pasif Yap"; kalıcı silme kapatılmış günlere dokunmaz (CatalogOps)
         .confirmationDialog("\"\(deleting?.name ?? "")\" silinsin mi?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-                            titleVisibility: .visible) {
-            Button("Sil", role: .destructive) { if let d = deleting { store.deleteItem(d.id) }; deleting = nil }
+                            titleVisibility: .visible, presenting: deleting) { item in
+            if offersDeactivate(item) {
+                Button("Pasif Yap (önerilen)") { store.deactivateItem(item.id); deleting = nil }
+            }
+            Button("Kalıcı Olarak Sil", role: .destructive) { store.deleteItem(item.id); deleting = nil }
             Button("Vazgeç", role: .cancel) { deleting = nil }
-        } message: {
-            Text("Bu kalemin tüm günlük sayım kayıtları ve reçetelerdeki miktarları da silinir (Düzen > Geri Al ile geri alınabilir). Geçici olarak gizlemek için \"Aktif\" işaretini kaldırın.")
+        } message: { item in
+            Text(deleteMessage(item))
+        }
+        // Birim: geçmiş yeni birimle okunurdu; önerilen "Yeni Kalem Olarak Aç" (eski kalem "Patates (adet)" adıyla pasif kalır)
+        .confirmationDialog(unitChange.map { "Birim \($0.unit) yapılsın mı?" } ?? "",
+                            isPresented: Binding(get: { unitChange != nil }, set: { if !$0 { unitChange = nil } }),
+                            titleVisibility: .visible, presenting: unitChange) { c in
+            Button("Yeni Kalem Olarak Aç (önerilen)") { store.splitItemForUnit(c.item.id, unit: c.unit); unitChange = nil }
+            Button("Yine de Değiştir") { store.updateItem(c.item.id) { $0.unit = c.unit }; unitChange = nil }
+            Button("Vazgeç", role: .cancel) { unitChange = nil }
+        } message: { c in
+            Text(CatalogOps.unitChangeMessage(item: c.item, newUnit: c.unit, days: c.history.days)
+                 + " Yeni kalem olarak açılınca eski kayıtlar \"\(c.item.name) (\(c.item.unit.lowercased(with: Locale(identifier: "tr_TR"))))\" adıyla pasif kalır; reçetelerdeki miktarlar yeni kaleme taşınır.")
+        }
+        // Katsayı: kalemi kullanan ürünlerin satıldığı geçmiş günlerin Satılan ve Fark'ı değişir
+        .confirmationDialog(factorChange.map { "Katsayı \(Fmt.number($0.item.factor, maxFraction: 6)) → \(Fmt.number($0.factor, maxFraction: 6)) olsun mu?" } ?? "",
+                            isPresented: Binding(get: { factorChange != nil }, set: { if !$0 { factorChange = nil } }),
+                            titleVisibility: .visible, presenting: factorChange) { c in
+            Button("Değiştir") { store.updateItem(c.item.id) { $0.factor = c.factor }; factorChange = nil }
+            Button("Vazgeç", role: .cancel) { factorChange = nil }
+        } message: { c in
+            Text(CatalogOps.factorChangeMessage(c.history) + " Düzen > Geri Al (⌘Z) ile geri alınabilir.")
         }
     }
 
     private func add() {
         let n = newName.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { return }
-        store.addItem(name: n, unit: newUnit)
-        newName = ""
+        // Aynı adlı kalem varsa eklenmez (uyarı gösterilir) ve yazılan ad kalır
+        if store.addItem(name: n, unit: newUnit) { newName = "" }
+    }
+
+    /// Gün kaydı, sipariş satırı ya da reçete kullanımı olan aktif kalem: silmek yerine pasif yapmak önerilir
+    private func offersDeactivate(_ item: Item) -> Bool {
+        item.active && CatalogOps.history(item.id, in: store.data).suggestsDeactivate
+    }
+
+    private func deleteMessage(_ item: Item) -> String {
+        let text = CatalogOps.deleteDescription(CatalogOps.history(item.id, in: store.data))
+        let undo = " Düzen > Geri Al (⌘Z) ile geri alınabilir."
+        if offersDeactivate(item) {
+            return "Kalemin sayım geçmişi, siparişi ya da reçetesi var. Silmek yerine pasif yapın: günlük sayımda ve raporlarda görünmez, geçmişi olduğu gibi kalır.\n\nKalıcı silmede: " + text + undo
+        }
+        return text + (item.active ? " Geçici olarak gizlemek için \"Aktif\" işaretini kaldırın." : "") + undo
+    }
+
+    /// Birim değişikliği: sayım geçmişi olan kalemde önce sorulur
+    private func requestUnit(_ item: Item, _ unit: String) {
+        guard unit != item.unit else { return }
+        let h = CatalogOps.history(item.id, in: store.data)
+        if CatalogOps.unitChangeNeedsConfirmation(h) {
+            unitChange = UnitChangeRequest(item: item, unit: unit, history: h)
+        } else {
+            store.updateItem(item.id) { $0.unit = unit }
+        }
+    }
+
+    /// Katsayı değişikliği: kalemi kullanan ürünlerin satıldığı günler varsa önce sorulur
+    private func requestFactor(_ item: Item, _ value: Double) {
+        let factor = max(value, 0.000001)
+        guard factor != item.factor else { return }
+        let h = CatalogOps.history(item.id, in: store.data)
+        if CatalogOps.factorChangeNeedsConfirmation(h) {
+            factorChange = FactorChangeRequest(item: item, factor: factor, history: h)
+        } else {
+            store.updateItem(item.id) { $0.factor = factor }
+        }
     }
 }
 
 private struct ItemRow: View {
     @EnvironmentObject var store: AppStore
     let item: Item
+    /// Birim seçildi (onay ItemsView'da)
+    var onUnit: (String) -> Void
+    /// Katsayı yazıldı (onay ItemsView'da)
+    var onFactor: (Double) -> Void
     var onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             Toggle("", isOn: Binding(get: { item.active }, set: { v in store.updateItem(item.id) { $0.active = v } }))
                 .labelsHidden().frame(width: IW.active)
+            // Aynı adlı başka kalem varsa ad değişmez (uyarı); alan kayıtlı adı gösterir
             CommitTextField(title: "Ad", value: Binding(get: { item.name }, set: { v in
                 guard !v.isEmpty else { return }
-                store.updateItem(item.id) { $0.name = v }
+                store.renameItem(item.id, to: v)
             }))
             .frame(maxWidth: .infinity)
-            Picker("", selection: Binding(get: { item.unit }, set: { v in store.updateItem(item.id) { $0.unit = v } })) {
+            Picker("", selection: Binding(get: { item.unit }, set: { v in onUnit(v) })) {
                 Text("Adet").tag("Adet"); Text("Kg").tag("Kg")
             }.labelsHidden().frame(width: IW.unit).padding(.horizontal, 5)
             CommitTextField(title: "birim", value: Binding(get: { item.recipeUnit }, set: { v in store.updateItem(item.id) { $0.recipeUnit = v } }))
                 .frame(width: IW.recipeUnit).padding(.horizontal, 5)
-            DecimalField(value: Binding(get: { item.factor }, set: { v in store.updateItem(item.id) { $0.factor = max(v, 0.000001) } }),
+            DecimalField(value: Binding(get: { item.factor }, set: { v in onFactor(v) }),
                          maxFraction: 6, width: IW.factor)
                 .padding(.horizontal, 5)
             OptionalDecimalField(value: Binding(get: { item.minStock }, set: { v in store.updateItem(item.id, actionName: "Kritik Seviye") { $0.minStock = v } }),

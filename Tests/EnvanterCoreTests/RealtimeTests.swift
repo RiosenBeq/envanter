@@ -204,7 +204,7 @@ final class RealtimeTests: XCTestCase {
     func testPresenceMetaHasNoPersonalData() {
         let m = RealtimePresence.mac(branch: "Tuzla Marina", app: "2.1", since: Date(timeIntervalSince1970: 1_791_547_200))
         XCTAssertEqual(m, ["client": .string("mac"), "branch": .string("Tuzla Marina"), "app": .string("2.1"),
-                           "since": .string("2026-10-09T12:00:00Z")])
+                           "fmt": .number(Double(DataFormat.level)), "since": .string("2026-10-09T12:00:00Z")])
     }
 
     // MARK: - Oturum (saf durum makinesi)

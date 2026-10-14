@@ -77,9 +77,17 @@ struct EnvanterApp: App {
                     store.requestLockToggle(store.selectedDate)
                 }
                 .keyboardShortcut("l")
-                // Günlük Sayım düğmesiyle aynı kural: sayım yapılmamış gün kapatılmaz; personel hesabıyla kapatmadan
-                // önce onay istenir ve kapatılmış günün kilidini yalnızca patron / müdür açar
+                // Günlük Sayım düğmesiyle aynı kural: sayım yapılmamış gün kapatılmaz; kontrol listesinde eksik varsa (ya da
+                // personelse) kapatmadan önce onay istenir ve kapatılmış günün kilidini yalnızca patron / müdür açar
                 .disabled(!store.lockAction(store.selectedDate).isAvailable)
+                Button("Kapatılmamış Günler…") {
+                    store.section = .overview
+                    store.showUnclosedDays = true
+                }
+                Divider()
+                // Günlük Sayım'daki arama kutusu (ad ya da kimlik); Stok Kalemleri açıksa oradaki
+                Button("Kalem Ara") { store.requestItemSearch() }
+                    .keyboardShortcut("f")
             }
             CommandMenu("Git") {
                 ForEach(AppSection.allCases.filter { $0 != .backup }) { s in

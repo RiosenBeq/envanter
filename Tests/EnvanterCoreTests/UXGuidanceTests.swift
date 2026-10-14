@@ -149,7 +149,7 @@ final class UXGuidanceTests: XCTestCase {
         XCTAssertTrue(partial.contains("Satış raporu aktarılmadı"))
         XCTAssertTrue(partial.hasSuffix(DayLockAction.confirmMessage))
         let full = DayLockAction.confirmDetail(counted: 21, total: 21, hasSales: true)
-        XCTAssertTrue(full.hasPrefix("Sayım tamam: 21 / 21 kalem sayıldı.\nSatış raporu aktarıldı."))
+        XCTAssertTrue(full.hasPrefix("✓ Sayım tamam: 21 / 21 kalem sayıldı.\n✓ Satış raporu aktarıldı."))
         XCTAssertTrue(full.contains("kilidi yalnızca patron veya müdür açabilir"))
         XCTAssertFalse(DayLockAction.confirmDetail(counted: 0, total: 0, hasSales: true).contains("Sayım"))
     }

@@ -83,7 +83,7 @@ struct BackupView: View {
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Excel").font(.headline)
-                        Text("Tüm günlerin envanteri eski \"Alımlar\" sayfasıyla aynı sütun düzeninde (Tarih, Ürün, Açılış, Gelen, … Fark) dışa aktarılır; ayrıca Özet, Günlük Durum ve (varsa) Notlar ile Ekip sayfaları eklenir. Sayım formu, depoda elle doldurmak için yazdırılabilir bir listedir.")
+                        Text("Tüm günlerin envanteri eski \"Alımlar\" sayfasıyla aynı sütun düzeninde (Tarih, Ürün, Açılış, Gelen, … Fark) dışa aktarılır; ayrıca Özet, Günlük Durum ve (varsa) Notlar, Zayi Kayıtları ile Ekip sayfaları eklenir. Sayım formu, depoda elle doldurmak için yazdırılabilir bir listedir.")
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         HStack {
                             Button {
@@ -145,16 +145,16 @@ struct HelpView: View {
                 }
 
                 section("Günlük akış")
-                step(1, "Sayımı girin", "Günlük Sayım ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. Açılış önceki günün kapanışından kendiliğinden gelir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Depoda kâğıtla saymak için Genel Bakış'taki \"Diğer işlemler\" menüsünden ya da menü çubuğundaki \"Sayım Formu (Excel)…\" komutuyla sayım formu alabilirsiniz.")
+                step(1, "Sayımı girin", "Günlük Sayım ekranında her kalem için Gelen, Gelen/Giden Transfer ve gün sonu Kapanış sayımını yazın. \(OpeningText.helpStep) Bir kalemin ilk sayımında (ya da son sayımı 31 günden eskiyse) fark hesaplanmaz: o sayım başlangıç kabul edilir. Enter veya ↓ alt satıra, ↑ üst satıra, Tab yana geçer; virgül de nokta da kabul edilir. Stok birkaç yerdeyse toplayarak yazın: 12+8+5 ya da kolide 3x24+7 (adet kalemde 1.200 = 1200). Kalemi bulmak için üstteki \"Kalem ara\" kutusunu (⌘F) kullanın; Enter ilk kalemin Kapanış hücresine geçer. Depoda kâğıtla saymak için Genel Bakış'taki \"Diğer işlemler\" menüsünden ya da menü çubuğundaki \"Sayım Formu (Excel)…\" komutuyla sayım formu alabilirsiniz.")
                 step(2, "ModPos satış raporunu aktarın", "Raporu (.xlsx) uygulama penceresine sürükleyip bırakın (hangi ekranda olursanız olun) ya da \"Dosyadan Aktar\"a (⌘O) tıklayın. Kodu / Ürün Tipi / Adedi sütunlarını kopyalayıp \"Panodan Yapıştır\" (⌘⇧V) da diyebilirsiniz. Tutar sütunu varsa yok sayılır; yalnızca adetler kullanılır.")
                 step(3, "Farkları kontrol edin", "Kırmızı: satışlara göre fazla stok çıkmış (fazla çıkış). Mavi: az çıkmış (sayım/reçete hatası olabilir). Yeşil: fark yok ya da tolerans içinde. \"Sorunlu\" filtresi yalnızca dikkat gerektiren kalemleri gösterir; satırdaki ⓘ hesabın dökümünü açar.")
                 step(4, "Ekibi tanımlayın", "Ekip ekranında çalışanları ad, görev (ör. Usta, Kasiyer) ve telefonla ekleyin; Günlük Sayım'daki \"Sayan\" listesi buradan gelir. İşten ayrılanı silmek yerine pasif yapın: geçmiş sayımlardaki adı korunur. Patron, web paneline bağlıyken aynı ekrandaki Kullanıcılar bölümünden giriş hesabı açar (kullanıcı adıyla, e-posta gerekmez), yetkisini ve şifresini değiştirir.")
-                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin; hiç sayım girilmemiş gün kapatılamaz (düğmenin yanında yazar). Kilitli günün sayımı ve satışı değiştirilemez; gerekirse kilit açılır. Web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açabilir (web paneli de kabul etmez); bu yüzden kapatmadan önce günün sayım durumu (ör. \"14 / 21 kalem sayıldı, 7 kalem sayılmadı\") ve satış raporunun aktarılıp aktarılmadığı gösterilip onay istenir. Güne not ve sayımı yapan kişiyi \"Not / Sayan\" düğmesinden ekleyebilirsiniz.")
+                step(5, "Günü kapatın", "Sayım bitince \"Günü Kapat\" (⌘L) ile kilitleyin; hiç sayım girilmemiş gün kapatılamaz (düğmenin yanında yazar). Kilitli günün sayımı ve satışı değiştirilemez; gerekirse kilit açılır. Kapatmadan önce kontrol listesi gösterilir: sayılmayan kalem (ör. \"14 / 21 kalem sayıldı, 7 kalem sayılmadı\"), aktarılmayan satış raporu ve reçetesi tanımsız ürün; eksik varsa düğme \"Yine de Kapat\" olur, \"Sayılmayanları Göster\" eksik kalemleri açar. Web paneline personel hesabıyla bağlı Mac'te kapatılmış günün kilidini yalnızca patron veya müdür açabilir (web paneli de kabul etmez); bu yüzden personel her zaman onaylar. Genel Bakış'taki \"N sayılmış gün kapatılmadı\" son 60 günün kapatılmamış günlerini listeler; patron / müdür seçtiklerini topluca kapatır. Güne not ve sayımı yapan kişiyi \"Not / Sayan\" düğmesinden ekleyebilirsiniz.")
 
                 section("Haftalık / aylık")
                 step(6, "Sipariş verin ve teslim alın", "Sipariş ekranı son günlerin ortalama tüketimine ve kritik seviyeye göre miktar önerir; teslim alınmamış siparişlerdeki miktarlar öneriden düşülür (\"Siparişte\" sütunu), böylece aynı mal iki kez sipariş edilmez. \"Sipariş Oluştur\" ile kaydedin, \"Listeyi Kopyala\" ile tedarikçiye gönderin. Mal gelince, teslimatın geldiği güne geçip siparişte \"Teslim al\" deyin: gelen miktarlar o günün Gelen sütununa işlenir. Sipariş oluşturma ve teslim alma patron / müdür işidir: web paneline personel hesabıyla bağlı Mac'te bu düğmeler kapalıdır, teslimatı patron ya da müdür işler.")
                 step(7, "Raporları okuyun", "Genel Bakış'taki Bugün kartı günün üç adımını sırayla gösterir: satış raporunu aktar, sayımı tamamla, günü kapat; diğer işlemler kartın altındaki menüdedir. Genel Bakış ayrıca seçili günün sayım ilerlemesini, sorunlu kalemleri, fazla çıkışları, kritik seviyenin altındaki stokları ve açık siparişleri; son 30 günün durum şeridini ve 14 günlük sorunlu kalem eğilimini gösterir. Raporlar > Dönem Özeti seçilen dönemde her kalemin açılış, gelen, satılan, zayi, fiili tüketim, fark ve fazla çıkış miktarlarını; Raporlar > Kalem Analizi tek bir kalemin beklenen ve fiili tüketimini, günlük farkını ve stok seviyesini grafikle gösterir. Dönem Excel'e aktarılabilir.")
-                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. Reçete değişikliği, satış raporu olan günlerin Satılan ve Fark değerlerini yeni reçeteye göre yeniden hesaplar.")
+                step(8, "Tanımları güncel tutun", "Stok Kalemleri'nde kritik seviye ve toleransı; Reçeteler'de ürünlerin hammadde miktarlarını güncel tutun. \"Eşik önerileri\" son 28 günün sayım farklarına ve tüketimine göre tolerans ve kritik seviye önerir; Genel Bakış'taki kurulum listesi eksikleri gösterir, sayım girilmemiş günde kritik seviye uyarısı tahmini stoğa (≈) göre verilir. Reçete değişikliği, satış raporu olan günlerin Satılan ve Fark değerlerini yeni reçeteye göre yeniden hesaplar.")
 
                 section("Notlar ve ipuçları")
                 Card {
@@ -164,10 +164,12 @@ struct HelpView: View {
                         tip("arrow.triangle.2.circlepath", "Sayım ertesi sabah yapılıyorsa satış raporunu yine satışın olduğu güne aktarın; içe aktarma ekranı rapor tarihini gösterir.")
                         tip("exclamationmark.triangle", "Aynı kalemde her gün aynı yönde fark çıkıyorsa sorun genelde reçetededir (porsiyon, katsayı); farklar rastgele dağılıyorsa sayım hatası olasıdır.")
                         tip("equal.circle", "\"Hareketsizleri Doldur\"u yalnızca o gün gerçekten hiç kullanılmayan kalemlerde kullanın; kapanışa açılışı yazar.")
+                        tip("trash", WasteText.helpTip)
                         tip("person.2", "\"Not / Sayan\"daki listede aktif ekip üyeleri görünür. Listede olmayan bir ad yazarsanız kaydederken ekibe de eklenir (personel hesabıyla ad yalnızca o güne yazılır); görevini ve telefonunu sonra Ekip ekranında tamamlayın.")
+                        tip("person.crop.circle", "Bağlantı koduyla bağlanan ortak mağaza bilgisayarında uygulama açılınca \"Şu an kim çalışıyor?\" diye sorar. Seçilen ad web panelindeki değişiklik geçmişine eklenir, Sayan ve zayi kaydında varsayılan olur; yan menüdeki adın üzerine tıklayıp değiştirin. Personel 7 günden eski bir güne giriş yaparsa bir kez uyarılır.")
                         tip("arrow.uturn.backward", "Yanlış bir işlemi Düzen > Geri Al (⌘Z) ile geri alın. Veriler otomatik kaydedilir, her gün yedek alınır (Ayarlar).")
                         tip("arrow.triangle.2.circlepath.icloud", Self.webPanelTip)
-                        tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Durum ve (varsa) Notlar ile Ekip.")
+                        tip("doc.on.doc", "Excel'e aktarım eski \"Alımlar\" düzenindedir; mevcut pivot tablolarınız çalışmaya devam eder. Ek sayfalar: Özet, Günlük Durum ve (varsa) Notlar, Zayi Kayıtları ile Ekip.")
                     }
                 }
 
@@ -184,7 +186,7 @@ struct HelpView: View {
                         Label("Kısayollar", systemImage: "keyboard").font(.headline)
                         Group {
                             Text("⌘O  Satış raporu içe aktar     ⌘⇧V  Panodan satış yapıştır     ⌘E  Günü Excel'e aktar")
-                            Text("⌘[  Önceki gün     ⌘]  Sonraki gün     ⌘T  Bugüne git     ⌘L  Günü kapat / aç")
+                            Text("⌘[  Önceki gün     ⌘]  Sonraki gün     ⌘T  Bugüne git     ⌘L  Günü kapat / aç     ⌘F  Kalem ara")
                             Text("⌘1…⌘8  Ekranlar arasında geçiş     ⌘,  Ayarlar     ⌘Z / ⇧⌘Z  Geri al / Yinele")
                         }.font(.callout.monospaced()).foregroundStyle(.secondary)
                         // Ekran kısayolları yan menüdeki sırayla (AppSection'dan; yeni ekran eklenince kendiliğinden güncellenir)

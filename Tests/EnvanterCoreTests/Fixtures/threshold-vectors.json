@@ -1,0 +1,608 @@
+{
+  "about": "Tolerans / kritik seviye önerileri (Engine.thresholdSuggestions) ve Genel Bakış kurulum listesi (SetupChecklist) için ortak test vektörleri. Mac (EnvanterCoreTests/ThresholdVectorTests) ve web (test/thresholds.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. Tolerans: sayılmış günlerin |fark| değerlerinin %80'lik dilimi (⌈0,8·n⌉. değer, en az 7 gün; adet tam sayıya, kg 0,01'e yukarı; en az bir adım). Kritik seviye: günlük tüketim × 1,5 (en az 7 örnek gün; adet tam sayıya, kg 0,1'e yukarı). 'changes': Stok Kalemleri'ndeki pencerenin değişiklik listesi (yalnızca farklı olan alanlar; boş alanlar önceden seçili).",
+  "minDays": 7,
+  "lookbackDays": 28,
+  "cases": [
+    {
+      "name": "oneriler: farkın %80'lik dilimi ve günlük tüketimin 1,5 katı; az veride öneri yok, pasif kalem yok",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "t1",
+            "name": "Köfte",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          },
+          {
+            "id": "t2",
+            "name": "Patates",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true,
+            "tolerance": 0.3
+          },
+          {
+            "id": "t3",
+            "name": "Az veri",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "tolerance": 1
+          },
+          {
+            "id": "t4",
+            "name": "Sos",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "minStock": 3
+          },
+          {
+            "id": "t5",
+            "name": "Pasif",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": false
+          },
+          {
+            "id": "t6",
+            "name": "Peynir",
+            "unit": "Kg",
+            "recipeUnit": "kg",
+            "factor": 1,
+            "active": true,
+            "minStock": 2
+          }
+        ],
+        "products": [
+          {
+            "code": "S",
+            "name": "SOS",
+            "category": "SOSLAR",
+            "amounts": {
+              "t4": 1
+            }
+          }
+        ],
+        "days": {
+          "2026-09-01": {
+            "date": "2026-09-01",
+            "entries": {
+              "t1": {
+                "opening": 100,
+                "closing": 100
+              },
+              "t2": {
+                "opening": 10,
+                "closing": 10
+              },
+              "t5": {
+                "closing": 49
+              },
+              "t6": {
+                "opening": 5,
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-02": {
+            "date": "2026-09-02",
+            "entries": {
+              "t1": {
+                "closing": 97
+              },
+              "t2": {
+                "closing": 9.75
+              },
+              "t5": {
+                "closing": 48
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-03": {
+            "date": "2026-09-03",
+            "entries": {
+              "t1": {
+                "closing": 96
+              },
+              "t2": {
+                "closing": 9.35
+              },
+              "t5": {
+                "closing": 47
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-04": {
+            "date": "2026-09-04",
+            "entries": {
+              "t1": {
+                "closing": 92
+              },
+              "t2": {
+                "closing": 9.04
+              },
+              "t5": {
+                "closing": 46
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-05": {
+            "date": "2026-09-05",
+            "entries": {
+              "t1": {
+                "closing": 91
+              },
+              "t2": {
+                "closing": 8.54
+              },
+              "t5": {
+                "closing": 45
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              },
+              {
+                "code": "X9",
+                "name": "YENİ MENÜ",
+                "qty": 1
+              }
+            ]
+          },
+          "2026-09-06": {
+            "date": "2026-09-06",
+            "entries": {
+              "t1": {
+                "closing": 86
+              },
+              "t2": {
+                "closing": 8.29
+              },
+              "t3": {
+                "opening": 20,
+                "closing": 18
+              },
+              "t5": {
+                "closing": 44
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-07": {
+            "date": "2026-09-07",
+            "entries": {
+              "t1": {
+                "closing": 77
+              },
+              "t2": {
+                "closing": 7.96
+              },
+              "t3": {
+                "closing": 17
+              },
+              "t5": {
+                "closing": 43
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              },
+              {
+                "code": "X9",
+                "name": "YENİ MENÜ",
+                "qty": 1
+              }
+            ]
+          },
+          "2026-09-08": {
+            "date": "2026-09-08",
+            "entries": {
+              "t1": {
+                "closing": 75
+              },
+              "t2": {
+                "closing": 7.36
+              },
+              "t3": {
+                "closing": 15
+              },
+              "t5": {
+                "closing": 42
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-09": {
+            "date": "2026-09-09",
+            "entries": {
+              "t1": {
+                "closing": 69
+              },
+              "t2": {
+                "closing": 7.09
+              },
+              "t3": {
+                "closing": 14
+              },
+              "t5": {
+                "closing": 41
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-09-10": {
+            "date": "2026-09-10",
+            "entries": {
+              "t1": {
+                "closing": 64
+              },
+              "t2": {
+                "closing": 6.65
+              },
+              "t3": {
+                "closing": 12
+              },
+              "t5": {
+                "closing": 40
+              },
+              "t6": {
+                "closing": 5
+              }
+            },
+            "sales": [
+              {
+                "code": "S",
+                "name": "SOS",
+                "qty": 2
+              }
+            ]
+          },
+          "2026-08-01": {
+            "date": "2026-08-01",
+            "entries": {},
+            "sales": [
+              {
+                "code": "X8",
+                "name": "ESKİ KAMPANYA",
+                "qty": 3
+              }
+            ]
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "suggestions": [
+        {
+          "date": "2026-09-10",
+          "lookbackDays": 28,
+          "expect": [
+            {
+              "itemID": "t1",
+              "tolerance": 5,
+              "countedDays": 10,
+              "minStock": 6,
+              "dailyUsage": 3.6,
+              "usageDays": 10
+            },
+            {
+              "itemID": "t2",
+              "tolerance": 0.44,
+              "countedDays": 10,
+              "minStock": 0.6,
+              "dailyUsage": 0.335,
+              "usageDays": 10
+            },
+            {
+              "itemID": "t4",
+              "tolerance": null,
+              "countedDays": 0,
+              "minStock": 3,
+              "dailyUsage": 2,
+              "usageDays": 10
+            },
+            {
+              "itemID": "t6",
+              "tolerance": 0.01,
+              "countedDays": 10,
+              "minStock": null,
+              "dailyUsage": 0,
+              "usageDays": 10
+            }
+          ]
+        },
+        {
+          "date": "2026-09-10",
+          "lookbackDays": 7,
+          "expect": [
+            {
+              "itemID": "t1",
+              "tolerance": 6,
+              "countedDays": 7,
+              "minStock": 7,
+              "dailyUsage": 4.571429,
+              "usageDays": 7
+            },
+            {
+              "itemID": "t2",
+              "tolerance": 0.5,
+              "countedDays": 7,
+              "minStock": 0.6,
+              "dailyUsage": 0.385714,
+              "usageDays": 7
+            },
+            {
+              "itemID": "t4",
+              "tolerance": null,
+              "countedDays": 0,
+              "minStock": 3,
+              "dailyUsage": 2,
+              "usageDays": 7
+            },
+            {
+              "itemID": "t6",
+              "tolerance": 0.01,
+              "countedDays": 7,
+              "minStock": null,
+              "dailyUsage": 0,
+              "usageDays": 7
+            }
+          ]
+        },
+        {
+          "date": "2026-09-05",
+          "lookbackDays": 28,
+          "expect": []
+        }
+      ],
+      "changes": [
+        {
+          "date": "2026-09-10",
+          "lookbackDays": 28,
+          "expect": [
+            {
+              "itemID": "t1",
+              "field": "tolerance",
+              "current": null,
+              "suggested": 5,
+              "preselected": true
+            },
+            {
+              "itemID": "t1",
+              "field": "minStock",
+              "current": null,
+              "suggested": 6,
+              "preselected": true
+            },
+            {
+              "itemID": "t2",
+              "field": "tolerance",
+              "current": 0.3,
+              "suggested": 0.44,
+              "preselected": false
+            },
+            {
+              "itemID": "t2",
+              "field": "minStock",
+              "current": null,
+              "suggested": 0.6,
+              "preselected": true
+            },
+            {
+              "itemID": "t6",
+              "field": "tolerance",
+              "current": null,
+              "suggested": 0.01,
+              "preselected": true
+            }
+          ],
+          "items": 3
+        }
+      ],
+      "setup": [
+        {
+          "date": "2026-09-10",
+          "computerLinked": true,
+          "expect": {
+            "activeItems": 5,
+            "withTolerance": 2,
+            "withMinStock": 2,
+            "unknownProducts": 1,
+            "computerLinked": true,
+            "toleranceDone": false,
+            "minStockDone": false,
+            "recipesDone": false,
+            "isDone": false
+          }
+        },
+        {
+          "date": "2026-08-01",
+          "computerLinked": false,
+          "expect": {
+            "activeItems": 5,
+            "unknownProducts": 1,
+            "recipesDone": false,
+            "isDone": false
+          }
+        },
+        {
+          "date": "2026-09-04",
+          "computerLinked": true,
+          "expect": {
+            "unknownProducts": 0,
+            "recipesDone": true,
+            "isDone": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "kurulum-tamam: tüm aktif kalemlerde tolerans ve kritik seviye, tanımsız reçete yok, bilgisayar bağlı",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "a",
+            "name": "Köfte",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "tolerance": 2,
+            "minStock": 10
+          },
+          {
+            "id": "p",
+            "name": "Pasif",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": false
+          }
+        ],
+        "products": [],
+        "days": {
+          "2026-09-10": {
+            "date": "2026-09-10",
+            "entries": {
+              "a": {
+                "opening": 20,
+                "closing": 18
+              }
+            },
+            "sales": []
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "suggestions": [
+        {
+          "date": "2026-09-10",
+          "lookbackDays": 28,
+          "expect": []
+        }
+      ],
+      "setup": [
+        {
+          "date": "2026-09-10",
+          "computerLinked": true,
+          "expect": {
+            "activeItems": 1,
+            "withTolerance": 1,
+            "withMinStock": 1,
+            "unknownProducts": 0,
+            "computerLinked": true,
+            "toleranceDone": true,
+            "minStockDone": true,
+            "recipesDone": true,
+            "isDone": true
+          }
+        },
+        {
+          "date": "2026-09-10",
+          "computerLinked": false,
+          "expect": {
+            "isDone": false
+          }
+        }
+      ]
+    }
+  ]
+}

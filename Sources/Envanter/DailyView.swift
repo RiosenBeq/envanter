@@ -10,9 +10,10 @@ private enum W {
     static let nameMin: CGFloat = 130
 }
 
-private enum RowFilter: String, CaseIterable, Identifiable {
-    case all = "Tümü", uncounted = "Sayılmayan", problems = "Sorunlu"
-    var id: String { rawValue }
+/// "Zayi Ekle" penceresi isteği (kalem seçili gelebilir)
+private struct WasteRequest: Identifiable {
+    let id = UUID()
+    var itemID: String?
 }
 
 struct DailyView: View {
@@ -20,33 +21,45 @@ struct DailyView: View {
     @FocusState private var focus: CellID?
     @State private var detailItem: String?
     @State private var dropTargeted = false
-    @State private var filter: RowFilter = .all
+    /// Kalem arama (ad ya da kimlik; Türkçe harf farkı gözetilmez); Gün menüsündeki "Kalem Ara" (⌘F) odaklanır
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
     @State private var showNote = false
     @State private var fillMessage: String?
+    @State private var wasteRequest: WasteRequest?
+    /// Zayi hücresi açık olan satır (döküm penceresi)
+    @State private var wasteDetail: String?
+    @State private var showWasteList = false
 
     var body: some View {
         let date = store.selectedDate
         let locked = store.isLocked(date)
         let result = store.engine.calc(date: date)
         let allRows = result.rows
-        let rows = allRows.filter { c in
-            switch filter {
-            case .all: return true
-            case .uncounted: return !c.isCounted
-            case .problems: return c.severity?.isProblem == true || c.belowMinimum
-            }
-        }
+        let filter = store.dailyFilter
+        let rows = store.dailyRows(date: date, filter: filter, query: query)
+        let searching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         VStack(spacing: 0) {
-            header(rows: allRows, date: date, locked: locked)
+            header(rows: allRows, date: date, locked: locked, firstItem: rows.first?.itemID)
             Divider()
             SalesStatusBar(date: date, analysis: result.analysis)
             toolbar(date: date, locked: locked, allRows: allRows)
             gridHeader
             Divider()
-            if rows.isEmpty {
+            if rows.isEmpty && searching {
+                VStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 40)).foregroundStyle(.secondary)
+                    Text(ItemSearch.noMatchText(query)).font(.title3.weight(.semibold))
+                    Text(filter == .all ? "Aramayı değiştirin ya da temizleyin." : "Filtre: \(filter.rawValue). Aramayı ya da filtreyi değiştirin.")
+                        .foregroundStyle(.secondary)
+                    Button(ItemSearch.clearLabel) { query = "" }.buttonStyle(SoftButtonStyle())
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(40)
+            } else if rows.isEmpty {
                 EmptyStateView(icon: filter == .uncounted ? "checkmark.circle" : "line.3.horizontal.decrease.circle",
                                title: filter == .uncounted ? "Tüm kalemler sayıldı" : "Bu filtrede kalem yok",
-                               message: filter == .problems ? "Tolerans dışı fark veya kritik seviye altında stok yok." : "Filtreyi \"Tümü\" yaparak bütün kalemleri görebilirsiniz.")
+                               message: filter == .problems ? "Tolerans dışı fark, kritik seviye altında stok ya da beklenenden farklı elle açılış yok." : "Filtreyi \"Tümü\" yaparak bütün kalemleri görebilirsiniz.")
             } else {
                 let order = rows.map { $0.itemID }
                 ScrollView {
@@ -54,7 +67,8 @@ struct DailyView: View {
                         ForEach(Array(rows.enumerated()), id: \.element.itemID) { idx, calc in
                             if let item = store.engine.itemsByID[calc.itemID] {
                                 DailyRow(order: order, calc: calc, item: item, date: date,
-                                         focus: $focus, detail: $detailItem)
+                                         focus: $focus, detail: $detailItem, wasteDetail: $wasteDetail,
+                                         onAddWaste: { openWaste($0) })
                                     .background(idx % 2 == 0 ? Color.clear : Color.primary.opacity(0.03))
                             }
                         }
@@ -65,9 +79,14 @@ struct DailyView: View {
                 .id(date)
             }
             Divider()
-            legend(rows: allRows)
+            legend(rows: allRows, locked: locked)
         }
         .navigationTitle("Günlük Sayım")
+        // Gün menüsü → Kalem Ara (⌘F): ekran yeni açıldıysa da arama kutusuna odaklanılır. "Sayılmayanları Göster"
+        // aramayı temizler (sayılmayanların hepsi görünsün)
+        .onAppear { takeSearchRequest(); takeClearRequest() }
+        .onChange(of: store.focusDailySearch) { _, _ in takeSearchRequest() }
+        .onChange(of: store.clearDailySearch) { _, _ in takeClearRequest() }
         .overlay { if dropTargeted { dropOverlay } }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard let p = providers.first else { return false }
@@ -78,15 +97,46 @@ struct DailyView: View {
             return true
         }
         .onChange(of: date) { _, _ in fillMessage = nil }
+        .sheet(item: $wasteRequest) { r in
+            WasteSheet(date: date, initialItemID: r.itemID, onSaved: { fillMessage = $0 + " (⌘Z ile geri alınır)" })
+                .environmentObject(store)
+        }
+    }
+
+    /// Kalem Ara isteği (⌘F): arama kutusuna odaklanır
+    private func takeSearchRequest() {
+        guard store.focusDailySearch else { return }
+        store.focusDailySearch = false
+        DispatchQueue.main.async { searchFocused = true }
+    }
+
+    /// "Sayılmayanları Göster" isteği: arama temizlenir
+    private func takeClearRequest() {
+        guard store.clearDailySearch else { return }
+        store.clearDailySearch = false
+        query = ""
+    }
+
+    /// "Zayi Ekle" (açık döküm penceresi önce kapanır; sayfa penceresi onun ardından açılır)
+    private func openWaste(_ itemID: String?) {
+        let wasOpen = wasteDetail != nil || showWasteList
+        wasteDetail = nil
+        showWasteList = false
+        if wasOpen {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { wasteRequest = WasteRequest(itemID: itemID) }
+        } else {
+            wasteRequest = WasteRequest(itemID: itemID)
+        }
     }
 
     // MARK: Parçalar
 
-    private func header(rows: [ItemCalc], date: String, locked: Bool) -> some View {
+    private func header(rows: [ItemCalc], date: String, locked: Bool, firstItem: String?) -> some View {
         let counted = rows.filter { $0.isCounted }.count
         let problems = rows.filter { $0.severity?.isProblem == true }.count
         return HStack(spacing: 16) {
             DateNavigator()
+            searchField(firstItem: firstItem)
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
                 HStack(spacing: 6) {
@@ -102,6 +152,24 @@ struct DailyView: View {
                         Pill(text: "\(problems) kalem", color: problems == 0 ? Brand.ok : Brand.negative)
                     }
                 }
+                let wasteEntries = store.data.days[date]?.wasteLog ?? []
+                if !wasteEntries.isEmpty {
+                    // Günün elle girilen zayi kayıtları (silme düğmeleriyle)
+                    Button(WasteText.listLink(wasteEntries.count)) { showWasteList = true }
+                        .buttonStyle(.link)
+                        .popover(isPresented: $showWasteList, arrowEdge: .bottom) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("\(DateKey.short(date)) zayi kayıtları").font(.headline)
+                                WasteEntryList(date: date, entries: wasteEntries)
+                                if !locked {
+                                    Button { openWaste(nil) } label: { Label(WasteText.addTitle, systemImage: "plus") }
+                                        .buttonStyle(SoftButtonStyle())
+                                }
+                            }
+                            .padding(16).frame(width: 380)
+                            .environmentObject(store)
+                        }
+                }
             }
             .font(.callout)
             Menu {
@@ -112,13 +180,38 @@ struct DailyView: View {
         .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
+    /// Kalem arama: Enter görünen ilk kalemin Kapanış hücresine geçer, Esc temizler
+    private func searchField(firstItem: String?) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(ItemSearch.placeholder, text: $query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onSubmit {
+                    if let firstItem { focus = CellID(item: firstItem, col: 4) }
+                }
+                .onExitCommand { query = "" }
+                .accessibilityLabel(ItemSearch.placeholder)
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help(ItemSearch.clearLabel)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(width: 200, height: 28)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Brand.field))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(searchFocused ? Brand.accent : Brand.line.opacity(0.6), lineWidth: searchFocused ? 1.5 : 0.5))
+        .help("Kalem ara (⌘F) · Enter: ilk kalemin kapanışı · Esc: temizle")
+    }
+
     private func toolbar(date: String, locked: Bool, allRows: [ItemCalc]) -> some View {
         let day = store.data.days[date]
         let note = day?.note ?? ""
         let countedBy = day?.countedBy ?? ""
         return HStack(spacing: 12) {
-            Picker("", selection: $filter) {
-                ForEach(RowFilter.allCases) { f in Text(f.rawValue).tag(f) }
+            Picker("", selection: $store.dailyFilter) {
+                ForEach(DailyRowFilter.allCases) { f in Text(f.rawValue).tag(f) }
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 270)
 
@@ -129,13 +222,26 @@ struct DailyView: View {
             .help(note.isEmpty ? "Güne not ekleyin, sayımı yapanı seçin" : note)
             .popover(isPresented: $showNote, arrowEdge: .bottom) { DayNotePopover(date: date).environmentObject(store) }
 
+            // Elle zayi: kapatılmış günde kapalı (nedeni ipucunda)
+            Button { openWaste(nil) } label: { Label(WasteText.addTitle, systemImage: "plus.circle") }
+                .buttonStyle(SoftButtonStyle())
+                .disabled(locked)
+                .help(locked ? WasteText.lockedNote : "Bozulan, yanan, düşen ya da iade edilen malı girin")
+
             if !locked {
+                // Satış raporu olmadan hangi kalemin hareketsiz olduğu bilinemez: düğme kapalı, nedeni ipucunda
+                let hasSales = day?.hasSalesData ?? false
                 Button {
-                    let n = store.fillUncountedWithOpening(date: date)
-                    fillMessage = n == 0 ? "Doldurulacak hareketsiz kalem yok" : "\(n) kalemin kapanışı açılışla dolduruldu (⌘Z ile geri alınır)"
+                    let r = store.fillUncountedWithOpening(date: date)
+                    if r.refusal == .noSales {
+                        fillMessage = OpeningText.fillNoSales
+                    } else {
+                        fillMessage = r.count == 0 ? OpeningText.fillNothing : OpeningText.fillDone(r.count) + " (⌘Z ile geri alınır)"
+                    }
                 } label: { Label("Hareketsizleri Doldur", systemImage: "equal.circle") }
                     .buttonStyle(SoftButtonStyle())
-                    .help("Hiç hareketi (gelen, transfer, satış) olmayan ve sayılmamış kalemlere kapanış = açılış yazar")
+                    .disabled(!hasSales)
+                    .help(hasSales ? OpeningText.fillHelp : OpeningText.fillNoSales)
             }
             if let fillMessage { Text(fillMessage).font(.callout).foregroundStyle(.secondary).lineLimit(1) }
             Spacer()
@@ -150,10 +256,10 @@ struct DailyView: View {
                     // Düğme kapalıyken nedeni görünsün (ipucu kapalı düğmede çıkmayabilir)
                     Text(DayLockAction.nothingCountedNote).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                // Personel hesabıyla önce onay istenir (kapatılan günün kilidini yalnızca patron / müdür açar)
+                // Kontrol listesinde eksik varsa ya da personelse önce onay istenir ("…"; kapatılan günün kilidini yalnızca
+                // patron / müdür açar)
                 Button { store.requestLockToggle(date) } label: {
-                    Label(locked ? "Kilidi Aç" : (store.canChangeLockedDays ? "Günü Kapat" : "Günü Kapat…"),
-                          systemImage: locked ? "lock.open" : "lock")
+                    Label(locked ? "Kilidi Aç" : store.lockMenuTitle(date), systemImage: locked ? "lock.open" : "lock")
                 }
                 .buttonStyle(SoftButtonStyle(tint: locked ? Brand.warn : .primary))
                 .help(locked ? "Girişleri tekrar düzenlenebilir yapar" : Term.lock.text)
@@ -187,17 +293,24 @@ struct DailyView: View {
         .background(Color.primary.opacity(0.05))
     }
 
-    private func legend(rows: [ItemCalc]) -> some View {
+    private func legend(rows: [ItemCalc], locked: Bool) -> some View {
         // Tolerans dışı fazla çıkış olan kalem sayısı (miktar kalemin biriminde; tutar gösterilmez)
         let shortages = rows.filter { $0.severity == .shortage }.count
-        return HStack(spacing: 16) {
-            Label("Açılış boşsa önceki günün kapanışı kullanılır", systemImage: "arrow.turn.down.right")
-            Label("Fark = (Satılan + Zayi) − Fiili Tüketim", systemImage: "function")
-            Label("Kırmızı: fazla çıkış · Mavi: az çıkış · Yeşil: tolerans içinde", systemImage: "paintpalette")
-            Spacer()
-            if shortages > 0 {
-                Text("\(shortages) kalemde fazla çıkış").fontWeight(.semibold).foregroundStyle(Brand.negative)
-                    .help(Term.shortage.text)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 16) {
+                Label(OpeningText.legend, systemImage: "arrow.turn.down.right")
+                Label("Fark = (Satılan + Zayi) − Fiili Tüketim", systemImage: "function")
+                Label("Kırmızı: fazla çıkış · Mavi: az çıkış · Yeşil: tolerans içinde", systemImage: "paintpalette")
+                Spacer()
+            }
+            HStack(spacing: 16) {
+                // Toplayarak giriş: "12+8+5", "3x24+7" (adet kalemde 1.200 = 1200)
+                if !locked { Label(CountEntryText.expressionHint, systemImage: "plus.forwardslash.minus") }
+                Spacer()
+                if shortages > 0 {
+                    Text("\(shortages) kalemde fazla çıkış").fontWeight(.semibold).foregroundStyle(Brand.negative)
+                        .help(Term.shortage.text)
+                }
             }
         }
         .font(.caption).foregroundStyle(.secondary)
@@ -255,7 +368,7 @@ private struct DayNotePopover: View {
                 .frame(width: 360, height: 110)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Brand.line))
                 .disabled(readOnly)
-            Text("Örn: \"Dondurucu arızası, 3 kg patates atıldı\" — Excel'e ve raporlara not olarak geçer.")
+            Text(String(WasteText.noteHint.prefix(1)).uppercased() + String(WasteText.noteHint.dropFirst()) + ". Not Excel'e ve raporlara geçer.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
@@ -289,6 +402,9 @@ private struct DailyRow: View {
     let date: String
     @FocusState.Binding var focus: CellID?
     @Binding var detail: String?
+    @Binding var wasteDetail: String?
+    /// Bu kalem seçili "Zayi Ekle"
+    var onAddWaste: (String) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -301,19 +417,30 @@ private struct DailyRow: View {
                     Image(systemName: "arrow.down.to.line.circle.fill").foregroundStyle(Brand.warn)
                         .help("Kritik seviyenin altında (en az \(Fmt.number(item.minStock ?? 0, maxFraction: item.maxFraction)) \(item.unit.lowercased()))")
                 }
+                if calc.openingJumpIsProblem {
+                    // Elle açılış beklenenden tolerans dışı farklı ("Sorunlu" nedeni)
+                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(Brand.warn)
+                        .help(OpeningText.jumpText(calc, item: item) ?? "")
+                }
             }
             .frame(minWidth: W.nameMin, maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
 
-            cell(0, \.opening, placeholder: calc.openingIsAuto ? Fmt.number(calc.opening, maxFraction: item.maxFraction) : "")
-                .help(calc.openingIsAuto ? "Önceki günün kapanışından otomatik geldi. Değiştirmek için bir değer yazın." : "Elle girilmiş açılış. Silerseniz önceki günün kapanışı kullanılır.")
+            // Tahmini (devreden) açılış "≈ 25" yazılır; ipucu dayanağı ve sayılmayan günlerin hareketlerini gösterir
+            cell(0, \.opening, placeholder: calc.openingIsAuto ? OpeningText.placeholder(calc, item: item) : "", cellHelp: openingHelp)
             cell(1, \.incoming)
             cell(2, \.transferIn)
             cell(3, \.transferOut)
             cell(4, \.closing)
 
             calcText(calc.sold)
-            calcText(calc.waste)
-            if let a = calc.actual { calcText(a, bold: true) } else { Text("—").foregroundStyle(.tertiary).frame(width: W.calc) }
+            wasteCell
+            if calc.isBaseline {
+                baselinePill
+            } else if let a = calc.actual {
+                calcText(a, bold: true)
+            } else {
+                Text("—").foregroundStyle(.tertiary).frame(width: W.calc)
+            }
             diffCell
             Button { detail = item.id } label: { Image(systemName: "info.circle") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -328,16 +455,61 @@ private struct DailyRow: View {
         .padding(.trailing, 8)
     }
 
-    private func cell(_ col: Int, _ kp: WritableKeyPath<DayEntry, Double?>, placeholder: String = "") -> some View {
+    /// Sayım hücresi: toplayarak giriş ("12+8+5", "3x24+7"; adet kalemde "1.200" = 1200)
+    private func cell(_ col: Int, _ kp: WritableKeyPath<DayEntry, Double?>, placeholder: String = "", cellHelp: String = "") -> some View {
         NumberCell(id: CellID(item: item.id, col: col), order: order,
                    value: store.entryBinding(item: item.id, date: date, kp),
                    placeholder: placeholder, maxFraction: item.maxFraction,
-                   label: "\(item.name) \(Self.columnNames[min(col, Self.columnNames.count - 1)])", focus: $focus)
+                   label: "\(item.name) \(Self.columnNames[min(col, Self.columnNames.count - 1)])",
+                   isKg: item.isKg, cellHelp: cellHelp, focus: $focus)
             .frame(width: W.input + 8)
+    }
+
+    /// Zayi: 0 ise düz metin; değilse ModPos ve elle girilen zayinin dökümünü açan düğme (elle girilen varsa turuncu nokta)
+    @ViewBuilder private var wasteCell: some View {
+        if calc.waste == 0 {
+            calcText(0)
+        } else {
+            Button { wasteDetail = item.id } label: {
+                HStack(spacing: 3) {
+                    if calc.manualWaste > 0 { Circle().fill(Brand.warn).frame(width: 5, height: 5) }
+                    Text(Fmt.number(calc.waste, maxFraction: item.maxFraction)).monospacedDigit().underline(pattern: .dot)
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(width: W.calc)
+            .help(wasteHelp)
+            .accessibilityLabel("\(item.name) zayi dökümü")
+            .popover(isPresented: Binding(get: { wasteDetail == item.id }, set: { if !$0 { wasteDetail = nil } }), arrowEdge: .bottom) {
+                WastePopover(itemID: item.id, date: date, onAdd: onAddWaste).environmentObject(store)
+            }
+        }
+    }
+
+    /// "Zayi 1,5 kg (ModPos 0,4 + elle 1,1) — …"; Excel'den aktarılan günde "Excel" (web `wasteCellHelp` ile aynı)
+    private var wasteHelp: String {
+        WasteText.cellHelp(calc, legacy: store.data.days[date]?.usesLegacySales ?? false, item: item)
     }
 
     /// Giriş sütunlarının ekran okuyucudaki adları (sütun sırasıyla)
     private static let columnNames = ["açılış", "gelen", "gelen transfer", "giden transfer", "kapanış"]
+
+    /// Açılış ipucu: son sayımdan / devreden (sayılmayan günlerin hareketleriyle) / elle / önceki sayım yok
+    private var openingHelp: String {
+        let carry = calc.openingSource == .carried ? store.engine.carryBreakdown(itemID: item.id, date: date) : []
+        return OpeningText.help(calc, item: item, date: date, breakdown: carry)
+    }
+
+    /// İlk sayım: önceki kapanış yok (ya da çok eski), fark hesaplanmaz (Fiili ve Fark hücresi)
+    private var baselinePill: some View {
+        Text(OpeningText.baselinePill)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .foregroundStyle(.secondary)
+            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .frame(width: W.calc)
+            .help(OpeningText.baselineHelp(calc, date: date))
+    }
 
     private func calcText(_ v: Double, bold: Bool = false) -> some View {
         Text(v == 0 ? "0" : Fmt.number(v, maxFraction: item.maxFraction))
@@ -348,7 +520,9 @@ private struct DailyRow: View {
     }
 
     @ViewBuilder private var diffCell: some View {
-        if let d = calc.diff, let sev = calc.severity {
+        if calc.isBaseline {
+            baselinePill
+        } else if let d = calc.diff, let sev = calc.severity {
             let color = Brand.color(for: sev)
             Text(sev == .zero ? "0" : Fmt.number(d, maxFraction: item.maxFraction))
                 .monospacedDigit().fontWeight(.semibold)
@@ -358,19 +532,25 @@ private struct DailyRow: View {
                 .frame(width: W.calc)
                 .help(diffHelp(d, sev))
         } else {
-            Text("—").foregroundStyle(.tertiary).frame(width: W.calc).help("Kapanış sayımı girilince hesaplanır")
+            Text("—").foregroundStyle(.tertiary).frame(width: W.calc).help(withJump("Kapanış sayımı girilince hesaplanır"))
         }
+    }
+
+    /// Açılış elle ve beklenenden farklı girildiyse ipucuna eklenir (web `diffHelp` ile aynı)
+    private func withJump(_ text: String) -> String {
+        guard let jump = OpeningText.jumpText(calc, item: item) else { return text }
+        return text + " · " + jump
     }
 
     private func diffHelp(_ d: Double, _ sev: DiffSeverity) -> String {
         let unit = item.unit.lowercased()
         let amount = Fmt.number(abs(d), maxFraction: item.maxFraction)
         switch sev {
-        case .zero: return "Satışlarla stok hareketi tutuyor"
+        case .zero: return withJump("Satışlarla stok hareketi tutuyor")
         case .withinTolerance:
-            return "Fark \(amount) \(unit): tolerans (±\(Fmt.number(item.tolerance ?? 0, maxFraction: item.maxFraction))) içinde, normal sayılır"
-        case .shortage: return "Satışlara göre beklenenden \(amount) \(unit) FAZLA stok çıkmış"
-        case .surplus: return "Satışlara göre beklenenden \(amount) \(unit) AZ stok çıkmış — sayım veya reçeteyi kontrol edin"
+            return withJump("Fark \(amount) \(unit): tolerans (±\(Fmt.number(item.tolerance ?? 0, maxFraction: item.maxFraction))) içinde, normal sayılır")
+        case .shortage: return withJump("Satışlara göre beklenenden \(amount) \(unit) FAZLA stok çıkmış")
+        case .surplus: return withJump("Satışlara göre beklenenden \(amount) \(unit) AZ stok çıkmış — sayım veya reçeteyi kontrol edin")
         }
     }
 }
@@ -483,22 +663,45 @@ struct ItemDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let item, let calc {
                 let f: (Double) -> String = { Fmt.number($0, maxFraction: item.maxFraction) }
+                let carry = store.engine.carryBreakdown(itemID: itemID, date: date)
+                let missing = calc.isBaseline ? OpeningText.baselinePill : "—"
                 Text("\(item.name) / \(item.unit)").font(.headline)
+                Text(OpeningText.help(calc, item: item, date: date, breakdown: carry))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
-                    line("Açılış" + (calc.openingIsAuto ? " (önceki günün kapanışı)" : ""), f(calc.opening))
+                    line(OpeningText.breakdownLabel(calc), (calc.openingSource == .carried ? "≈ " : "") + f(calc.opening))
                     line("+ Gelen", f(calc.incoming))
                     line("+ Gelen transfer", f(calc.transferIn))
                     line("− Giden transfer", f(calc.transferOut))
                     line("− Kapanış", calc.closing.map(f) ?? "girilmedi")
                     Divider().gridCellColumns(2)
-                    line("= Fiili tüketim", calc.actual.map(f) ?? "—", bold: true)
+                    line("= Fiili tüketim", calc.actual.map(f) ?? missing, bold: true)
                     line("Satılan (reçeteden)", f(calc.sold))
                     line("Zayi", f(calc.waste))
-                    line("Fark (Satılan + Zayi − Fiili)", calc.diff.map(f) ?? "—", bold: true)
+                    line("Fark (Satılan + Zayi − Fiili)", calc.diff.map(f) ?? missing, bold: true)
                     if let t = item.tolerance, t > 0 { line("Tolerans", "± " + f(t)) }
                     if let m = item.minStock, m > 0 { line("Kritik seviye", f(m)) }
                 }
                 .font(.callout)
+                let manual = WasteLog.entries(store.data.days[date], itemID: itemID)
+                if let legacy = WasteText.legacyLine(calc, legacy: store.data.days[date]?.usesLegacySales ?? false, item: item) {
+                    Text(legacy).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                }
+                if !manual.isEmpty {
+                    Divider()
+                    Text(WasteText.manualSection).font(.subheadline.weight(.semibold))
+                    ForEach(manual) { e in
+                        Text(([WasteText.amount(e.qty, item: item), WasteText.detail(e)] + [WasteLog.time(e)].compactMap { $0 }).joined(separator: " · "))
+                            .font(.callout).monospacedDigit()
+                    }
+                }
+                if !carry.isEmpty {
+                    Divider()
+                    Text("Devreden günler").font(.subheadline.weight(.semibold))
+                    ForEach(carry, id: \.date) { d in
+                        Text(OpeningText.carryLine(d, item: item)).font(.callout).monospacedDigit()
+                    }
+                }
                 Divider()
                 Text("Bu kaleme etki eden satışlar").font(.subheadline.weight(.semibold))
                 if contribs.isEmpty {
@@ -524,7 +727,7 @@ struct ItemDetailView: View {
             }
         }
         .padding(16)
-        .frame(width: 470, height: 480)
+        .frame(width: 470, height: 540)
     }
 
     private func line(_ title: String, _ value: String, bold: Bool = false) -> some View {

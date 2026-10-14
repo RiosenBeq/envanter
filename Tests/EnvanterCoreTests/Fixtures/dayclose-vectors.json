@@ -1,0 +1,796 @@
+{
+  "about": "Günü kapatmadan önce ortak kontrol listesi (Swift DayCloseCheck / TS evaluateDayClose), kapatılmamış günler listesi (UnclosedDays / unclosedDays) ve personelin 7 günden eski güne giriş uyarısı (OldDayWarning / oldDayWarningApplies). Mac (EnvanterCoreTests/DayCloseTests) ve web (test/dayClose.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. Kural: onay = personel || sayılmayan kalem || satış raporu yok || tanımsız reçete; tolerans dışı fark yalnızca bilgi satırıdır. 'message' Mac onay penceresinin metnidir (✓ tamam, ⚠ eksik, • bilgi).",
+  "constants": {
+    "closeLabel": "Günü Kapat",
+    "closeAnywayLabel": "Yine de Kapat",
+    "showUncountedLabel": "Sayılmayanları Göster",
+    "staffRule": "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir.",
+    "managerRule": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+    "unknownStaffNote": "Reçetesini patron veya müdür tanımlar.",
+    "unclosedLookbackDays": 60,
+    "unclosedSubtitle": "Son 60 gün: sayımı girilmiş ama kapatılmamış günler. Kapatılan günün sayım ve satışı kilitlenir.",
+    "unclosedEmpty": "Son 60 günde sayılmış ama kapatılmamış gün yok.",
+    "closeSelectedLabel": "Seçilenleri Kapat",
+    "unclosedDismissLabel": "Vazgeç",
+    "unclosedBadgeHelp": "Son 60 günün kapatılmamış günleri: kontrol listesiyle aç, seçilenleri kapat",
+    "oldDayDays": 7,
+    "oldDayTitle": "7 günden eski bir güne giriş yapıyorsunuz"
+  },
+  "texts": [
+    {
+      "date": "2026-10-13",
+      "title": "13.10.2026 günü kapatılsın mı?",
+      "closed": "13.10.2026 günü kapatıldı",
+      "oldDayMessage": "13.10.2026 günü seçili. Doğru günü seçtiğinizden emin olun; bu uyarı oturum başına bir kez gösterilir."
+    },
+    {
+      "date": "2026-01-05",
+      "title": "05.01.2026 günü kapatılsın mı?",
+      "closed": "05.01.2026 günü kapatıldı",
+      "oldDayMessage": "05.01.2026 günü seçili. Doğru günü seçtiğinizden emin olun; bu uyarı oturum başına bir kez gösterilir."
+    }
+  ],
+  "counts": [
+    {
+      "count": 1,
+      "title": "Kapatılmamış günler (1)",
+      "closed": "1 gün kapatıldı",
+      "badge": "1 sayılmış gün kapatılmadı"
+    },
+    {
+      "count": 12,
+      "title": "Kapatılmamış günler (12)",
+      "closed": "12 gün kapatıldı",
+      "badge": "12 sayılmış gün kapatılmadı"
+    }
+  ],
+  "evaluate": [
+    {
+      "name": "müdür: her şey tamam → onaysız kapatılır",
+      "input": {
+        "counted": 21,
+        "total": 21,
+        "hasSales": true,
+        "unknownLines": 0,
+        "problemItems": 0,
+        "canChangeLockedDay": true
+      },
+      "needsConfirm": false,
+      "allOK": true,
+      "confirmLabel": "Günü Kapat",
+      "hasUncounted": false,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "ok",
+          "text": "Sayım tamam: 21 / 21 kalem sayıldı."
+        },
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        }
+      ],
+      "ruleText": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+      "message": "✓ Sayım tamam: 21 / 21 kalem sayıldı.\n✓ Satış raporu aktarıldı.\n\nSayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."
+    },
+    {
+      "name": "personel: her şey tamam → yine onaylar (kilidi açamaz)",
+      "input": {
+        "counted": 21,
+        "total": 21,
+        "hasSales": true,
+        "unknownLines": 0,
+        "problemItems": 0,
+        "canChangeLockedDay": false
+      },
+      "needsConfirm": true,
+      "allOK": true,
+      "confirmLabel": "Günü Kapat",
+      "hasUncounted": false,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "ok",
+          "text": "Sayım tamam: 21 / 21 kalem sayıldı."
+        },
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        }
+      ],
+      "ruleText": "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir.",
+      "message": "✓ Sayım tamam: 21 / 21 kalem sayıldı.\n✓ Satış raporu aktarıldı.\n\nGünü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+    },
+    {
+      "name": "müdür: sayılmayan kalem var",
+      "input": {
+        "counted": 14,
+        "total": 21,
+        "hasSales": true,
+        "unknownLines": 0,
+        "problemItems": 0,
+        "canChangeLockedDay": true
+      },
+      "needsConfirm": true,
+      "allOK": false,
+      "confirmLabel": "Yine de Kapat",
+      "hasUncounted": true,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "warn",
+          "text": "Sayım eksik: 14 / 21 kalem sayıldı, 7 kalem sayılmadı."
+        },
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        }
+      ],
+      "ruleText": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+      "message": "⚠ Sayım eksik: 14 / 21 kalem sayıldı, 7 kalem sayılmadı.\n✓ Satış raporu aktarıldı.\n\nSayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."
+    },
+    {
+      "name": "müdür: satış raporu yok",
+      "input": {
+        "counted": 21,
+        "total": 21,
+        "hasSales": false,
+        "unknownLines": 0,
+        "problemItems": 0,
+        "canChangeLockedDay": true
+      },
+      "needsConfirm": true,
+      "allOK": false,
+      "confirmLabel": "Yine de Kapat",
+      "hasUncounted": false,
+      "missingSales": true,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "ok",
+          "text": "Sayım tamam: 21 / 21 kalem sayıldı."
+        },
+        {
+          "kind": "sales",
+          "tone": "warn",
+          "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+        }
+      ],
+      "ruleText": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+      "message": "✓ Sayım tamam: 21 / 21 kalem sayıldı.\n⚠ Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır.\n\nSayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."
+    },
+    {
+      "name": "müdür: tanımsız reçete",
+      "input": {
+        "counted": 21,
+        "total": 21,
+        "hasSales": true,
+        "unknownLines": 3,
+        "problemItems": 0,
+        "canChangeLockedDay": true
+      },
+      "needsConfirm": true,
+      "allOK": false,
+      "confirmLabel": "Yine de Kapat",
+      "hasUncounted": false,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "ok",
+          "text": "Sayım tamam: 21 / 21 kalem sayıldı."
+        },
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        },
+        {
+          "kind": "unknown",
+          "tone": "warn",
+          "text": "3 satış ürününün reçetesi tanımlı değil: stoğa yansımadı."
+        }
+      ],
+      "ruleText": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+      "message": "✓ Sayım tamam: 21 / 21 kalem sayıldı.\n✓ Satış raporu aktarıldı.\n⚠ 3 satış ürününün reçetesi tanımlı değil: stoğa yansımadı.\n\nSayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."
+    },
+    {
+      "name": "personel: tanımsız reçete (reçeteyi patron / müdür tanımlar)",
+      "input": {
+        "counted": 21,
+        "total": 21,
+        "hasSales": true,
+        "unknownLines": 3,
+        "problemItems": 0,
+        "canChangeLockedDay": false
+      },
+      "needsConfirm": true,
+      "allOK": false,
+      "confirmLabel": "Yine de Kapat",
+      "hasUncounted": false,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "ok",
+          "text": "Sayım tamam: 21 / 21 kalem sayıldı."
+        },
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        },
+        {
+          "kind": "unknown",
+          "tone": "warn",
+          "text": "3 satış ürününün reçetesi tanımlı değil: stoğa yansımadı. Reçetesini patron veya müdür tanımlar."
+        }
+      ],
+      "ruleText": "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir.",
+      "message": "✓ Sayım tamam: 21 / 21 kalem sayıldı.\n✓ Satış raporu aktarıldı.\n⚠ 3 satış ürününün reçetesi tanımlı değil: stoğa yansımadı. Reçetesini patron veya müdür tanımlar.\n\nGünü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+    },
+    {
+      "name": "müdür: yalnızca tolerans dışı fark → bilgi satırı, onay yok",
+      "input": {
+        "counted": 21,
+        "total": 21,
+        "hasSales": true,
+        "unknownLines": 0,
+        "problemItems": 2,
+        "canChangeLockedDay": true
+      },
+      "needsConfirm": false,
+      "allOK": true,
+      "confirmLabel": "Günü Kapat",
+      "hasUncounted": false,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "ok",
+          "text": "Sayım tamam: 21 / 21 kalem sayıldı."
+        },
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        },
+        {
+          "kind": "problems",
+          "tone": "info",
+          "text": "Tolerans dışı fark: 2 kalem."
+        }
+      ],
+      "ruleText": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+      "message": "✓ Sayım tamam: 21 / 21 kalem sayıldı.\n✓ Satış raporu aktarıldı.\n• Tolerans dışı fark: 2 kalem.\n\nSayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."
+    },
+    {
+      "name": "personel: eksik sayım, satış yok, tanımsız reçete ve fark",
+      "input": {
+        "counted": 5,
+        "total": 22,
+        "hasSales": false,
+        "unknownLines": 1,
+        "problemItems": 4,
+        "canChangeLockedDay": false
+      },
+      "needsConfirm": true,
+      "allOK": false,
+      "confirmLabel": "Yine de Kapat",
+      "hasUncounted": true,
+      "missingSales": true,
+      "lines": [
+        {
+          "kind": "counted",
+          "tone": "warn",
+          "text": "Sayım eksik: 5 / 22 kalem sayıldı, 17 kalem sayılmadı."
+        },
+        {
+          "kind": "sales",
+          "tone": "warn",
+          "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+        },
+        {
+          "kind": "unknown",
+          "tone": "warn",
+          "text": "1 satış ürününün reçetesi tanımlı değil: stoğa yansımadı. Reçetesini patron veya müdür tanımlar."
+        },
+        {
+          "kind": "problems",
+          "tone": "info",
+          "text": "Tolerans dışı fark: 4 kalem."
+        }
+      ],
+      "ruleText": "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir.",
+      "message": "⚠ Sayım eksik: 5 / 22 kalem sayıldı, 17 kalem sayılmadı.\n⚠ Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır.\n⚠ 1 satış ürününün reçetesi tanımlı değil: stoğa yansımadı. Reçetesini patron veya müdür tanımlar.\n• Tolerans dışı fark: 4 kalem.\n\nGünü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+    },
+    {
+      "name": "aktif kalem yok: sayım satırı yazılmaz",
+      "input": {
+        "counted": 0,
+        "total": 0,
+        "hasSales": true,
+        "unknownLines": 0,
+        "problemItems": 0,
+        "canChangeLockedDay": true
+      },
+      "needsConfirm": false,
+      "allOK": true,
+      "confirmLabel": "Günü Kapat",
+      "hasUncounted": false,
+      "missingSales": false,
+      "lines": [
+        {
+          "kind": "sales",
+          "tone": "ok",
+          "text": "Satış raporu aktarıldı."
+        }
+      ],
+      "ruleText": "Sayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz.",
+      "message": "✓ Satış raporu aktarıldı.\n\nSayım ve satış kilitlenir; kilidi daha sonra Günlük Sayım'dan açabilirsiniz."
+    }
+  ],
+  "unclosed": {
+    "data": {
+      "schemaVersion": 1,
+      "items": [
+        {
+          "id": "a",
+          "name": "Köfte",
+          "unit": "Adet",
+          "recipeUnit": "adet",
+          "factor": 1,
+          "active": true,
+          "tolerance": 1000
+        },
+        {
+          "id": "b",
+          "name": "Patates",
+          "unit": "Kg",
+          "recipeUnit": "kg",
+          "factor": 1,
+          "active": true,
+          "tolerance": 1000
+        },
+        {
+          "id": "p",
+          "name": "Pasif",
+          "unit": "Adet",
+          "recipeUnit": "adet",
+          "factor": 1,
+          "active": false
+        }
+      ],
+      "products": [
+        {
+          "code": "1",
+          "name": "BURGER",
+          "category": "BURGER",
+          "amounts": {
+            "a": 1
+          }
+        }
+      ],
+      "days": {
+        "2026-08-01": {
+          "date": "2026-08-01",
+          "entries": {
+            "a": {
+              "closing": 50
+            },
+            "b": {
+              "closing": 5
+            }
+          },
+          "sales": []
+        },
+        "2026-10-01": {
+          "date": "2026-10-01",
+          "entries": {
+            "a": {
+              "closing": 40
+            },
+            "b": {
+              "closing": 4
+            }
+          },
+          "sales": []
+        },
+        "2026-10-02": {
+          "date": "2026-10-02",
+          "entries": {
+            "a": {
+              "closing": 38
+            },
+            "b": {
+              "closing": 4
+            }
+          },
+          "sales": [
+            {
+              "code": "1",
+              "name": "BURGER",
+              "qty": 2
+            }
+          ],
+          "locked": true
+        },
+        "2026-10-03": {
+          "date": "2026-10-03",
+          "entries": {},
+          "note": "Yalnızca not",
+          "sales": []
+        },
+        "2026-10-04": {
+          "date": "2026-10-04",
+          "entries": {
+            "a": {
+              "closing": 30
+            },
+            "p": {
+              "closing": 9
+            }
+          },
+          "sales": [
+            {
+              "code": "1",
+              "name": "BURGER",
+              "qty": 8
+            },
+            {
+              "code": "999",
+              "name": "YENİ ÜRÜN",
+              "qty": 1
+            }
+          ]
+        },
+        "2026-10-05": {
+          "date": "2026-10-05",
+          "entries": {
+            "a": {
+              "closing": 25
+            },
+            "b": {
+              "closing": 3
+            }
+          },
+          "sales": [
+            {
+              "code": "1",
+              "name": "BURGER",
+              "qty": 5
+            }
+          ]
+        },
+        "2026-10-06": {
+          "date": "2026-10-06",
+          "entries": {
+            "a": {
+              "closing": 20
+            }
+          },
+          "sales": []
+        },
+        "2026-10-07": {
+          "date": "2026-10-07",
+          "entries": {
+            "b": {
+              "closing": 2
+            }
+          },
+          "wasteLog": [
+            {
+              "id": "w1",
+              "itemID": "b",
+              "qty": 0.5,
+              "reason": "spoiled"
+            }
+          ],
+          "sales": []
+        }
+      },
+      "settings": {
+        "branchName": "",
+        "orderLookbackDays": 14,
+        "orderCoverDays": 3,
+        "staff": []
+      },
+      "employees": [],
+      "purchaseOrders": []
+    },
+    "cases": [
+      {
+        "name": "müdür: 05.10 itibarıyla son 60 gün (kilitli, yalnızca notlu, sayımsız ve ileri tarihli günler yok)",
+        "asOf": "2026-10-05",
+        "lookbackDays": 60,
+        "canChangeLockedDay": true,
+        "expect": [
+          {
+            "date": "2026-10-05",
+            "needsConfirm": false,
+            "allOK": true,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "ok",
+                "text": "Sayım tamam: 2 / 2 kalem sayıldı."
+              },
+              {
+                "kind": "sales",
+                "tone": "ok",
+                "text": "Satış raporu aktarıldı."
+              }
+            ]
+          },
+          {
+            "date": "2026-10-04",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "warn",
+                "text": "Sayım eksik: 1 / 2 kalem sayıldı, 1 kalem sayılmadı."
+              },
+              {
+                "kind": "sales",
+                "tone": "ok",
+                "text": "Satış raporu aktarıldı."
+              },
+              {
+                "kind": "unknown",
+                "tone": "warn",
+                "text": "1 satış ürününün reçetesi tanımlı değil: stoğa yansımadı."
+              }
+            ]
+          },
+          {
+            "date": "2026-10-01",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "ok",
+                "text": "Sayım tamam: 2 / 2 kalem sayıldı."
+              },
+              {
+                "kind": "sales",
+                "tone": "warn",
+                "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+              }
+            ]
+          }
+        ],
+        "preselected": [
+          "2026-10-05"
+        ]
+      },
+      {
+        "name": "personel: aynı günler, hepsi onay ister",
+        "asOf": "2026-10-05",
+        "lookbackDays": 60,
+        "canChangeLockedDay": false,
+        "expect": [
+          {
+            "date": "2026-10-05",
+            "needsConfirm": true,
+            "allOK": true,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "ok",
+                "text": "Sayım tamam: 2 / 2 kalem sayıldı."
+              },
+              {
+                "kind": "sales",
+                "tone": "ok",
+                "text": "Satış raporu aktarıldı."
+              }
+            ]
+          },
+          {
+            "date": "2026-10-04",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "warn",
+                "text": "Sayım eksik: 1 / 2 kalem sayıldı, 1 kalem sayılmadı."
+              },
+              {
+                "kind": "sales",
+                "tone": "ok",
+                "text": "Satış raporu aktarıldı."
+              },
+              {
+                "kind": "unknown",
+                "tone": "warn",
+                "text": "1 satış ürününün reçetesi tanımlı değil: stoğa yansımadı. Reçetesini patron veya müdür tanımlar."
+              }
+            ]
+          },
+          {
+            "date": "2026-10-01",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "ok",
+                "text": "Sayım tamam: 2 / 2 kalem sayıldı."
+              },
+              {
+                "kind": "sales",
+                "tone": "warn",
+                "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+              }
+            ]
+          }
+        ],
+        "preselected": [
+          "2026-10-05"
+        ]
+      },
+      {
+        "name": "kısa pencere (3 gün): yalnızca 05–07.10",
+        "asOf": "2026-10-07",
+        "lookbackDays": 3,
+        "canChangeLockedDay": true,
+        "expect": [
+          {
+            "date": "2026-10-07",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "warn",
+                "text": "Sayım eksik: 1 / 2 kalem sayıldı, 1 kalem sayılmadı."
+              },
+              {
+                "kind": "sales",
+                "tone": "warn",
+                "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+              }
+            ]
+          },
+          {
+            "date": "2026-10-06",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "warn",
+                "text": "Sayım eksik: 1 / 2 kalem sayıldı, 1 kalem sayılmadı."
+              },
+              {
+                "kind": "sales",
+                "tone": "warn",
+                "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+              }
+            ]
+          },
+          {
+            "date": "2026-10-05",
+            "needsConfirm": false,
+            "allOK": true,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "ok",
+                "text": "Sayım tamam: 2 / 2 kalem sayıldı."
+              },
+              {
+                "kind": "sales",
+                "tone": "ok",
+                "text": "Satış raporu aktarıldı."
+              }
+            ]
+          }
+        ],
+        "preselected": [
+          "2026-10-05"
+        ]
+      },
+      {
+        "name": "60 günden eski gün dahil olur mu: 01.08 → 29.09 penceresinde yalnızca 01.08",
+        "asOf": "2026-09-29",
+        "lookbackDays": 60,
+        "canChangeLockedDay": true,
+        "expect": [
+          {
+            "date": "2026-08-01",
+            "needsConfirm": true,
+            "allOK": false,
+            "lines": [
+              {
+                "kind": "counted",
+                "tone": "ok",
+                "text": "Sayım tamam: 2 / 2 kalem sayıldı."
+              },
+              {
+                "kind": "sales",
+                "tone": "warn",
+                "text": "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır."
+              }
+            ]
+          }
+        ],
+        "preselected": []
+      },
+      {
+        "name": "61. gün dışarıda: 30.09 itibarıyla 01.08 girmez",
+        "asOf": "2026-09-30",
+        "lookbackDays": 60,
+        "canChangeLockedDay": true,
+        "expect": [],
+        "preselected": []
+      }
+    ]
+  },
+  "oldDay": [
+    {
+      "role": "staff",
+      "date": "2026-10-06",
+      "today": "2026-10-14",
+      "applies": true
+    },
+    {
+      "role": "staff",
+      "date": "2026-10-07",
+      "today": "2026-10-14",
+      "applies": false
+    },
+    {
+      "role": "staff",
+      "date": "2026-10-14",
+      "today": "2026-10-14",
+      "applies": false
+    },
+    {
+      "role": "staff",
+      "date": "2026-10-20",
+      "today": "2026-10-14",
+      "applies": false
+    },
+    {
+      "role": "staff",
+      "date": "2025-12-31",
+      "today": "2026-01-09",
+      "applies": true
+    },
+    {
+      "role": "manager",
+      "date": "2026-09-01",
+      "today": "2026-10-14",
+      "applies": false
+    },
+    {
+      "role": "owner",
+      "date": "2026-09-01",
+      "today": "2026-10-14",
+      "applies": false
+    },
+    {
+      "role": null,
+      "date": "2026-09-01",
+      "today": "2026-10-14",
+      "applies": false
+    },
+    {
+      "role": "staff",
+      "date": "2026-13-01",
+      "today": "2026-10-14",
+      "applies": false
+    }
+  ]
+}

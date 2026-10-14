@@ -1,0 +1,165 @@
+{
+  "about": "Paylaşılan mağaza bilgisayarında şu an çalışan (Swift SessionWorker, TS src/lib/worker.ts): cihaz hesabında (pc-…) bir kez sorulur, yalnızca o bilgisayarda oturum boyunca tutulur; değişiklik geçmişi özetine ' · ad' eklenir, ilk kapanış girilirken Sayan boşsa çalışan yazılır, Zayi Ekle 'Kim' varsayılanı olur. Mac (EnvanterCoreTests/WorkerTests) ve web (test/worker.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır.",
+  "constants": {
+    "promptTitle": "Şu an kim çalışıyor?",
+    "promptMessage": "Bu bilgisayar ortak kullanılıyor. Adınızı seçin: değişiklik geçmişine yazılır, sayımı yapan ve zayi kaydında varsayılan olur. Yalnızca bu bilgisayarda, uygulama açık kaldıkça hatırlanır.",
+    "skipLabel": "Atla",
+    "changeLabel": "Değiştir",
+    "noEmployees": "Ekipte aktif üye yok. Patron ya da müdür Ekip ekranından ekleyebilir."
+  },
+  "asks": [
+    {
+      "email": "pc-7kq2m9@envanter.local",
+      "asks": true
+    },
+    {
+      "email": " PC-7KQ2M9@envanter.local ",
+      "asks": true
+    },
+    {
+      "email": "ayse.yilmaz@envanter.local",
+      "asks": false
+    },
+    {
+      "email": "pc-7kq2m9@example.com",
+      "asks": false
+    },
+    {
+      "email": "pc-7kq2m1@envanter.local",
+      "asks": false
+    },
+    {
+      "email": null,
+      "asks": false
+    }
+  ],
+  "options": {
+    "employees": [
+      {
+        "id": "e1",
+        "name": " Murat A. ",
+        "role": "Usta",
+        "active": true
+      },
+      {
+        "id": "e2",
+        "name": "Ayşe",
+        "role": "",
+        "active": false
+      },
+      {
+        "id": "e3",
+        "name": "  ",
+        "role": "",
+        "active": true
+      },
+      {
+        "id": "e4",
+        "name": "murat a.",
+        "role": "",
+        "active": true
+      },
+      {
+        "id": "e5",
+        "name": "Selin K.",
+        "role": "Kasiyer",
+        "active": true
+      }
+    ],
+    "expect": [
+      "Murat A.",
+      "Selin K."
+    ]
+  },
+  "summary": [
+    {
+      "base": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110",
+      "worker": "Murat A.",
+      "expect": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110 · Murat A."
+    },
+    {
+      "base": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110",
+      "worker": " Selin K. ",
+      "expect": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110 · Selin K."
+    },
+    {
+      "base": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110",
+      "worker": null,
+      "expect": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110"
+    },
+    {
+      "base": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110",
+      "worker": "  ",
+      "expect": "09.10.2026 sayımı: 90 Gr kapanış 120 → 110"
+    },
+    {
+      "base": "",
+      "worker": "Murat A.",
+      "expect": ""
+    }
+  ],
+  "countedBy": [
+    {
+      "current": null,
+      "worker": "Murat A.",
+      "hasClosing": true,
+      "expect": "Murat A."
+    },
+    {
+      "current": "",
+      "worker": " Murat A. ",
+      "hasClosing": true,
+      "expect": "Murat A."
+    },
+    {
+      "current": "  ",
+      "worker": "Murat A.",
+      "hasClosing": true,
+      "expect": "Murat A."
+    },
+    {
+      "current": "Selin K.",
+      "worker": "Murat A.",
+      "hasClosing": true,
+      "expect": null
+    },
+    {
+      "current": null,
+      "worker": null,
+      "hasClosing": true,
+      "expect": null
+    },
+    {
+      "current": null,
+      "worker": "Murat A.",
+      "hasClosing": false,
+      "expect": null
+    }
+  ],
+  "defaultBy": [
+    {
+      "countedBy": "Selin K.",
+      "worker": "Murat A.",
+      "linkedName": "Ali",
+      "expect": "Selin K."
+    },
+    {
+      "countedBy": null,
+      "worker": "Murat A.",
+      "linkedName": "Ali",
+      "expect": "Murat A."
+    },
+    {
+      "countedBy": " ",
+      "worker": null,
+      "linkedName": " Ali ",
+      "expect": "Ali"
+    },
+    {
+      "countedBy": null,
+      "worker": null,
+      "linkedName": null,
+      "expect": ""
+    }
+  ]
+}

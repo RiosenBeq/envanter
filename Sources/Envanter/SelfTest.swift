@@ -153,11 +153,89 @@ enum SelfTest {
 
         print("6) Açılış devri ve hareketsiz kalemler")
         let d2row = store.engine.calc(date: d2).rows.first { $0.itemID == "g90" }
-        check(d2row?.opening == 120 && d2row?.openingIsAuto == true, "ertesi günün açılışı önceki kapanıştan (120)")
+        check(d2row?.opening == 120 && d2row?.openingIsAuto == true && d2row?.openingSource == .closing,
+              "ertesi günün açılışı önceki sayımdan (120)")
         step("peynir") { store.entryBinding(item: "peynir", date: d1, \.closing).wrappedValue = 5 }
+        let peynirFirst = store.engine.calc(date: d1).rows.first { $0.itemID == "peynir" }
+        check(peynirFirst?.isBaseline == true && peynirFirst?.diff == nil, "ilk sayım başlangıç kabul edilir (fark hesaplanmaz)")
+        let refused = store.fillUncountedWithOpening(date: d2)
+        check(refused.count == 0 && refused.refusal == .noSales && store.data.days[d2]?.entries["peynir"] == nil,
+              "satış raporu olmadan Hareketsizleri Doldur çalışmıyor")
+        // Stok etkisi olmayan satış (içecek): günün satış verisi var, hiçbir kalem hareket etmez
+        store.confirmImport(report: SalesParser.parse(text: "Kodu\tÜrün Tipi\tAdedi\n13001\tKOLA\t5\n", sourceName: "selftest-içecek"), date: d2)
         let filled = store.fillUncountedWithOpening(date: d2)
-        check(filled >= 2, "hareketsiz kalemler dolduruldu (\(filled))")
+        check(filled.count >= 2 && filled.refusal == nil, "hareketsiz kalemler dolduruldu (\(filled.count))")
         check(store.data.days[d2]?.entries["peynir"]?.closing == 5, "peynir kapanışı = açılış (5)")
+
+        print("6b) Sayılmayan gün devri ve tahmini stok")
+        let d3 = "2026-08-03", d4 = "2026-08-04"
+        store.entryBinding(item: "g90", date: d3, \.incoming).wrappedValue = 30
+        let d4row = store.engine.calc(date: d4).rows.first { $0.itemID == "g90" }
+        check(near(d4row?.opening, 150) && d4row?.openingSource == .carried && d4row?.carriedDays == 1 && d4row?.openingBaseDate == d2,
+              "sayılmayan günün Gelen'i sonraki açılışa devreder (120 + 30 ≈ 150)")
+        if let d4row, let g90 = store.engine.itemsByID["g90"] {
+            check(OpeningText.placeholder(d4row, item: g90) == "≈ 150", "tahmini açılış \"≈ 150\" yazılır")
+            check(OpeningText.help(d4row, item: g90, date: d4, breakdown: store.engine.carryBreakdown(itemID: "g90", date: d4))
+                    == "Son sayım 02.08.2026: 120 + sayılmayan 1 günün hareketleri (Gelen +30) ≈ 150",
+                  "açılış ipucu dayanağı ve devreden hareketi gösteriyor")
+            // Sipariş'teki mevcut stok aynı tahmin ve aynı dayanak (Stok Kalemleri ile ortak metin)
+            let o3 = store.orderSuggestions(date: d3).first { $0.item.id == "g90" }
+            check(o3.map { OrderStockText.value($0) } == "≈ 150" && o3.flatMap { OrderStockText.note($0, date: d3) } == "sayım 02.08 + hareket",
+                  "Sipariş: mevcut stok tahmini (≈ 150 · sayım 02.08 + hareket)")
+        } else { check(false, "04.08 satırı hesaplandı") }
+        // Sayım girilmemiş gün: Genel Bakış'taki "Kritik seviye altı" kartı tahmini stoğa göre
+        store.updateItem("g90", actionName: "Kritik Seviye") { $0.minStock = 200 }
+        let card = BelowMinimumCard.make(store.engine.overview(date: d3), estimates: store.engine.stockEstimates(date: d3))
+        check(card.detail == "tahmini · sayım girilmedi" && (Int(card.value) ?? 0) >= 1 && card.warn,
+              "Genel Bakış: sayım yokken kritik seviye kartı tahmini stoğu gösteriyor (\(card.value))")
+        store.updateItem("g90", actionName: "Kritik Seviye") { $0.minStock = nil }
+
+        print("6c) Elle zayi (Zayi Ekle)")
+        let wasteBefore = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
+        let wasteUndo = UndoManager()
+        store.undoManager = wasteUndo
+        await settle()
+        if let entry = WasteLog.make(id: "selftest-zayi", itemID: "g90", qty: 2, reason: .burnt, note: "Yanan köfte", by: "Ayşe") {
+            check(store.addWaste(date: d1, entry: entry), "zayi kaydı eklendi")
+        } else { check(false, "zayi kaydı oluşturuldu") }
+        await settle()
+        let wasteRow = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
+        check(near(wasteRow?.manualWaste, 2) && near(wasteRow?.waste, (wasteBefore?.waste ?? 0) + 2),
+              "elle zayi Zayi sütununa eklendi (ModPos + elle)")
+        check(near(wasteRow?.diff, (wasteBefore?.diff ?? 0) + 2), "fark elle zayi kadar değişti")
+        check(wasteUndo.undoActionName == "Zayi Ekle", "Düzen menüsünde \"Zayi Ekle Geri Al\"")
+        check(store.removeWaste(date: d1, id: "selftest-zayi") && store.data.days[d1]?.wasteLog == [],
+              "son kayıt silinince liste boş kalır ([]; anahtar silinmez)")
+        await settle()
+        wasteUndo.undo()
+        await settle()
+        check(store.data.days[d1]?.wasteLog?.map { $0.id } == ["selftest-zayi"], "geri al: silinen zayi kaydı geri geldi")
+        if let row = store.engine.calc(date: d1).rows.first(where: { $0.itemID == "g90" }), let g90 = store.engine.itemsByID["g90"] {
+            check(WasteText.duplicateHint(row, day: store.data.days[d1], item: g90)?.contains("elle 2 adet zayi girildi") == true,
+                  "Zayi Ekle aynı zayinin iki kez girilmesine karşı uyarıyor")
+            let help = WasteText.cellHelp(row, legacy: store.data.days[d1]?.usesLegacySales ?? false, item: g90)
+            check(help.contains("elle 2") || help.contains("elle girildi"), "Zayi hücresi ipucu elle girilen zayiyi gösteriyor: \(help)")
+        }
+        if let withWaste = store.data.days[d1] {
+            var plain = withWaste
+            plain.wasteLog = nil
+            let summary = ChangeSummary.summarize(key: DocKey.day(d1), before: try? JSONCoding.value(plain),
+                                                  after: try? JSONCoding.value(withWaste), data: store.data)
+            check(summary == "01.08.2026 zayi eklendi: 90 Gr 2 adet (Yandı / hatalı üretim)", "değişiklik geçmişi: \(summary)")
+        }
+        // Satışı olan gün: yalnızca elle zayisi olan kalem hareketsiz sayılmaz (Hareketsizleri Doldur)
+        let d5 = "2026-08-05"
+        store.confirmImport(report: SalesParser.parse(text: "Kodu\tÜrün Tipi\tAdedi\n13001\tKOLA\t2\n", sourceName: "selftest-zayi"), date: d5)
+        let peynirIdle = { store.engine.calc(date: d5).rows.first { $0.itemID == "peynir" }.map(DayOps.isIdle) ?? false }
+        check(peynirIdle(), "satışı olan günde hareketsiz peynir doldurulabilir")
+        if let peynirZayi = WasteLog.make(itemID: "peynir", qty: 0.5, reason: .spoiled) { store.addWaste(date: d5, entry: peynirZayi) }
+        check(!peynirIdle(), "elle zayi hareket sayılır")
+        _ = store.fillUncountedWithOpening(date: d5)
+        check(store.data.days[d5]?.entries["peynir"]?.closing == nil, "elle zayisi olan kaleme kapanış = açılış yazılmadı")
+        store.undoManager = nil
+        wasteUndo.removeAllActions()
+        store.removeWaste(date: d1, id: "selftest-zayi")
+        store.selectedDate = d1
 
         print("7) Gün kilidi")
         step("kilit") { store.setLocked(d1, true) }
@@ -347,6 +425,10 @@ enum SelfTest {
         store.confirmImport(report: report, date: tB)
         check(store.engine.overview(date: tB).trackerState == .salesOnly, "yalnızca satış raporu olan gün gri")
         check(store.engine.overview(date: tC).trackerState == .empty, "verisi olmayan gün boş")
+        // Önceki gün tüm kalemler sayılsın: ilk sayım (önceki kapanış yok) fark üretmez, eşik denemesi her kalemde çalışsın
+        let beforeD = DateKey.addDays(-1, to: tD)
+        setClosings(beforeD, Dictionary(store.engine.calc(date: beforeD).rows.map { ($0.itemID, max($0.opening, 0)) },
+                                        uniquingKeysWith: { a, _ in a }))
         let rowsD = store.engine.calc(date: tD).rows
         let even = Dictionary(rowsD.map { ($0.itemID, $0.opening) }, uniquingKeysWith: { a, _ in a })
         setClosings(tD, even)
@@ -391,11 +473,15 @@ enum SelfTest {
         let confirmText = store.dayCloseConfirmMessage(d2)
         check(confirmText.contains("kalem sayıldı") && confirmText.hasSuffix(DayLockAction.confirmMessage),
               "onay penceresi günün sayım durumunu ve kuralı gösteriyor")
+        check(confirmText.contains("⚠ Sayım eksik") || confirmText.contains("✓ Sayım tamam"), "onay penceresi kontrol listesini işaretli gösteriyor")
         store.pendingDayClose = nil                                            // Vazgeç
         check(!store.isLocked(d2), "vazgeçince gün açık kaldı")
         store.requestLockToggle(d2)
         if let pending = store.pendingDayClose { store.confirmDayClose(pending) }
         check(store.isLocked(d2) && store.pendingDayClose == nil, "onaydan sonra gün kapatıldı")
+        // 02.08 bugünden 7 günden eski: personel bu oturumda bir kez uyarılır (OldDayWarning)
+        check(store.alert?.title == OldDayWarning.title, "personel: 7 günden eski güne yazınca uyarı")
+        store.alert = nil
         check(store.lockAction(d2) == .unlockNotAllowed && store.isReadOnlyDay(d2), "personel kapatılmış günün kilidini açamaz")
         store.requestLockToggle(d2)
         check(store.isLocked(d2), "⌘L personel hesabıyla kilidi açmadı")
@@ -414,6 +500,7 @@ enum SelfTest {
         check(!store.setEmployeeActive("m", false) && store.employees.first { $0.id == "m" }?.active == true, "personel: üye pasif yapılamıyor")
         store.alert = nil
         store.setCountedBy(d1, "Yeni Personel")
+        check(store.alert == nil, "eski gün uyarısı oturumda bir kez gösterilir")
         check(store.data.days[d1]?.countedBy == "Yeni Personel" && store.employees.count == teamCount && store.settings.staff.isEmpty,
               "personel: yazılan Sayan adı yalnızca güne yazıldı (ekibe ve eski listeye eklenmedi)")
         // (e) Rol web panelinde müdüre yükseltildi (CloudSyncController şube listesinden günceller): kısıtlar kalkar
@@ -422,9 +509,115 @@ enum SelfTest {
         check(store.lockAction(d2) == .unlock && store.lockMenuTitle(d2) == "Gün Kilidini Aç", "müdür kilidi açabilir")
         store.requestLockToggle(d2)
         check(!store.isLocked(d2), "müdür ⌘L ile kilidi açtı")
+        // Eksik gün (sayılmayan kalem, tanımsız reçete): müdür de kontrol listesini onaylar (DayCloseCheck)
+        let mgrCheck = store.dayCloseCheck(d2)
+        check(mgrCheck.needsConfirm && mgrCheck.confirmLabel == "Yine de Kapat" && mgrCheck.ruleText == DayCloseCheck.managerRule,
+              "müdür: eksik günde kontrol listesi onay istiyor (Yine de Kapat)")
+        check(store.lockMenuTitle(d2) == "Günü Kapat…", "müdür: eksik günde Gün menüsünde \"Günü Kapat…\"")
         store.requestLockToggle(d2)
-        check(store.isLocked(d2) && store.pendingDayClose == nil, "müdür onaysız kapatır")
+        check(store.pendingDayClose == d2 && !store.isLocked(d2), "müdür: eksik gün kapatılmadan önce onay bekliyor")
+        store.clearDailySearch = false
+        store.showUncounted(d2)
+        check(store.pendingDayClose == nil && store.dailyFilter == .uncounted && store.section == .daily && !store.isLocked(d2),
+              "\"Sayılmayanları Göster\": Günlük Sayım Sayılmayan filtresiyle açıldı, gün açık")
+        check(store.clearDailySearch, "\"Sayılmayanları Göster\": kalem araması temizleniyor (web ile aynı)")
+        store.clearDailySearch = false
+        store.dailyFilter = .all
+        store.requestLockToggle(d2)
+        if let pending = store.pendingDayClose { store.confirmDayClose(pending) }
+        check(store.isLocked(d2) && store.pendingDayClose == nil, "müdür onayla kapatır")
+        // Eksiksiz gün (tam sayım, satış raporu, tanımsız reçete yok): müdür onaysız kapatır
+        store.confirmImport(report: SalesParser.parse(text: "Kodu\tÜrün Tipi\tAdedi\n13001\tKOLA\t2\n", sourceName: "selftest-kapat"), date: tD)
+        let fullCheck = store.dayCloseCheck(tD)
+        check(!fullCheck.needsConfirm && fullCheck.allOK && store.lockMenuTitle(tD) == "Günü Kapat",
+              "müdür: eksiksiz günde onay yok (tolerans dışı fark yalnızca bilgi)")
+        store.requestLockToggle(tD)
+        check(store.isLocked(tD) && store.pendingDayClose == nil, "müdür eksiksiz günü onaysız kapatır")
+        // Kapatılmamış günler (son 60 gün) ve toplu kapatma: kapatılmış ve sayımsız gün atlanır, tek geri alma adımı
+        store.selectedDate = tD
+        let unclosed = store.unclosedDays()
+        check(unclosed.contains { $0.date == tA } && !unclosed.contains { $0.date == tD } && !unclosed.contains { $0.date == tC },
+              "kapatılmamış günler: sayılmış açık günler (\(unclosed.count)), kapatılmış ve sayımsız gün yok")
+        check(store.closeDays([tA, tD, tC]) == 1 && store.isLocked(tA) && !store.isLocked(tC), "toplu kapatma: yalnızca sayılmış açık gün kapatıldı")
+        store.enforcedRole = CloudRole.staff
+        check(store.closeDays([tB]) == 0, "personel toplu kapatamaz")
         store.enforcedRole = nil
+        store.alert = nil
+
+        print("16b) Sayım girişi: kalem arama, toplayarak giriş, paylaşılan bilgisayarda çalışan")
+        let allD1 = store.dailyRows(date: d1, filter: .all, query: "")
+        let patRows = store.dailyRows(date: d1, filter: .all, query: " PAT ")
+        check(!patRows.isEmpty && patRows.count < allD1.count
+              && patRows.allSatisfy { ItemSearch.fold(store.engine.itemsByID[$0.itemID]?.name ?? "").contains("pat") || $0.itemID.contains("pat") },
+              "arama satırları daraltıyor (\"pat\": \(patRows.count) / \(allD1.count))")
+        check(store.dailyRows(date: d1, filter: .all, query: "zzz-yok").isEmpty, "eşleşmeyen arama boş liste")
+        check(store.dailyRows(date: d1, filter: .uncounted, query: "").allSatisfy { !$0.isCounted }, "filtre ve arama birlikte")
+        // Kalem Ara (⌘F): Stok Kalemleri açıksa oradaki aramaya odaklanır, değilse Günlük Sayım'a geçer
+        let sectionBefore = store.section
+        store.section = .items
+        store.requestItemSearch()
+        check(store.section == .items && store.focusItemsSearch && !store.focusDailySearch, "⌘F Stok Kalemleri'nde kendi aramasına odaklanıyor")
+        store.focusItemsSearch = false
+        store.section = .overview
+        store.requestItemSearch()
+        check(store.section == .daily && store.focusDailySearch && !store.focusItemsSearch, "⌘F başka ekranda Günlük Sayım aramasına geçiyor")
+        store.focusDailySearch = false
+        store.section = sectionBefore
+        check(Fmt.parseCountExpression("12+8+5", isKg: false) == 25 && Fmt.parseCountExpression("1.200", isKg: false) == 1200
+              && Fmt.parseCountExpression("5-7", isKg: false) == nil, "toplayarak giriş: 12+8+5 = 25, adet 1.200 = 1200, 5-7 geçersiz")
+        check(!store.asksWorker && store.activeWorker == nil, "bağlantı koduyla bağlı değilken çalışan sorulmuyor")
+        store.askWorkerIfNeeded()
+        check(!store.showWorkerPrompt, "kişisel hesapla / yerelde \"Şu an kim çalışıyor?\" açılmıyor")
+        // Cihaz hesabıyla bağlı (otomatik testte web eşitlemesi kapalı: hesap doğrudan verilir); araya giren pencere yok
+        store.connectRequest = nil
+        store.importPreview = nil
+        store.workbookPreview = nil
+        store.testDeviceAccount = "pc-7kq2m9"
+        store.askWorkerIfNeeded()
+        check(store.showWorkerPrompt && !store.workerPromptIsChange, "cihaz hesabıyla bağlanınca çalışan soruluyor")
+        store.markWorkerAsked()
+        store.setWorker("  Murat A. ")
+        check(store.activeWorker == "Murat A." && !store.showWorkerPrompt, "çalışan seçildi")
+        store.askWorkerIfNeeded()
+        check(!store.showWorkerPrompt, "aynı hesapta oturumda bir kez soruluyor")
+        let wDay = "2026-08-26"
+        store.entryBinding(item: "g90", date: wDay, \.closing).wrappedValue = 5
+        check(store.data.days[wDay]?.countedBy == "Murat A.", "ilk kapanış girilince Sayan çalışan oldu")
+        store.setCountedBy(wDay, "Selin K.")
+        store.entryBinding(item: "peynir", date: wDay, \.closing).wrappedValue = 2
+        check(store.data.days[wDay]?.countedBy == "Selin K.", "Sayan doluyken değişmedi")
+        check(store.defaultWasteBy(date: "2026-08-27") == "Murat A.", "Zayi Ekle \"Kim\" varsayılanı çalışan")
+        check(SessionWorker.summary("01.08.2026 sayımı: 90 Gr kapanış 120", worker: store.activeWorker) == "01.08.2026 sayımı: 90 Gr kapanış 120 · Murat A.",
+              "değişiklik geçmişi özetine çalışan eklenir")
+        // "Değiştir" → Esc / Vazgeç: seçili çalışan kalır (web closeWorkerPrompt)
+        store.requestWorkerChange()
+        check(store.showWorkerPrompt && store.workerPromptIsChange, "Değiştir: pencere yeniden açıldı")
+        store.closeWorkerPrompt()
+        check(!store.showWorkerPrompt && store.activeWorker == "Murat A.", "Değiştir → Vazgeç: çalışan değişmedi")
+        // Çıkış yapılıp kişisel hesapla (ya da yerel) çalışılınca seçilen çalışan kullanılmaz
+        store.testDeviceAccount = nil
+        let pDay = "2026-08-28"
+        check(store.data.days[pDay] == nil, "denemedeki gün boş")
+        store.entryBinding(item: "g90", date: pDay, \.closing).wrappedValue = 7
+        check(store.activeWorker == nil && store.data.days[pDay]?.entries["g90"]?.closing == 7 && store.data.days[pDay]?.countedBy == nil
+              && store.defaultWasteBy(date: "2026-08-27") != "Murat A.",
+              "çıkıştan sonra çalışan Sayan'a, Zayi \"Kim\"e ve özete yazılmıyor")
+        // Başka bir cihaz hesabı: önceki seçim kullanılmaz, yeniden sorulur
+        store.testDeviceAccount = "pc-abcdef"
+        check(store.activeWorker == nil, "başka cihaz hesabında önceki çalışan kullanılmıyor")
+        store.askWorkerIfNeeded()
+        check(store.showWorkerPrompt && !store.workerPromptIsChange, "başka cihaz hesabında çalışan yeniden soruluyor")
+        store.markWorkerAsked()
+        store.closeWorkerPrompt()
+        check(!store.showWorkerPrompt && store.activeWorker == nil, "ilk soruda Esc: Atla (çalışan seçilmedi)")
+        // İlk hesaba dönünce de önceki seçim kullanılmaz (bu Mac yalnızca son sorulan hesabın seçimini tutar), yeniden sorulur
+        store.testDeviceAccount = "pc-7kq2m9"
+        store.askWorkerIfNeeded()
+        check(store.activeWorker == nil && store.showWorkerPrompt, "ilk cihaz hesabına dönünce çalışan yeniden soruluyor")
+        store.markWorkerAsked()
+        store.setWorker(nil)
+        check(!store.showWorkerPrompt && store.activeWorker == nil, "Atla: çalışan seçilmedi")
+        store.testDeviceAccount = nil
 
         print("17) Eşitleme kayıt noktası arayüzü bekletmez (önce veri, sonra durum)")
         let year = DemoData.make(endingAt: d2, days: 365)
@@ -491,6 +684,21 @@ enum SelfTest {
         let offline = CloudSyncController.issue(for: .network("timeout"), connected: true, login: "pc-7kq2m9@envanter.local", deviceKept: true)
         check(offline.title == CloudSyncError.network("timeout").issue(connected: true).title && offline.hint == CloudSyncGuide.offlineKeepsChanges,
               "sessiz giriş bağlantı yokken: asıl hata (bağlantı yok), değişiklikler bu Mac'te")
+
+        print("19b) Eşik önerileri ve kurulum listesi (365 günlük demo verisi)")
+        let suggestions = store.engine.thresholdSuggestions(asOf: d2)
+        check(suggestions.count >= 10, "eşik önerileri hesaplandı (\(suggestions.count) kalem)")
+        let setup = store.setupChecklist(date: d2)
+        check(setup.activeItems == store.engine.activeItems.count && !setup.computerLinked && !setup.isDone,
+              "kurulum listesi: web paneline bağlı değil, liste tamamlanmadı")
+        if let first = suggestions.first(where: { $0.tolerance != nil }) {
+            store.updateItem(first.itemID, actionName: "Tolerans") { $0.tolerance = nil }
+            let changes = ThresholdChange.changes(items: store.data.items, suggestions: store.engine.thresholdSuggestions(asOf: d2))
+            let pick = changes.filter { $0.itemID == first.itemID && $0.field == .tolerance }
+            check(pick.count == 1 && pick.first?.preselected == true, "boş tolerans önerisi önceden seçili")
+            check(store.applyThresholds(pick) && store.data.items.first { $0.id == first.itemID }?.tolerance == first.tolerance,
+                  "Önerilenleri uygula: tolerans önerilen değer oldu")
+        } else { check(false, "tolerans önerisi var") }
 
         print("20) Genel Bakış: Bugün kartı (satış raporu → sayım → günü kapat)")
         let o1 = store.engine.overview(date: d1)

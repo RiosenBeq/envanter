@@ -142,7 +142,8 @@ final class UnknownFieldPreservationTests: XCTestCase {
         // Mac'in yazdığı her gün alanı "bilinen" sayılır
         let full = DayRecord(date: "2026-08-01", entries: ["g90": DayEntry(closing: 1)], sales: [SaleLine(code: "1", name: "x", qty: 1)],
                              salesSource: "s", salesPeriod: "p", salesImportedAt: Date(timeIntervalSince1970: 0),
-                             legacySold: ["g90": 1], legacyWaste: ["g90": 1], importedFrom: "f", note: "n", countedBy: "c", locked: true)
+                             legacySold: ["g90": 1], legacyWaste: ["g90": 1], importedFrom: "f", note: "n", countedBy: "c", locked: true,
+                             wasteLog: [WasteEntry(id: "w", itemID: "g90", qty: 1, reason: "spoiled")])
         let keys = Set((try? JSONCoding.value(full))?.objectValue?.keys ?? [:].keys)
         XCTAssertEqual(keys, DocCodec.knownDayKeys)
         // Çözülmüş taban: Mac için boş gün de gövde olarak döner (normalize nil döner)

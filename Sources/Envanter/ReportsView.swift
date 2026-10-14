@@ -71,7 +71,7 @@ struct ReportsView: View {
                     Label("Excel'e Aktar", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(SoftButtonStyle())
-                .help("Seçili dönemin günlük envanteri (Alımlar), Özet ve Günlük Durum sayfaları; varsa Notlar ve Ekip")
+                .help("Seçili dönemin günlük envanteri (Alımlar), Özet ve Günlük Durum sayfaları; varsa Notlar, Zayi Kayıtları ve Ekip")
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()

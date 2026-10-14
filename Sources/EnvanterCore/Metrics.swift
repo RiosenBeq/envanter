@@ -20,7 +20,10 @@ public enum Metrics {
             ["itemID": r.itemID, "opening": n(r.opening), "openingIsAuto": r.openingIsAuto, "incoming": n(r.incoming),
              "transferIn": n(r.transferIn), "transferOut": n(r.transferOut), "closing": n(r.closing),
              "sold": n(r.sold), "waste": n(r.waste), "actual": n(r.actual), "diff": n(r.diff),
-             "severity": sev(r.severity), "belowMinimum": r.belowMinimum]
+             "severity": sev(r.severity), "belowMinimum": r.belowMinimum,
+             "openingSource": r.openingSource.rawValue, "openingBaseDate": s(r.openingBaseDate), "carriedNet": n(r.carriedNet),
+             "carriedDays": r.carriedDays, "isBaseline": r.isBaseline, "openingJump": n(r.openingJump),
+             "manualWaste": n(r.manualWaste)]
         }
         let o = e.overview(date: date)
         let overview: [String: Any] = [
@@ -32,7 +35,7 @@ public enum Metrics {
             ["itemID": r.item.id, "daysCounted": r.daysCounted, "firstOpening": n(r.firstOpening), "lastClosing": n(r.lastClosing),
              "incoming": n(r.incoming), "transferIn": n(r.transferIn), "transferOut": n(r.transferOut),
              "sold": n(r.sold), "waste": n(r.waste), "actual": n(r.actual), "diff": n(r.diff),
-             "shortageQty": n(r.shortageQty), "shortageDays": r.shortageDays]
+             "shortageQty": n(r.shortageQty), "shortageDays": r.shortageDays, "openingAdjust": n(r.openingAdjust)]
         }
         let p = e.periodStats(from: from, to: to)
         let period: [String: Any] = ["days": p.days.count, "countedDays": p.countedDays, "salesDays": p.salesDays]
@@ -49,10 +52,17 @@ public enum Metrics {
         let trend = e.trend(endingAt: date, days: 14).map { t -> [String: Any] in
             ["date": t.date, "countedItems": t.countedItems, "problemItems": t.problemItems, "shortageItems": t.shortageItems]
         }
+        let estimates = e.stockEstimates(date: date).map { x -> [String: Any] in
+            ["itemID": x.itemID, "stock": n(x.stock), "baseDate": x.baseDate, "counted": x.counted, "below": x.below]
+        }
+        let thresholds = e.thresholdSuggestions(asOf: date).map { x -> [String: Any] in
+            ["itemID": x.itemID, "tolerance": n(x.tolerance), "countedDays": x.countedDays, "minStock": n(x.minStock),
+             "dailyUsage": n(x.dailyUsage), "usageDays": x.usageDays]
+        }
         let root: [String: Any] = [
             "date": date, "from": from, "to": to,
             "calc": calc, "overview": overview, "summary": summary, "period": period, "daily": daily,
-            "orders": orders, "trend": trend]
+            "orders": orders, "trend": trend, "estimates": estimates, "thresholds": thresholds]
         return (try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])) ?? Data()
     }
 }

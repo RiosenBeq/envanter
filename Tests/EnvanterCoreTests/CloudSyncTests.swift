@@ -14,7 +14,7 @@ final class CloudSyncTests: XCTestCase {
             return XCTFail("merge3-vectors.json fikstürü yok")
         }
         guard case .array(let vectors) = try JSONCoding.parse(Data(contentsOf: url)) else { return XCTFail("dizi bekleniyordu") }
-        XCTAssertGreaterThanOrEqual(vectors.count, 16)
+        XCTAssertGreaterThanOrEqual(vectors.count, 19)
         for v in vectors {
             let name = v["name"]?.stringValue ?? "?"
             let got = JSONMerge.merge3(base: v["base"], local: v["local"], remote: v["remote"])
@@ -297,6 +297,13 @@ final class CloudSyncTests: XCTestCase {
                                                after: j(#"{"note":"x","shifts":{"e8":{"hours":6}},"otherLabor":500}"#), data: data),
                        "09.10.2026 günü güncellendi")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x"}"#), after: nil), "09.10.2026 günü silindi")
+        // Elle zayi (web activity.test.ts ile aynı; diğer durumlar waste-vectors.json'da)
+        XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x"}"#),
+                                               after: j(#"{"note":"x","wasteLog":[{"id":"w1","itemID":"patates","qty":3,"reason":"spoiled"}]}"#), data: data),
+                       "09.10.2026 zayi eklendi: Patates 3 kg (Bozuldu / SKT geçti)")
+        XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"x","wasteLog":[{"id":"w1","itemID":"patates","qty":3,"reason":"spoiled"}]}"#),
+                                               after: j(#"{"note":"x","wasteLog":[]}"#), data: data),
+                       "09.10.2026 zayi silindi: Patates 3 kg")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"a"}"#), after: j(#"{"note":"b","countedBy":"Selin"}"#)),
                        "09.10.2026 sayımı yapan: Selin; 09.10.2026 notu: b")
         XCTAssertEqual(ChangeSummary.summarize(key: day, before: j(#"{"note":"a"}"#), after: j(#"{"note":"a"}"#)),

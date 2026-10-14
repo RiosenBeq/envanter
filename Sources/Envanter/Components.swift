@@ -287,6 +287,8 @@ struct DateNavigator: View {
 
 /// Sayı hücresi: Türkçe (virgül) ve nokta kabul eder; Enter/↓ alt satıra, ↑ üst satıra geçer.
 /// Odak kaybında ve hücre ekrandan kalkarken (ör. gün değiştirilince) yazılan değer kaydedilir.
+/// `isKg` verilirse (sayım hücreleri) toplayarak giriş kabul edilir: "12+8+5", "3x24+7" (`Fmt.parseCountExpression`);
+/// kaydedilen işlem ("12+8+5 = 25") hücrenin değeri o sonuç kaldıkça ipucudur ve VoiceOver'a duyurulur.
 struct NumberCell: View {
     let id: CellID
     /// Görünen satırların kalem sırası (↑/↓/Enter ile geçiş için)
@@ -297,9 +299,17 @@ struct NumberCell: View {
     var tint: Color? = nil
     /// Ekran okuyucu için hücrenin adı ("90 Gr kapanış"); tabloda hücrenin görünen etiketi yok
     var label: String = ""
+    /// Sayım hücresi: kalemin kg olup olmadığı (toplayarak giriş; adet kalemde "1.200" = 1200). nil: düz sayı
+    var isKg: Bool? = nil
+    /// Hücrenin ipucu (ör. açılışın dayanağı); toplayarak giriş yapılınca işlem gösterilir
+    var cellHelp: String = ""
     @FocusState.Binding var focus: CellID?
     @State private var text = ""
     @State private var dirty = false
+    /// Bu hücreye toplayarak girilen son işlem ("12+8+5 = 25") ve sonucu. Yalnızca hücrenin değeri bu sonuç kaldıkça
+    /// ipucudur: düz sayı yazılınca, silinince, geri alınınca ya da eşitlemeyle değişince açılışın dayanağı geri gelir.
+    @State private var expression: String?
+    @State private var expressionValue: Double?
     @Environment(\.isEnabled) private var isEnabled
 
     private var isFocused: Bool { focus == id }
@@ -332,6 +342,13 @@ struct NumberCell: View {
             .onSubmit { commit(); move(1) }
             .onKeyPress(.downArrow) { commit(); move(1); return .handled }
             .onKeyPress(.upArrow) { commit(); move(-1); return .handled }
+            .help(expressionHelp ?? cellHelp)
+    }
+
+    /// Kayıtlı işlem, hücrenin değeri hâlâ onun sonucuysa
+    private var expressionHelp: String? {
+        guard let expression, let expressionValue, value == expressionValue else { return nil }
+        return expression
     }
 
     private var background: Color {
@@ -357,9 +374,12 @@ struct NumberCell: View {
         if trimmed.isEmpty {
             if value != nil { value = nil }
             text = ""
+            expression = nil
             return
         }
-        guard let parsed = Fmt.parse(trimmed), parsed >= 0 else {
+        let parsed: Double?
+        if let isKg { parsed = Fmt.parseCountExpression(trimmed, isKg: isKg) } else { parsed = Fmt.parse(trimmed) }
+        guard let parsed, parsed >= 0 else {
             NSSound.beep()
             text = display(value)
             return
@@ -367,6 +387,21 @@ struct NumberCell: View {
         let v = (parsed * 1_000_000).rounded() / 1_000_000
         if value != v { value = v }
         text = display(v)
+        if isKg != nil, let said = Fmt.countExpressionText(trimmed, value: v, maxFraction: maxFraction) {
+            expression = said
+            expressionValue = v
+            announce(label.isEmpty ? said : "\(label): \(said)")
+        } else {
+            // Düz sayı: eski işlem ipucu olarak kalmaz
+            expression = nil
+        }
+    }
+
+    /// VoiceOver duyurusu ("90 Gr kapanış: 12+8+5 = 25")
+    private func announce(_ message: String) {
+        guard let window = NSApp.keyWindow else { return }
+        NSAccessibility.post(element: window, notification: .announcementRequested,
+                             userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 }
 

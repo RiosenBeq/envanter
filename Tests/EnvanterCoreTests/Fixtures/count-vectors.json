@@ -1,0 +1,410 @@
+{
+  "about": "Sayım girişi kolaylıkları: toplayarak giriş (Swift Fmt.parseCountExpression / countExpressionText, TS parseCountExpression / countExpressionText) ve kalem arama (ItemSearch / itemMatches). Mac (EnvanterCoreTests/CountEntryTests) ve web (test/countEntry.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. 'expression': [metin, kg mi, değer (null = geçersiz)]. Adet kalemde sayılar parseQuantity ('1.200' → 1200), kg kalemde parse ('1.200' → 1,2) ile okunur; eksi, üs ya da başka karakter geçersizdir; en fazla 20 terim, terim başına bir çarpma (x X * ×). 'search': [arama, ad, kimlik, eşleşir mi]: Türkçe harfler ve aksanlar ASCII'ye indirilir, büyük/küçük harf yok sayılır.",
+  "constants": {
+    "maxTerms": 20,
+    "hint": "İpucu: toplayarak girebilirsiniz — 12+8 ya da 3x24+7",
+    "placeholder": "Kalem ara",
+    "clearLabel": "Aramayı temizle"
+  },
+  "expression": [
+    [
+      "12+8+5",
+      false,
+      25
+    ],
+    [
+      "3x24+7",
+      false,
+      79
+    ],
+    [
+      "3*24+7",
+      false,
+      79
+    ],
+    [
+      "3×24+7",
+      false,
+      79
+    ],
+    [
+      "3X24+7",
+      false,
+      79
+    ],
+    [
+      "2,5+1,25",
+      true,
+      3.75
+    ],
+    [
+      "1.200",
+      false,
+      1200
+    ],
+    [
+      "1.200",
+      true,
+      1.2
+    ],
+    [
+      "1.200+300",
+      false,
+      1500
+    ],
+    [
+      "1.120",
+      true,
+      1.12
+    ],
+    [
+      "12",
+      false,
+      12
+    ],
+    [
+      "7,5",
+      true,
+      7.5
+    ],
+    [
+      "7.5",
+      true,
+      7.5
+    ],
+    [
+      " 12 + 8 ",
+      false,
+      20
+    ],
+    [
+      "3 x 24 + 7",
+      false,
+      79
+    ],
+    [
+      "5 + 3",
+      false,
+      8
+    ],
+    [
+      "0",
+      false,
+      0
+    ],
+    [
+      "0+0",
+      false,
+      0
+    ],
+    [
+      "0,1+0,2",
+      true,
+      0.3
+    ],
+    [
+      "2x1,5",
+      true,
+      3
+    ],
+    [
+      "1,5x2",
+      false,
+      3
+    ],
+    [
+      "10x0,5",
+      false,
+      5
+    ],
+    [
+      "1,234.5",
+      true,
+      1234.5
+    ],
+    [
+      "1.234,5",
+      true,
+      1234.5
+    ],
+    [
+      "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+      false,
+      20
+    ],
+    [
+      "123456,789",
+      true,
+      123456.789
+    ],
+    [
+      "5-7",
+      false,
+      null
+    ],
+    [
+      "-3",
+      false,
+      null
+    ],
+    [
+      "+",
+      false,
+      null
+    ],
+    [
+      "5+",
+      false,
+      null
+    ],
+    [
+      "+5",
+      false,
+      null
+    ],
+    [
+      "1e3",
+      false,
+      null
+    ],
+    [
+      "2x3x4",
+      false,
+      null
+    ],
+    [
+      "",
+      false,
+      null
+    ],
+    [
+      "   ",
+      false,
+      null
+    ],
+    [
+      "abc",
+      false,
+      null
+    ],
+    [
+      "5++3",
+      false,
+      null
+    ],
+    [
+      "x3",
+      false,
+      null
+    ],
+    [
+      "3x",
+      false,
+      null
+    ],
+    [
+      "1.2.3",
+      false,
+      null
+    ],
+    [
+      "12 kg",
+      true,
+      null
+    ],
+    [
+      "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+      false,
+      null
+    ],
+    [
+      "999999999999+1",
+      false,
+      null
+    ],
+    [
+      "٣+1",
+      false,
+      null
+    ],
+    [
+      "3−2",
+      false,
+      null
+    ],
+    [
+      ".",
+      false,
+      null
+    ],
+    [
+      "1,2,3",
+      true,
+      null
+    ]
+  ],
+  "expressionText": [
+    {
+      "text": "12+8+5",
+      "isKg": false,
+      "maxFraction": 2,
+      "value": 25,
+      "display": "12+8+5 = 25"
+    },
+    {
+      "text": " 2,5 + 1,25 ",
+      "isKg": true,
+      "maxFraction": 3,
+      "value": 3.75,
+      "display": "2,5+1,25 = 3,75"
+    },
+    {
+      "text": "3x24+7",
+      "isKg": false,
+      "maxFraction": 2,
+      "value": 79,
+      "display": "3x24+7 = 79"
+    },
+    {
+      "text": "4×0,25",
+      "isKg": true,
+      "maxFraction": 3,
+      "value": 1,
+      "display": "4×0,25 = 1"
+    },
+    {
+      "text": "12",
+      "isKg": false,
+      "maxFraction": 2,
+      "value": 12,
+      "display": null
+    },
+    {
+      "text": "1.200",
+      "isKg": false,
+      "maxFraction": 2,
+      "value": 1200,
+      "display": null
+    }
+  ],
+  "search": [
+    [
+      "pey",
+      "Peynir",
+      "peynir",
+      true
+    ],
+    [
+      "PEY",
+      "Peynir",
+      "peynir",
+      true
+    ],
+    [
+      "sogan",
+      "Soğan",
+      "x1",
+      true
+    ],
+    [
+      "SOĞ",
+      "soğan halka",
+      "x2",
+      true
+    ],
+    [
+      "isik",
+      "IŞIK",
+      "x3",
+      true
+    ],
+    [
+      "İç",
+      "İçli köfte",
+      "x4",
+      true
+    ],
+    [
+      "90",
+      "90 Gr",
+      "90gr",
+      true
+    ],
+    [
+      "gr 90",
+      "90 Gr",
+      "90gr",
+      false
+    ],
+    [
+      "",
+      "Patates",
+      "patates",
+      true
+    ],
+    [
+      "   ",
+      "Patates",
+      "patates",
+      true
+    ],
+    [
+      "tates",
+      "Patates",
+      "patates",
+      true
+    ],
+    [
+      "kofte",
+      "Köfte",
+      "t1",
+      true
+    ],
+    [
+      "x9",
+      "Köfte",
+      "t1",
+      false
+    ],
+    [
+      "t1",
+      "Köfte",
+      "t1",
+      true
+    ],
+    [
+      "José",
+      "JOSE SOS",
+      "s9",
+      true
+    ],
+    [
+      "  pat ",
+      "Patates",
+      "patates",
+      true
+    ],
+    [
+      "ç",
+      "Cheddar",
+      "ch",
+      true
+    ],
+    [
+      "Ü",
+      "Turşu",
+      "tursu",
+      true
+    ]
+  ],
+  "noMatch": [
+    {
+      "query": "pey",
+      "text": "“pey” ile eşleşen kalem yok"
+    },
+    {
+      "query": "  pey ",
+      "text": "“pey” ile eşleşen kalem yok"
+    }
+  ]
+}

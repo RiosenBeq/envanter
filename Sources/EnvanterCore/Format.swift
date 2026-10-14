@@ -64,6 +64,55 @@ public enum Fmt {
         return parse(s)
     }
 
+    /// Sayım hücresine toplayarak giriş: "12+8+5" → 25, "3x24+7" / "3*24+7" / "3×24+7" → 79, "2,5+1,25" → 3,75 (web
+    /// `parseCountExpression`; ortak vektörler count-vectors.json). Boşluklar atılır; en fazla 20 terim, terim başına en
+    /// fazla bir çarpma. Sayılar adet kalemde `parseQuantity` ("1.200" → 1200), kg kalemde `parse` ("1.200" → 1,2) ile
+    /// okunur. Eksi, üs ya da başka karakter girişi geçersiz kılar; sonuç temizlenir (`clean`), sonlu, ≥ 0 ve < 1e12.
+    public static func parseCountExpression(_ text: String, isKg: Bool) -> Double? {
+        let s = withoutSpaces(text)
+        guard !s.isEmpty, s.unicodeScalars.allSatisfy({ countExpressionScalars.contains($0) }) else { return nil }
+        let terms = s.split(separator: "+", omittingEmptySubsequences: false)
+        guard terms.count <= countExpressionMaxTerms else { return nil }
+        var total = 0.0
+        for term in terms {
+            guard !term.isEmpty else { return nil }
+            let factors = term.split(omittingEmptySubsequences: false, whereSeparator: { "xX*×".contains($0) })
+            guard factors.count <= 2 else { return nil }
+            var product = 1.0
+            for f in factors {
+                guard !f.isEmpty, let v = isKg ? parse(String(f)) : parseQuantity(String(f)) else { return nil }
+                product *= v
+            }
+            total += product
+        }
+        // Engine.clean ile aynı (Format.swift tek başına da derlenir: test/fixtures/format-vectors.swift)
+        let rounded = (total * 1_000_000).rounded() / 1_000_000
+        let r = rounded == 0 ? 0 : rounded
+        guard r.isFinite, r >= 0, r < 1e12 else { return nil }
+        return r
+    }
+
+    /// Bir toplamada en fazla terim
+    public static let countExpressionMaxTerms = 20
+    private static let countExpressionScalars = Set("0123456789.,+xX*×".unicodeScalars)
+
+    private static func withoutSpaces(_ text: String) -> String {
+        var s = ""
+        for ch in text where !ch.isWhitespace { s.append(ch) }
+        return s
+    }
+
+    /// Yazılan metin bir işlem mi (toplama ya da çarpma içeriyor): kaydedince "12+8+5 = 25" gösterilir
+    public static func isCountExpression(_ text: String) -> Bool {
+        text.contains { "+xX*×".contains($0) }
+    }
+
+    /// Kaydedilen işlemin açıklaması: "12+8+5 = 25" (boşluksuz); işlem değilse nil
+    public static func countExpressionText(_ text: String, value: Double, maxFraction: Int) -> String? {
+        guard isCountExpression(text) else { return nil }
+        return "\(withoutSpaces(text)) = \(number(value, maxFraction: maxFraction))"
+    }
+
     /// Excel'in sayısal hücrelerindeki makine biçimi ("1234.5", "4.4408920985006262E-16").
     public static func machine(_ raw: String) -> Double? {
         guard let d = Double(raw.trimmingCharacters(in: .whitespaces)), d.isFinite else { return nil }

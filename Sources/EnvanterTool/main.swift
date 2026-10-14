@@ -112,6 +112,7 @@ case "import-excel":
         try persistence.save(data)
         persistence.dailyBackup(try persistence.encode(data))
         print("Aktarıldı: \(report.added) yeni gün, \(report.replaced) değiştirilen, \(report.skippedExisting) atlanan.")
+        if let note = report.wasteNote { print(note) }
         describe(data)
     } catch {
         fail("Hata: \(error.localizedDescription)")

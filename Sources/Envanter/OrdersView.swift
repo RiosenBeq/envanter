@@ -93,18 +93,18 @@ struct OrdersView: View {
                         }
                     }
                     TableColumn("Mevcut stok") { s in
-                        // Dar sütun: "≈ 4,2" (son sayıma sonraki hareketler eklenmiş tahmin) ve "09.10 sayımı";
-                        // ayrıntı ipucunda
+                        // Dar sütun: "≈ 4,2" (son sayıma sonraki hareketler eklenmiş tahmin) ve "sayım 09.10 + hareket";
+                        // ayrıntı ipucunda (metinler web ile ortak: OrderStockText)
                         VStack(alignment: .trailing, spacing: 1) {
-                            Text(stockText(s)).monospacedDigit()
-                            if let d = s.stockDate, d != store.selectedDate {
-                                Text("\(DateKey.dayMonth(d)) sayımı").lineLimit(1)
+                            Text(OrderStockText.value(s)).monospacedDigit()
+                            if let note = OrderStockText.note(s, date: date) {
+                                Text(note).lineLimit(1)
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .help(stockHelp(s))
-                    }.width(100)
+                        .help(OrderStockText.help(s, date: date))
+                    }.width(min: 100, ideal: 130)
                     TableColumn("Siparişte") { s in
                         Text(s.onOrder > 0 ? num(s.onOrder, s.item) : "—").monospacedDigit()
                             .foregroundStyle(s.onOrder > 0 ? Brand.positive : Color.secondary)
@@ -161,19 +161,6 @@ struct OrdersView: View {
     }
 
     private func num(_ v: Double, _ item: Item) -> String { Fmt.number(v, maxFraction: item.maxFraction) }
-
-    /// Mevcut stok: son sayımdan sonra gelen/transfer/satış eklenmişse tahmindir ("≈")
-    private func stockText(_ s: OrderSuggestion) -> String {
-        guard let v = s.stock else { return "—" }
-        return (s.stock != s.countedStock ? "≈ " : "") + num(v, s.item)
-    }
-
-    private func stockHelp(_ s: OrderSuggestion) -> String {
-        guard let counted = s.countedStock, let d = s.stockDate else { return "Henüz sayım yok" }
-        let base = "Son sayım (\(DateKey.short(d))): \(num(counted, s.item))"
-        guard let now = s.stock, now != counted else { return base }
-        return base + "; sonraki günlerin gelen/transfer ve satışlarıyla tahmini \(num(now, s.item))"
-    }
 }
 
 

@@ -176,24 +176,17 @@ public enum DayLockAction: Equatable, Sendable {
     /// Menü öğesi / düğme etkin mi
     public var isAvailable: Bool { self != .nothingCounted && self != .unlockNotAllowed }
 
-    /// Personelin gün kapatma onayı
-    public static func confirmTitle(date: String) -> String { "\(DateKey.short(date)) günü kapatılsın mı?" }
-    public static let confirmMessage = "Günü kapatınca sayım ve satış değiştirilemez; kilidi yalnızca patron veya müdür açabilir."
+    /// Gün kapatma onayının başlığı (`DayCloseCheck.title`)
+    public static func confirmTitle(date: String) -> String { DayCloseCheck.title(date: date) }
+    public static let confirmMessage = DayCloseCheck.staffRule
 
-    /// Onay penceresinin metni: günün sayım ve satış durumu (kapatmadan önce eksik kalan görülsün), sonra kural.
+    /// Personelin onay penceresinin metni (`DayCloseCheck` üzerine): günün sayım ve satış durumu, sonra kural.
     /// - Parameters:
     ///   - counted, total: kapanışı girilmiş ve toplam aktif kalem sayısı
     ///   - hasSales: satış raporu (ya da Excel'den gelen satış) var mı
     public static func confirmDetail(counted: Int, total: Int, hasSales: Bool) -> String {
-        var lines: [String] = []
-        if total > 0 {
-            lines.append(counted >= total
-                         ? "Sayım tamam: \(total) / \(total) kalem sayıldı."
-                         : "Sayım eksik: \(counted) / \(total) kalem sayıldı, \(total - counted) kalem sayılmadı.")
-        }
-        lines.append(hasSales ? "Satış raporu aktarıldı."
-                              : "Satış raporu aktarılmadı: satılan miktarlar ve farklar eksik hesaplanır.")
-        return lines.joined(separator: "\n") + "\n\n" + confirmMessage
+        DayCloseCheck.evaluate(counted: counted, total: total, hasSales: hasSales, unknownLines: 0, problemItems: 0,
+                               canChangeLockedDay: false).message
     }
 
     /// Hiç sayım girilmemiş gün kapatılamaz: düğmenin yanında gösterilen açıklama
@@ -587,7 +580,7 @@ public enum DocCodec {
     /// Mac'in bildiği gün alanları (`DayRecord`)
     static let knownDayKeys: Set<String> = [
         "date", "entries", "sales", "salesSource", "salesPeriod", "salesImportedAt", "legacySold", "legacyWaste",
-        "importedFrom", "note", "countedBy", "locked",
+        "importedFrom", "note", "countedBy", "locked", "wasteLog",
     ]
 
     /// Gün gövdesinde Mac'in bilmediği dolu bir alan var mı (eski sürümlerin vardiyaları, ileriki sürümlerin alanları):
@@ -739,6 +732,8 @@ enum Lenient {
         o["note"] = str(raw["note"])
         o["countedBy"] = str(raw["countedBy"])
         o["locked"] = raw["locked"]?.boolValue.map { .bool($0) }
+        // Dizi değilse yok; boş dizi boş dizi olarak kalır (son kaydın silinmesi merge3'te kaybolmasın)
+        if case .array(let w)? = raw["wasteLog"] { o["wasteLog"] = .array(w.compactMap { wasteEntry($0) }) } else { o["wasteLog"] = nil }
         return try? JSONCoding.decode(DayRecord.self, from: .object(o))
     }
 
@@ -806,6 +801,19 @@ enum Lenient {
         guard case .object(let raw) = v else { return nil }
         var o = raw
         for k in ["opening", "incoming", "transferIn", "transferOut", "closing"] { o[k] = num(raw[k]) }
+        return .object(o)
+    }
+
+    /// Elle zayi kaydı: `id` ve `itemID` metin, `qty` sonlu ve > 0 olmalı; `reason` yoksa "other" (web `normalizeWasteEntry`)
+    static func wasteEntry(_ v: JSONValue) -> JSONValue? {
+        guard case .object(let raw) = v, case .string(let id)? = raw["id"], case .string(let itemID)? = raw["itemID"],
+              let qty = finite(raw["qty"]), qty > 0 else { return nil }
+        var o = raw
+        o["id"] = .string(id)
+        o["itemID"] = .string(itemID)
+        o["qty"] = .number(qty)
+        o["reason"] = .string(raw["reason"]?.stringValue ?? WasteReason.other.rawValue)
+        for k in ["note", "by", "at"] { o[k] = str(raw[k]) }
         return .object(o)
     }
 

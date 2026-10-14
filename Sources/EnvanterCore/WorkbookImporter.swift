@@ -28,7 +28,14 @@ public struct WorkbookImportReport {
     public var added = 0
     public var replaced = 0
     public var skippedExisting = 0
+    /// Üzerine yazılan günlerde Excel'deki Zaiyat'ı elle girilen zayiyle uzlaştırılan kalem sayısı (iki kez sayılmasın)
+    public var wasteReconciled = 0
     public init() {}
+
+    /// Sonuç iletisine eklenen açıklama (uzlaştırma yoksa nil)
+    public var wasteNote: String? {
+        wasteReconciled > 0 ? "\(wasteReconciled) kalemde elle girilen zayi Excel'deki Zaiyat'ın içinde sayıldı (iki kez eklenmedi)." : nil
+    }
 }
 
 public enum WorkbookImportError: Error, LocalizedError {
@@ -198,7 +205,8 @@ public enum WorkbookImporter {
 
     /// İçe aktarılan günleri veriye ekler. `overwrite` false ise sayım/satış verisi girilmiş mevcut günlere dokunulmaz.
     /// Yalnızca sayım ve satış (miktar) alanları aktarılır; Excel'deki maliyet / tutar sütunları okunmaz. Günün notu,
-    /// sayan kişisi ve kilidi (Excel'de bulunmadıkları için) korunur. Kapatılmış günler hiç değiştirilmez.
+    /// sayan kişisi, kilidi ve elle zayi kayıtları (Excel'de bulunmadıkları için) korunur; Zaiyat elle girilenle
+    /// uzlaştırılır (`reconcileManualWaste`). Kapatılmış günler hiç değiştirilmez.
     @discardableResult
     public static func apply(_ imp: WorkbookImport, to data: inout AppData, overwrite: Bool) -> WorkbookImportReport {
         var report = WorkbookImportReport()
@@ -213,13 +221,41 @@ public enum WorkbookImporter {
             existing.salesPeriod = day.salesPeriod
             existing.salesImportedAt = day.salesImportedAt
             existing.legacySold = day.legacySold
-            existing.legacyWaste = day.legacyWaste
+            let waste = reconcileManualWaste(legacyWaste: day.legacyWaste, wasteLog: existing.wasteLog)
+            existing.legacyWaste = waste.legacyWaste
+            existing.wasteLog = waste.wasteLog
+            report.wasteReconciled += waste.items
             existing.importedFrom = day.importedFrom
             if existing.note == nil { existing.note = day.note }
             data.days[date] = existing
             if had { report.replaced += 1 } else { report.added += 1 }
         }
         return report
+    }
+
+    /// Excel'deki Zaiyat kalemin toplam zayisidir: uygulamanın dışa aktardığı Alımlar'da elle girilen zayi de içindedir.
+    /// Üzerine yazılan günde elle kayıtlar kalsaydı aynı zayi iki kez sayılırdı (Zayi = Zaiyat + elle). Zaiyat'ı ve elle
+    /// kaydı olan her kalemde: Zaiyat ≥ elle toplamı ise kayıtlar kalır ve Zaiyat'tan düşülür; Zaiyat daha azsa (Excel'de
+    /// düzeltilmiş) o kalemin elle kayıtları silinir. İkisinde de kalemin Zayi'si dosyadaki Zaiyat olur. Zaiyat'ı olmayan
+    /// kalemin kayıtlarına dokunulmaz. Kayıt silinirse liste `[]` kalır (anahtar silinmez; docs/SYNC.md §1 "Elle zayi").
+    static func reconcileManualWaste(legacyWaste: [String: Double]?, wasteLog: [WasteEntry]?)
+        -> (legacyWaste: [String: Double]?, wasteLog: [WasteEntry]?, items: Int) {
+        guard var legacy = legacyWaste, !legacy.isEmpty, let log = wasteLog, !log.isEmpty else { return (legacyWaste, wasteLog, 0) }
+        var manual: [String: Double] = [:]
+        for e in log { manual[e.itemID, default: 0] += e.qty }
+        var dropped = Set<String>()
+        var items = 0
+        for (id, m) in manual {
+            guard let l = legacy[id], l != 0 else { continue }
+            items += 1
+            if l >= m - 1e-9 {
+                let rest = Engine.clean(l - m)
+                legacy[id] = rest == 0 ? nil : rest
+            } else {
+                dropped.insert(id)
+            }
+        }
+        return (legacy.isEmpty ? nil : legacy, dropped.isEmpty ? log : log.filter { !dropped.contains($0.itemID) }, items)
     }
 
     /// Mevcut günlerden hangileri çakışır (sayım/satış verisi olan ya da kapatılmış günler)

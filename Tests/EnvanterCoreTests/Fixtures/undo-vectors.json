@@ -754,6 +754,109 @@
       "expected": {
         "day:2026-08-30": null
       }
+    },
+    {
+      "name": "işlemin açtığı güne sonradan not yazıldıysa geri almada yalnızca işlemin girişi kalkar, not kalır",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": [],
+          "note": "Müdür notu"
+        }
+      },
+      "expected": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {},
+          "sales": [],
+          "note": "Müdür notu"
+        }
+      }
+    },
+    {
+      "name": "işlemin açtığı güne sonradan başka giriş yapıldıysa geri almada yalnızca işlemin girişi kalkar",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            },
+            "peynir": {
+              "closing": 3
+            }
+          },
+          "sales": []
+        }
+      },
+      "expected": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "peynir": {
+              "closing": 3
+            }
+          },
+          "sales": []
+        }
+      }
+    },
+    {
+      "name": "işlemin açtığı gün sonradan silindiyse geri almada silinmiş kalır",
+      "keys": [
+        "day:2026-08-30"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-08-30": {
+          "date": "2026-08-30",
+          "entries": {
+            "g90": {
+              "closing": 12
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {},
+      "expected": {
+        "day:2026-08-30": null
+      }
     }
   ]
 }

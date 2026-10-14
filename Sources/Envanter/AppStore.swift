@@ -115,6 +115,8 @@ final class AppStore: ObservableObject {
     @Published var reportsTab: ReportsTab = .summary
     /// Raporlar > Kalem Analizi'nde seçili stok kalemi (nil: ekran ilk kalemi seçer)
     @Published var reportItem: String?
+    /// Stok Kalemleri'ndeki "Eşik önerileri" penceresi (Genel Bakış'taki kurulum listesinden de açılır)
+    @Published var showThresholds = false
     @Published private(set) var saveState: SaveState = .saved
     @Published private(set) var lastSavedAt: Date?
     /// Web eşitlemesinde bu Mac'in şubedeki rolü (CloudSyncController günceller; eşleşme yoksa nil). Personel ise
@@ -474,17 +476,28 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Sayımı yapılmamış kalemlere önceki günün kapanışını aynen yazar (hareket olmayan kalemler için hızlı doldurma).
-    func fillUncountedWithOpening(date: String) -> Int {
-        guard !isLocked(date) else { return 0 }
-        let rows = engine.calc(date: date).rows.filter { !$0.isCounted && $0.incoming == 0 && $0.transferIn == 0 && $0.transferOut == 0 && $0.sold == 0 && $0.waste == 0 && $0.opening > 0 }
-        guard !rows.isEmpty else { return 0 }
-        let applied = mutateData("Hareketsiz Kalemleri Doldur") { d in
-            var day = d.days[date] ?? DayRecord(date: date)
-            for r in rows { day.entries[r.itemID, default: DayEntry()].closing = r.opening }
-            d.days[date] = day
-        }
-        return applied ? rows.count : 0
+    /// Sayılmamış ve hareketsiz kalemlere kapanış = açılış yazar (`DayOps`: satış raporu olmadan ya da kapatılmış günde
+    /// yapılmaz; tahmini (devreden) açılışlara yazılmaz). Sonuç Günlük Sayım'da bildirilir.
+    func fillUncountedWithOpening(date: String) -> (count: Int, refusal: FillRefusal?) {
+        let r = DayOps.fillUncountedWithOpening(engine: engine, date: date)
+        if let refusal = r.refusal { return (0, refusal) }
+        guard r.count > 0, let day = r.day else { return (0, nil) }
+        let applied = mutateData("Hareketsiz Kalemleri Doldur") { $0.days[date] = day }
+        return (applied ? r.count : 0, nil)
+    }
+
+    // MARK: - Eşik önerileri ve kurulum
+
+    /// Seçilen eşik önerilerini (tolerans / kritik seviye) kalemlere yazar; tek geri alma adımı
+    @discardableResult
+    func applyThresholds(_ changes: [ThresholdChange]) -> Bool {
+        guard !changes.isEmpty else { return false }
+        return mutateData("Eşik Önerileri") { ThresholdChange.apply(changes, to: &$0.items) }
+    }
+
+    /// Genel Bakış kurulum listesi; Mac'te "bilgisayar bağlı" web paneline bağlı olmaktır
+    func setupChecklist(date: String) -> SetupChecklist {
+        SetupChecklist.make(engine: engine, date: date, computerLinked: cloud.isConnected)
     }
 
     // MARK: - Ayarlar

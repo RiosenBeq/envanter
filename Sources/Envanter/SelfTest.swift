@@ -153,11 +153,38 @@ enum SelfTest {
 
         print("6) Açılış devri ve hareketsiz kalemler")
         let d2row = store.engine.calc(date: d2).rows.first { $0.itemID == "g90" }
-        check(d2row?.opening == 120 && d2row?.openingIsAuto == true, "ertesi günün açılışı önceki kapanıştan (120)")
+        check(d2row?.opening == 120 && d2row?.openingIsAuto == true && d2row?.openingSource == .closing,
+              "ertesi günün açılışı önceki sayımdan (120)")
         step("peynir") { store.entryBinding(item: "peynir", date: d1, \.closing).wrappedValue = 5 }
+        let peynirFirst = store.engine.calc(date: d1).rows.first { $0.itemID == "peynir" }
+        check(peynirFirst?.isBaseline == true && peynirFirst?.diff == nil, "ilk sayım başlangıç kabul edilir (fark hesaplanmaz)")
+        let refused = store.fillUncountedWithOpening(date: d2)
+        check(refused.count == 0 && refused.refusal == .noSales && store.data.days[d2]?.entries["peynir"] == nil,
+              "satış raporu olmadan Hareketsizleri Doldur çalışmıyor")
+        // Stok etkisi olmayan satış (içecek): günün satış verisi var, hiçbir kalem hareket etmez
+        store.confirmImport(report: SalesParser.parse(text: "Kodu\tÜrün Tipi\tAdedi\n13001\tKOLA\t5\n", sourceName: "selftest-içecek"), date: d2)
         let filled = store.fillUncountedWithOpening(date: d2)
-        check(filled >= 2, "hareketsiz kalemler dolduruldu (\(filled))")
+        check(filled.count >= 2 && filled.refusal == nil, "hareketsiz kalemler dolduruldu (\(filled.count))")
         check(store.data.days[d2]?.entries["peynir"]?.closing == 5, "peynir kapanışı = açılış (5)")
+
+        print("6b) Sayılmayan gün devri ve tahmini stok")
+        let d3 = "2026-08-03", d4 = "2026-08-04"
+        store.entryBinding(item: "g90", date: d3, \.incoming).wrappedValue = 30
+        let d4row = store.engine.calc(date: d4).rows.first { $0.itemID == "g90" }
+        check(near(d4row?.opening, 150) && d4row?.openingSource == .carried && d4row?.carriedDays == 1 && d4row?.openingBaseDate == d2,
+              "sayılmayan günün Gelen'i sonraki açılışa devreder (120 + 30 ≈ 150)")
+        if let d4row, let g90 = store.engine.itemsByID["g90"] {
+            check(OpeningText.placeholder(d4row, item: g90) == "≈ 150", "tahmini açılış \"≈ 150\" yazılır")
+            check(OpeningText.help(d4row, item: g90, date: d4, breakdown: store.engine.carryBreakdown(itemID: "g90", date: d4))
+                    == "Son sayım 02.08.2026: 120 + sayılmayan 1 günün hareketleri (Gelen +30) ≈ 150",
+                  "açılış ipucu dayanağı ve devreden hareketi gösteriyor")
+        } else { check(false, "04.08 satırı hesaplandı") }
+        // Sayım girilmemiş gün: Genel Bakış'taki "Kritik seviye altı" kartı tahmini stoğa göre
+        store.updateItem("g90", actionName: "Kritik Seviye") { $0.minStock = 200 }
+        let card = BelowMinimumCard.make(store.engine.overview(date: d3), estimates: store.engine.stockEstimates(date: d3))
+        check(card.detail == "tahmini · sayım girilmedi" && (Int(card.value) ?? 0) >= 1 && card.warn,
+              "Genel Bakış: sayım yokken kritik seviye kartı tahmini stoğu gösteriyor (\(card.value))")
+        store.updateItem("g90", actionName: "Kritik Seviye") { $0.minStock = nil }
 
         print("7) Gün kilidi")
         step("kilit") { store.setLocked(d1, true) }
@@ -347,6 +374,10 @@ enum SelfTest {
         store.confirmImport(report: report, date: tB)
         check(store.engine.overview(date: tB).trackerState == .salesOnly, "yalnızca satış raporu olan gün gri")
         check(store.engine.overview(date: tC).trackerState == .empty, "verisi olmayan gün boş")
+        // Önceki gün tüm kalemler sayılsın: ilk sayım (önceki kapanış yok) fark üretmez, eşik denemesi her kalemde çalışsın
+        let beforeD = DateKey.addDays(-1, to: tD)
+        setClosings(beforeD, Dictionary(store.engine.calc(date: beforeD).rows.map { ($0.itemID, max($0.opening, 0)) },
+                                        uniquingKeysWith: { a, _ in a }))
         let rowsD = store.engine.calc(date: tD).rows
         let even = Dictionary(rowsD.map { ($0.itemID, $0.opening) }, uniquingKeysWith: { a, _ in a })
         setClosings(tD, even)
@@ -491,6 +522,21 @@ enum SelfTest {
         let offline = CloudSyncController.issue(for: .network("timeout"), connected: true, login: "pc-7kq2m9@envanter.local", deviceKept: true)
         check(offline.title == CloudSyncError.network("timeout").issue(connected: true).title && offline.hint == CloudSyncGuide.offlineKeepsChanges,
               "sessiz giriş bağlantı yokken: asıl hata (bağlantı yok), değişiklikler bu Mac'te")
+
+        print("19b) Eşik önerileri ve kurulum listesi (365 günlük demo verisi)")
+        let suggestions = store.engine.thresholdSuggestions(asOf: d2)
+        check(suggestions.count >= 10, "eşik önerileri hesaplandı (\(suggestions.count) kalem)")
+        let setup = store.setupChecklist(date: d2)
+        check(setup.activeItems == store.engine.activeItems.count && !setup.computerLinked && !setup.isDone,
+              "kurulum listesi: web paneline bağlı değil, liste tamamlanmadı")
+        if let first = suggestions.first(where: { $0.tolerance != nil }) {
+            store.updateItem(first.itemID, actionName: "Tolerans") { $0.tolerance = nil }
+            let changes = ThresholdChange.changes(items: store.data.items, suggestions: store.engine.thresholdSuggestions(asOf: d2))
+            let pick = changes.filter { $0.itemID == first.itemID && $0.field == .tolerance }
+            check(pick.count == 1 && pick.first?.preselected == true, "boş tolerans önerisi önceden seçili")
+            check(store.applyThresholds(pick) && store.data.items.first { $0.id == first.itemID }?.tolerance == first.tolerance,
+                  "Önerilenleri uygula: tolerans önerilen değer oldu")
+        } else { check(false, "tolerans önerisi var") }
 
         print("20) Genel Bakış: Bugün kartı (satış raporu → sayım → günü kapat)")
         let o1 = store.engine.overview(date: d1)

@@ -533,20 +533,27 @@ final class PeriodTests: XCTestCase {
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         func keys(_ v: Any?) -> Set<String> { Set((v as? [String: Any]).map { Array($0.keys) } ?? []) }
         func rows(_ k: String) -> [Any] { root[k] as? [Any] ?? [] }
-        XCTAssertEqual(Set(root.keys), ["date", "from", "to", "calc", "overview", "summary", "period", "daily", "orders", "trend"])
+        XCTAssertEqual(Set(root.keys), ["date", "from", "to", "calc", "overview", "summary", "period", "daily", "orders", "trend",
+                                        "estimates", "thresholds"])
         XCTAssertEqual(keys(rows("calc").first), ["itemID", "opening", "openingIsAuto", "incoming", "transferIn", "transferOut",
-                                                  "closing", "sold", "waste", "actual", "diff", "severity", "belowMinimum"])
+                                                  "closing", "sold", "waste", "actual", "diff", "severity", "belowMinimum",
+                                                  "openingSource", "openingBaseDate", "carriedNet", "carriedDays", "isBaseline",
+                                                  "openingJump"])
         XCTAssertEqual(keys(root["overview"]), ["itemCount", "countedItems", "hasSales", "salesLines", "unknownLines", "problemItems",
                                                 "shortageItems", "belowMinimumItems", "isLocked", "isFullyCounted",
                                                 "hasNotableProblems", "hasSignificantProblems"])
         XCTAssertEqual(keys(rows("summary").first), ["itemID", "daysCounted", "firstOpening", "lastClosing", "incoming", "transferIn",
-                                                     "transferOut", "sold", "waste", "actual", "diff", "shortageQty", "shortageDays"])
+                                                     "transferOut", "sold", "waste", "actual", "diff", "shortageQty", "shortageDays",
+                                                     "openingAdjust"])
         XCTAssertEqual(keys(root["period"]), ["days", "countedDays", "salesDays"])
         XCTAssertEqual(keys(rows("daily").first), ["date", "countedItems", "problemItems", "shortageItems", "belowMinimumItems",
                                                    "hasSales", "isLocked"])
         XCTAssertEqual(keys(rows("orders").first), ["itemID", "stock", "countedStock", "stockDate", "onOrder", "dailyUsage",
                                                     "sampleDays", "daysOfCover", "target", "suggested"])
         XCTAssertEqual(keys(rows("trend").first), ["date", "countedItems", "problemItems", "shortageItems"])
+        XCTAssertEqual(keys(rows("estimates").first), ["itemID", "stock", "baseDate", "counted", "below"])
+        XCTAssertEqual(keys(rows("thresholds").first), ["itemID", "tolerance", "countedDays", "minStock", "dailyUsage", "usageDays"])
+        XCTAssertEqual(rows("estimates").count, rows("calc").count)
         XCTAssertEqual(rows("trend").count, 14)
         XCTAssertEqual(rows("daily").count, 31)
         // Değerler motorla aynı

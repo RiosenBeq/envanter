@@ -241,13 +241,21 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(other.actual)
     }
 
-    func testOpeningSkipsUncountedDays() {
+    func testOpeningCarriesUncountedDays() {
         var data = AppData.seeded()
         data.days["2026-08-01"] = DayRecord(date: "2026-08-01", entries: ["peynir": DayEntry(closing: 7.5)])
         data.days["2026-08-02"] = DayRecord(date: "2026-08-02", entries: ["peynir": DayEntry(incoming: 2)])  // kapanış yok
         let engine = Engine(data: data)
+        // Sayılmayan günün Gelen'i sonraki açılışa devreder (son sayım 7,5 + 2)
         let r = engine.calc(date: "2026-08-03").rows.first { $0.itemID == "peynir" }!
-        XCTAssertEqual(r.opening, 7.5)
+        XCTAssertEqual(r.opening, 9.5)
+        XCTAssertEqual(r.openingSource, .carried)
+        XCTAssertEqual(r.openingBaseDate, "2026-08-01")
+        XCTAssertEqual(r.carriedDays, 1)
+        // İlk sayım (önceki kapanış yok): fark hesaplanmaz
+        let first = engine.calc(date: "2026-08-01").rows.first { $0.itemID == "peynir" }!
+        XCTAssertTrue(first.isBaseline && first.isCounted)
+        XCTAssertNil(first.diff)
     }
 
     func testSummaryIdentity() {

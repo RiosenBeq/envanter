@@ -1,4 +1,5 @@
 import SwiftUI
+import EnvanterCore
 
 /// Uygulamadaki teknik terimlerin açıklamaları. Fareyle ⓘ simgesinin (ya da sütun başlığının) üzerine gelince görünür,
 /// tıklayınca ayrıntılı açıklama açılır.
@@ -36,7 +37,8 @@ enum Term: String, CaseIterable, Identifiable {
     var text: String {
         switch self {
         case .opening:
-            return "Günün başındaki stok. Boş bırakılırsa bir önceki sayılmış günün kapanışı otomatik gelir (Excel'deki \"Yeni Envanter Aç\" makrosunun işi)."
+            // Web glossary.ts ile aynı metin (OpeningText.glossary)
+            return OpeningText.glossary
         case .incoming:
             return "Gün içinde tedarikçiden gelen mal. Sipariş ekranında bir siparişi \"Teslim al\" dediğinizde otomatik eklenir."
         case .transfer:
@@ -52,9 +54,9 @@ enum Term: String, CaseIterable, Identifiable {
         case .diff:
             return "Fark = (Satılan + Zayi) − Fiili tüketim. Negatif (kırmızı): satışlara göre fazla stok çıkmış — kaydedilmemiş zayi, büyük porsiyon, kayıt dışı kullanım ya da kayıp. Pozitif (mavi): az çıkmış — genelde sayım veya reçete hatası."
         case .tolerance:
-            return "Günlük farkın normal sayılan sınırı (±). Kalemin kendi biriminde (adet veya kg) girilir, yüzde değildir. Ölçüm ve porsiyon hassasiyeti yüzünden küçük farklar kaçınılmazdır; bu sınır içindeki farklar yeşil gösterilir, fazla çıkışa ve uyarılara girmez."
+            return "Günlük farkın normal sayılan sınırı (±). Kalemin kendi biriminde (adet veya kg) girilir, yüzde değildir. Ölçüm ve porsiyon hassasiyeti yüzünden küçük farklar kaçınılmazdır; bu sınır içindeki farklar yeşil gösterilir, fazla çıkışa ve uyarılara girmez. Stok Kalemleri'ndeki \"Eşik önerileri\" son 28 günün farklarına göre bir değer önerir."
         case .minStock:
-            return "Bu seviyenin altına düşen kalemler uyarı verir; sipariş önerisinde emniyet stoğu olarak hedefe eklenir."
+            return "Bu seviyenin altına düşen kalemler uyarı verir; sayım girilmemiş günde son sayım ve sonraki hareketlerle tahmin edilen stoğa (≈) göre uyarılır. Sipariş önerisinde emniyet stoğu olarak hedefe eklenir."
         case .factor:
             return "Reçete biriminin envanter birimine çevrimi. Örn. peynir reçetede dilimle, envanterde kg ile tutuluyorsa 1 dilim = 0,014 kg."
         case .shortage:
@@ -62,7 +64,7 @@ enum Term: String, CaseIterable, Identifiable {
         case .consistency:
             return "Sayılmış günlerin yüzde kaçında farkın tolerans içinde kaldığı. Yüksekse reçete ve sayım güvenilirdir."
         case .orderSuggestion:
-            return "Önerilen = ortalama günlük tüketim × istenen gün sayısı + kritik seviye − mevcut stok − siparişte bekleyen. Mevcut stok, son sayıma o günden sonraki gelen/transfer ve satışlar eklenerek tahmin edilir. Adetler yukarı tam sayıya, kg 0,1'e yuvarlanır."
+            return "Önerilen = ortalama günlük tüketim × istenen gün sayısı + kritik seviye − mevcut stok − siparişte bekleyen. Mevcut stok, son sayıma o günden sonraki gelen/transfer ve satışlar eklenerek tahmin edilir (son sayım 31 günden eskiyse bilinmiyor sayılır). Adetler yukarı tam sayıya, kg 0,1'e yuvarlanır."
         case .daysOfCover:
             return "Mevcut stok, ortalama tüketimle kaç gün yeter. Seçilen gün sayısından azsa kırmızı gösterilir."
         case .targetStock:

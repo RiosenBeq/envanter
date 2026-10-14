@@ -211,13 +211,41 @@ EnvanterTool metrics --data-dir D --date 2026-08-31 --from 2026-08-01 --to 2026-
 
 `metrics.json` ve demo verisi (`envanter-verisi.json`) web deposunda test fikstürü olarak tutulur. TS motoru aynı sonuçları üretmelidir (±0,01 tolerans). Alanlar:
 
-- kök: `date, from, to, calc, overview, summary, period, daily, orders, trend`
-- `calc[]`: `itemID, opening, openingIsAuto, incoming, transferIn, transferOut, closing, sold, waste, actual, diff, severity, belowMinimum`
+- kök: `date, from, to, calc, overview, summary, period, daily, orders, trend, estimates, thresholds`
+- `calc[]`: `itemID, opening, openingIsAuto, incoming, transferIn, transferOut, closing, sold, waste, actual, diff, severity, belowMinimum, openingSource, openingBaseDate, carriedNet, carriedDays, isBaseline, openingJump`
 - `overview`: `itemCount, countedItems, hasSales, salesLines, unknownLines, problemItems, shortageItems, belowMinimumItems, isLocked, isFullyCounted, hasNotableProblems, hasSignificantProblems`
-- `summary[]`: `itemID, daysCounted, firstOpening, lastClosing, incoming, transferIn, transferOut, sold, waste, actual, diff, shortageQty, shortageDays`
+- `summary[]`: `itemID, daysCounted, firstOpening, lastClosing, incoming, transferIn, transferOut, sold, waste, actual, diff, shortageQty, shortageDays, openingAdjust`
 - `period`: `days, countedDays, salesDays`
 - `daily[]`: `date, countedItems, problemItems, shortageItems, belowMinimumItems, hasSales, isLocked`
 - `orders[]`: `itemID, stock, countedStock, stockDate, onOrder, dailyUsage, sampleDays, daysOfCover, target, suggested`
 - `trend[]` (14 gün): `date, countedItems, problemItems, shortageItems`
+- `estimates[]` (`--date` günü, aktif kalemler, dayanağı olanlar): `itemID, stock, baseDate, counted, below`
+- `thresholds[]` (`--date` dahil son 28 gün): `itemID, tolerance, countedDays, minStock, dailyUsage, usageDays`
+
+Kök yalnızca yeni alanlarla genişletilir; mevcut alanların adı değişmez. Demo verisi her günü saydığından yeni kurallar eski sonuçları değiştirmez (fikstürlerde yalnızca yeni alanlar eklendi).
+
+### Açılış devri (sayılmayan günler) ve ilk sayım
+
+Swift `Engine` ve TS `Engine` aynı kuralı uygular; ortak test vektörleri `carry-vectors.json` (Mac `Tests/EnvanterCoreTests/Fixtures/`, web `test/fixtures/`, aynı içerik). Veri değişmez: hepsi türetilmiş değerdir.
+
+- **Günün hareketi:** `net(gün)[kalem] = Gelen + Gelen transfer − Giden transfer − Satılan − Zayi`. Satılan / Zayi `calc` ile aynı kaynaktan (satış dökümü; döküm yoksa Excel'den gelen `legacySold/legacyWaste`).
+- **Dayanak:** `D` gününden önceki en yakın gün; kapanışı varsa (`closing`) o kapanış, kapanışı yok ama elle açılışı varsa (`manualOpening`) o açılış. Dayanak `D`'den **31 günden** (`Engine.carryMaxDays` / `CARRY_MAX_DAYS`) eskiyse geçersizdir.
+- **Tahmini açılış:** `dayanak değeri + Σ net(d)` (dayanak < d < D; elle açılışta dayanak gününün kendi hareketi de eklenir). `carriedDays` = net hareketi sıfırdan farklı yürünen gün sayısı. Sınırlanmaz: eksi tahmin girilmemiş Gelen işaretidir.
+- **Satır:** `opening = elle açılış ?? tahmin ?? 0`. `openingSource`: `manual` (elle), `closing` (tahmin var, `carriedDays = 0` ve dayanak kapanış), `carried` (aksi halde), `none` (dayanak yok ya da eski). `openingBaseDate` dayanağın günü (eskiyse de yazılır), `carriedNet/carriedDays` yalnızca `closing/carried` iken dolu. `openingIsAuto = elle açılış yok`.
+- **İlk sayım (`isBaseline`):** kapanış var, elle açılış yok ve geçerli dayanak yok → `actual`, `diff`, `severity` boş; satır sayılmış sayılır (`isCounted`), kritik seviye kapanışa göre. Sorunlu sayılmaz. Açılış'a 0 yazılırsa normal hesaplanır.
+- **Açılış sıçraması:** elle açılış ve geçerli tahmin varsa `openingJump = elle açılış − tahmin` (Excel'den aktarılan, `importedFrom` taşıyan günlerde boş). `|sıçrama|` toleransı aşarsa Günlük Sayım'daki "Sorunlu" filtresine girer ve Fark ipucuna eklenir; `DayOverview.problemItems` değişmez.
+- **Dönem özeti:** sayılmış (ilk sayım hariç) günlere ek olarak, hareketi dönem içindeki bir sonraki **devreden** (`carried`) sayıma yürünen sayılmayan günler eklenir: gelen, transfer, satılan, zayi toplanır ve fiili tüketime `satılan + zayi` eklenir (`Σfark = Σsatılan + Σzayi − Σfiili` korunur). `firstOpening` ilk sayılan ya da devredilen günün açılışıdır; `daysCounted`, `daily`, fazla çıkış alanları yalnızca sayılan günlerdendir. `openingAdjust` = dönemdeki açılış sıçramalarının toplamı.
+- **Sipariş önerisi:** `stock = tahmini açılış(D + 1)`; dayanak `D`'den önceyse sıfırın altına inmez. Dayanak yok ya da eskiyse stok bilinmiyor (`null`). `stockDate/countedStock` son sayımdır (değişmedi). Günlük tüketim örnekleri değişmedi (sayılan günün fiilisi; ilk sayım örnek değildir): seyrek sayılan kalemde fiili artık yalnızca o günü kapsar.
+- **Tahmini stok:** `stockEstimate(kalem, D)`: `D`'de sayıldıysa kapanış (`counted`), değilse `tahmini açılış(D + 1)` (sınırlanmaz); dayanak yoksa yok. `below = minStock > 0 && stock < minStock`. Genel Bakış "Kritik seviye altı" kartı: sayım varsa sayılanlar ("+N tahmini (sayılmayan)"), yoksa tahmini altta kalanlar ("tahmini · sayım girilmedi").
+- **Hareketsizleri Doldur:** kapatılmış günde (`locked`) ve günün satış verisi yokken (`noSales`) yapılmaz. Yalnızca sayılmamış, hiç hareketi olmayan (gelen, transfer, satış, zayi), açılışı > 0 ve açılışı `closing` ya da `manual` olan satırlara `kapanış = açılış` yazılır; tahmini (devreden) açılış sayım yerine geçmez.
+- **Metinler** (açılış ipucu, "≈ 25", "İlk sayım", devreden günler, tahmini stok) iki istemcide aynıdır: Swift `OpeningText` / `StockEstimateText`, TS `src/lib/engine/stockText.ts`.
+
+### Eşik önerileri ve kurulum listesi
+
+Ortak test vektörleri `threshold-vectors.json`.
+
+- `thresholdSuggestions(D, 28)`: pencere `D` dahil son 28 günün kaydı olan günleri. **Tolerans** = sayılmış günlerin (ilk sayım hariç) `|fark|` değerlerinin %80'lik dilimi: artan sırada `⌈0,8·n⌉`. değer (tam sayıyla `(4n + 4) / 5`), en az 7 gün; adet tam sayıya, kg 0,01'e yukarı yuvarlanır, en az bir adım. **Kritik seviye** = aynı pencereyle sipariş önerisinin günlük tüketimi × 1,5; en az 7 örnek gün ve tüketim > 0; adet tam sayıya, kg 0,1'e yukarı. Yalnızca en az bir önerisi olan aktif kalemler döner.
+- "Eşik önerileri" penceresi (patron / müdür) yalnızca farklı olan alanları listeler; tanımsız alanlar önceden seçilidir, elle girilmiş değerler yalnızca işaretlenirse değişir.
+- **Kurulum listesi** (Genel Bakış, patron / müdür, tamamlanınca gizlenir; "Gizle" tercihi yalnızca o cihazda): toleransı > 0 ve kritik seviyesi > 0 aktif kalem sayısı, son 28 günde reçetesi tanımsız satılan farklı ürün kodu, mağaza bilgisayarı bağlantısı (web: bağlı bilgisayar ya da bilgisayardan gelen veri; Mac: web paneline bağlı).
 
 **Takip şeridi** (iki istemcide aynı): `hasNotableProblems = problemItems > 0 && problemItems × 10 ≥ countedItems`, `hasSignificantProblems = problemItems > 0 && problemItems × 5 ≥ countedItems`. Sayım ve satış yok → boş ("Veri yok"); sayım yok → "Yalnızca satış"; belirgin → kırmızı ("Sayılanların %20'sinde fark"); dikkat ya da eksik sayım → sarı ("Eksik sayım ya da sayılanların %10'unda fark"); diğer → yeşil ("Sayım tam, fark az").

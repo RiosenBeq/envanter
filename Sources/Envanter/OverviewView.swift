@@ -6,6 +6,8 @@ import EnvanterCore
 /// kalem eğilimi ve dikkat gerektirenler. Tutar gösterilmez: farklar kalemin biriminde (adet / kg) ve kalem sayısıdır.
 struct OverviewView: View {
     @EnvironmentObject var store: AppStore
+    /// Kurulum listesi bu Mac'te gizlendi (yerel tercih; eşitlenmez)
+    @AppStorage("setupChecklistHidden") private var setupHidden = false
 
     var body: some View {
         let date = store.selectedDate
@@ -17,6 +19,9 @@ struct OverviewView: View {
         let trend30 = engine.trend(endingAt: date, days: 30)
         // İlk kullanım (henüz günlük kayıt, ekip üyesi, sipariş yok): başlangıç seçenekleri; boş grafikler gösterilmez
         let firstRun = store.isFirstRun
+        // Kurulum listesi (patron / müdür; tamamlanınca kaybolur): tolerans, kritik seviye, tanımsız reçete, web paneli
+        let setup = store.setupChecklist(date: date)
+        let showSetup = !firstRun && store.canEditCatalog && !setupHidden && !setup.isDone && setup.activeItems > 0
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .center) {
@@ -26,6 +31,7 @@ struct OverviewView: View {
                     LiveSyncLine(cloud: store.cloud)
                 }
                 if firstRun { WelcomeCard(cloud: store.cloud) }
+                if showSetup { setupCard(setup) }
                 dayCards(o, trend: Array(trend30.suffix(14)))
                 if !firstRun {
                     HStack(alignment: .top, spacing: 16) {
@@ -47,7 +53,8 @@ struct OverviewView: View {
     // MARK: Günün kartları
 
     private func dayCards(_ o: DayOverview, trend: [DayOverview]) -> some View {
-        let open = store.openOrders.count
+        // Kritik seviye altı: sayım varsa sayılanlar (+ tahmini sayılmayanlar), yoksa tahmini stok (web ile aynı kart)
+        let below = BelowMinimumCard.make(o, estimates: store.engine.stockEstimates(date: o.date))
         return StatRow(spacing: 14) {
             StatCard(title: "Sayım", value: "\(o.countedItems) / \(o.itemCount)",
                      detail: o.isFullyCounted ? "Tüm kalemler sayıldı" : (o.hasAnyCount ? "\(o.itemCount - o.countedItems) kalem bekliyor" : (o.date == DateKey.today() ? "Bugün henüz sayım girilmedi" : "Bu gün için sayım girilmedi")),
@@ -61,11 +68,8 @@ struct OverviewView: View {
                      detail: o.hasAnyCount ? problemDetail(o) + " · çizgi son 14 gün" : "Sayım girilince hesaplanır",
                      icon: "exclamationmark.triangle", color: o.problemItems == 0 ? Brand.ok : Brand.negative, info: .diff,
                      spark: trend.map { Double($0.problemItems) })
-            StatCard(title: "Kritik seviye altı", value: o.hasAnyCount ? "\(o.belowMinimumItems)" : "—",
-                     detail: open > 0 ? "\(open) açık sipariş teslim bekliyor"
-                        : (o.belowMinimumItems > 0 ? "Sipariş önerisine bakın"
-                           : (o.hasAnyCount ? "Stoklar kritik seviyenin üstünde" : "Sayım girilince hesaplanır")),
-                     icon: "arrow.down.to.line", color: o.belowMinimumItems > 0 ? Brand.warn : Brand.ok, info: .minStock)
+            StatCard(title: "Kritik seviye altı", value: below.value, detail: below.detail,
+                     icon: "arrow.down.to.line", color: below.warn ? Brand.warn : Brand.ok, info: .minStock)
         }
     }
 
@@ -74,6 +78,56 @@ struct OverviewView: View {
         if o.problemItems == 0 { return "Farklar tolerans içinde" }
         if o.shortageItems > 0 { return "\(o.shortageItems) kalemde fazla çıkış" }
         return "Fazla çıkış yok, \(o.problemItems) kalemde az çıkış"
+    }
+
+    // MARK: Kurulum
+
+    /// Kurulum listesi: web panelindeki kartla aynı satırlar ("Mağaza bilgisayarı" Mac'te web paneli bağlantısıdır)
+    private func setupCard(_ s: SetupChecklist) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Label("Kurulum", systemImage: "wrench.and.screwdriver").font(.headline)
+                    Text("Doğru uyarılar için eksikleri tamamlayın").font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Gizle") { setupHidden = true }
+                        .buttonStyle(.link)
+                        .help("Kurulum listesini bu Mac'te gizler")
+                }
+                HStack(spacing: 10) {
+                    setupItem("Tolerans", "\(s.withTolerance)/\(s.activeItems)", done: s.toleranceDone) {
+                        store.section = .items
+                        store.showThresholds = true
+                    }
+                    setupItem("Kritik seviye", "\(s.withMinStock)/\(s.activeItems)", done: s.minStockDone) {
+                        store.section = .items
+                        store.showThresholds = true
+                    }
+                    setupItem("Tanımsız reçete", "\(s.unknownProducts)", done: s.recipesDone) { store.section = .sales }
+                    setupItem("Web paneli", s.computerLinked ? "Bağlı" : "Bağlı değil", done: s.computerLinked) { store.openConnect() }
+                }
+            }
+        }
+    }
+
+    /// Kurulum satırı: yapıldıysa yeşil onay, değilse turuncu ve tıklanınca ilgili ekrana gider
+    private func setupItem(_ title: String, _ value: String, done: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: done ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(done ? Brand.ok : Brand.warn)
+                Text(title).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(value).fontWeight(.semibold).monospacedDigit().foregroundStyle(done ? Brand.ok : Brand.warn)
+            }
+            .font(.callout)
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(done)
     }
 
     // MARK: Durum şeridi
@@ -312,8 +366,10 @@ struct OverviewView: View {
                 return abs(a.diff ?? 0) > abs(b.diff ?? 0)
             }
         let low = rows.filter { $0.belowMinimum }
+        // Sayılmamış ama tahmini stoğu kritik seviyenin altında olanlar (sayılanlardan sonra, "tahmini" etiketiyle)
+        let estLow = engine.stockEstimates(date: o.date).filter { !$0.counted && $0.below }
         let orders = store.openOrders
-        if problems.isEmpty && low.isEmpty && analysis.unknownLines.isEmpty && orders.isEmpty {
+        if problems.isEmpty && low.isEmpty && estLow.isEmpty && analysis.unknownLines.isEmpty && orders.isEmpty {
             Card {
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill").font(.title2).foregroundStyle(Brand.ok)
@@ -363,7 +419,7 @@ struct OverviewView: View {
                 }
                 .frame(maxWidth: .infinity)
                 VStack(spacing: 16) {
-                    if !low.isEmpty {
+                    if !low.isEmpty || !estLow.isEmpty {
                         ListCard(title: "Kritik seviyenin altında", icon: "arrow.down.to.line", color: Brand.warn, term: .minStock,
                                  linkTitle: "Sipariş önerisini aç", link: { store.section = .orders }) {
                             ForEach(low, id: \.itemID) { c in
@@ -375,6 +431,19 @@ struct OverviewView: View {
                                             .monospacedDigit().foregroundStyle(.secondary)
                                     }
                                     .font(.callout)
+                                }
+                            }
+                            ForEach(estLow, id: \.itemID) { e in
+                                if let item = engine.itemsByID[e.itemID] {
+                                    HStack {
+                                        Text(item.name)
+                                        Pill(text: StockEstimateText.pill, color: Brand.positive)
+                                        Spacer()
+                                        Text(StockEstimateText.attention(e, item: item))
+                                            .monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    .font(.callout)
+                                    .help(StockEstimateText.help(e, item: item))
                                 }
                             }
                         }

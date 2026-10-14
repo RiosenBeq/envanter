@@ -261,6 +261,10 @@ private struct OrderRow: View {
                             .font(.caption2.weight(stale ? .semibold : .regular))
                             .foregroundStyle(stale ? Brand.warn : Color.secondary)
                     }
+                    if let note = order.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+                        Text("Not: \(note)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            .help(note)
+                    }
                     if order.receivedWithoutIncoming == true {
                         Text("Gelen elle girilmişti; Gelen'e eklenmedi").font(.caption2).foregroundStyle(.secondary)
                     }
@@ -357,6 +361,8 @@ private struct OrderEditorSheet: View {
     @State private var note: String
     @State private var rows: [DraftRow]
     @State private var query = ""
+    /// "Kalem ara" odakta: Return ilk eşleşeni ekler, varsayılan düğme (Oluştur/Kaydet) çalışmaz (web ile aynı)
+    @FocusState private var searchFocused: Bool
 
     struct DraftRow: Identifiable, Equatable {
         var itemID: String
@@ -392,6 +398,9 @@ private struct OrderEditorSheet: View {
         query = ""
     }
 
+    /// Arama alanındayken Return'e bağlı kısayol yok (yoksa macOS siparişi aranan kalem eklenmeden kaydeder)
+    private var submitShortcut: KeyboardShortcut? { searchFocused ? nil : .defaultAction }
+
     private var subtitle: String {
         if let o = target.order {
             return "\(DateKey.short(o.date)) tarihli açık sipariş. Miktarları değiştirebilir, kalem ekleyip çıkarabilirsiniz."
@@ -416,7 +425,12 @@ private struct OrderEditorSheet: View {
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                         ForEach(rows) { row in
                             GridRow {
-                                Text(items[row.itemID]?.name ?? row.itemID).lineLimit(1)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(items[row.itemID]?.name ?? row.itemID).lineLimit(1)
+                                    if items[row.itemID] == nil {
+                                        Text("(kalem silinmiş)").font(.caption).foregroundStyle(Brand.warn)
+                                    }
+                                }
                                 OptionalDecimalField(value: qtyBinding(row.itemID), placeholder: "0",
                                                      maxFraction: items[row.itemID]?.maxFraction ?? 3, width: 100, live: true)
                                 Text(items[row.itemID]?.unit.lowercased() ?? "").font(.caption).foregroundStyle(.secondary)
@@ -436,7 +450,12 @@ private struct OrderEditorSheet: View {
             HStack(spacing: 8) {
                 TextField("Kalem ara", text: $query)
                     .textFieldStyle(.roundedBorder).frame(width: 200)
-                    .onSubmit { if let first = choices.first { add(first) } }
+                    .focused($searchFocused)
+                    .onSubmit {
+                        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !q.isEmpty, let first = choices.first { add(first) }
+                    }
+                    .help("Yazıp Return'e basınca ilk eşleşen kalem eklenir")
                 Menu {
                     ForEach(choices) { item in
                         Button("\(item.name) (\(item.unit.lowercased()))") { add(item) }
@@ -477,7 +496,7 @@ private struct OrderEditorSheet: View {
                     }
                     if ok { dismiss() }
                 }
-                .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(submitShortcut).buttonStyle(PrimaryButtonStyle())
                 .disabled(!hasLines || !store.canEditCatalog)
             }
         }

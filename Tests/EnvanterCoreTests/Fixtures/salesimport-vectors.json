@@ -707,6 +707,40 @@
       ]
     },
     {
+      "name": "rapor seçili günden bir gün sonra: ertesi sabah sayımı değildir, uyarı (1 gün fark)",
+      "targetDate": "2026-10-13",
+      "report": {
+        "lines": [
+          {
+            "code": "11100",
+            "name": "MEDIUM",
+            "qty": 12
+          },
+          {
+            "code": "11103",
+            "name": "CHEESE",
+            "qty": 7
+          }
+        ],
+        "dateFrom": "2026-10-14",
+        "dateTo": "2026-10-14",
+        "periodText": "14.10.2026",
+        "sourceName": "rapor.xlsx",
+        "skipped": [],
+        "codeRows": 2
+      },
+      "days": {},
+      "expected": [
+        {
+          "kind": "dateGap",
+          "tone": "warn",
+          "text": "Raporun tarihi 14.10.2026; seçili gün 13.10.2026 (1 gün fark). Doğru günü seçtiğinizden emin olun.",
+          "date": "2026-10-14",
+          "blocking": false
+        }
+      ]
+    },
+    {
       "name": "okunamayan satır: 1/10 uyarı",
       "targetDate": "2026-10-13",
       "report": {

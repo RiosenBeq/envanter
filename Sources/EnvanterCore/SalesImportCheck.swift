@@ -9,7 +9,7 @@ public struct SalesImportWarning: Equatable, Sendable {
         case samePeriod
         /// Toplam adet son 14 günün ortancasının 3 katından fazla / %30'undan az
         case abnormalHigh, abnormalLow
-        /// Raporun tarihi seçili günden farklı (1 gün: bilgi; daha fazla: uyarı)
+        /// Raporun tarihi seçili günden farklı (seçili günden bir önceki gün: bilgi; diğerleri: uyarı)
         case dateGap
         /// Kodu olup adedi okunamayan satırlar
         case skipped
@@ -87,13 +87,14 @@ public enum SalesImportCheck {
             }
         }
 
-        // 4) Raporun tarihi seçili günden farklı (çok günlük raporun ayrı uyarısı var)
+        // 4) Raporun tarihi seçili günden farklı (çok günlük raporun ayrı uyarısı var). Yalnızca seçili günden bir önceki
+        //    günün raporu bilgi sayılır (sayım ertesi sabah); seçili günden sonraki günün raporu her zaman yanlış gündür.
         if !report.isMultiDay, let from = report.dateFrom, let gap = DateKey.distance(from: from, to: targetDate), gap != 0 {
-            let days = abs(gap)
-            let text = days == 1
+            let nextMorning = gap == 1
+            let text = nextMorning
                 ? "Raporun tarihi \(DateKey.short(from)); seçili gün \(DateKey.short(targetDate)). Sayım ertesi sabah yapılıyorsa bu normaldir."
-                : "Raporun tarihi \(DateKey.short(from)); seçili gün \(DateKey.short(targetDate)) (\(days) gün fark). Doğru günü seçtiğinizden emin olun."
-            out.append(SalesImportWarning(kind: .dateGap, tone: days == 1 ? .info : .warn, text: text, date: from))
+                : "Raporun tarihi \(DateKey.short(from)); seçili gün \(DateKey.short(targetDate)) (\(abs(gap)) gün fark). Doğru günü seçtiğinizden emin olun."
+            out.append(SalesImportWarning(kind: .dateGap, tone: nextMorning ? .info : .warn, text: text, date: from))
         }
 
         // 5) Okunamayan satırlar

@@ -430,14 +430,9 @@ private struct DailyRow: View {
         }
     }
 
-    /// "Zayi 1,5 kg (ModPos 0,4 + elle 1,1)" (web `wasteTitle` ile aynı)
+    /// "Zayi 1,5 kg (ModPos 0,4 + elle 1,1) — …"; Excel'den aktarılan günde "Excel" (web `wasteCellHelp` ile aynı)
     private var wasteHelp: String {
-        let f: (Double) -> String = { Fmt.number($0, maxFraction: item.maxFraction) }
-        let total = "\(f(calc.waste)) \(item.unit.lowercased())"
-        guard calc.manualWaste > 0 else { return "Zayi \(total) (ModPos) — dökümü görmek için tıklayın" }
-        let pos = calc.waste - calc.manualWaste
-        let parts = pos > 0 ? "ModPos \(f(pos)) + elle \(f(calc.manualWaste))" : "elle girildi"
-        return "Zayi \(total) (\(parts)) — dökümü görmek için tıklayın"
+        WasteText.cellHelp(calc, legacy: store.data.days[date]?.usesLegacySales ?? false, item: item)
     }
 
     /// Giriş sütunlarının ekran okuyucudaki adları (sütun sırasıyla)
@@ -633,6 +628,9 @@ struct ItemDetailView: View {
                 }
                 .font(.callout)
                 let manual = WasteLog.entries(store.data.days[date], itemID: itemID)
+                if let legacy = WasteText.legacyLine(calc, legacy: store.data.days[date]?.usesLegacySales ?? false, item: item) {
+                    Text(legacy).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                }
                 if !manual.isEmpty {
                     Divider()
                     Text(WasteText.manualSection).font(.subheadline.weight(.semibold))

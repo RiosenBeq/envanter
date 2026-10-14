@@ -31,7 +31,7 @@ Diğer:
 - **Geri al / Yinele** (⌘Z / ⇧⌘Z) tüm veri değişikliklerinde çalışır.
 - **Kayıt ve yedek:** Otomatik kayıt yapılır, kayıt durumu yan menüde görünür. Günlük yedekler son 30 günü kapsar ve riskli işlemlerden önce anlık kopya alınır. Dosya bozulursa en son yedekten otomatik dönülür; o da okunamazsa bozuk dosya kenara alınır, üzerine yazılmaz.
 - **Satış raporu:** `.xlsx`, `.csv` ve `.txt` (UTF-8, UTF-16, Windows-1254) dosyaları ya da pano kabul edilir; dosya hangi ekranda olursa olsun pencereye sürüklenip bırakılabilir. Raporda *Tutar* sütunu varsa yok sayılır.
-- **Excel'e aktarım:** Eski *Alımlar* sayfasıyla aynı sütun düzeni kullanılır (pivot tablolar çalışmaya devam eder). Ek olarak Özet, Günlük Durum, Notlar ve Ekip sayfaları yazılır.
+- **Excel'e aktarım:** Eski *Alımlar* sayfasıyla aynı sütun düzeni kullanılır (pivot tablolar çalışmaya devam eder). Ek olarak Özet ve Günlük Durum sayfaları, varsa Notlar, Zayi Kayıtları ve Ekip sayfaları yazılır.
 
 ### Kısayollar
 
@@ -139,7 +139,7 @@ ENVANTER_DATA_DIR=~/Desktop/demo "/Applications/NextGen Envanter.app/Contents/Ma
 
 - **Fiili Tüketim** = Açılış + Gelen + Gelen Transfer − (Giden Transfer + Kapanış)
 - **Fark** = (Satılan + Zayi) − Fiili Tüketim. Negatif fark, satışlara göre fazla stok çıktığını gösterir.
-- **Zayi** = ModPos'taki ZAYİ ürünlerinin reçeteye göre düşen miktarı (ya da Excel'den gelen Zaiyat) + Zayi Ekle ile elle girilen kayıtlar.
+- **Zayi** = ModPos'taki ZAYİ ürünlerinin reçeteye göre düşen miktarı (ya da Excel'den gelen Zaiyat) + Zayi Ekle ile elle girilen kayıtlar. Dışa aktarılan Excel "üzerine yaz" ile geri alınırsa Zaiyat toplam sayılır: elle girilen zayi ondan düşülür, iki kez eklenmez.
 - **Fazla çıkış** = tolerans dışı negatif farkı olan günlerin miktarı (az çıkışlarla mahsup edilmez); tüm ekranlarda aynı tanım.
 - **Takip şeridi:** sayılanların en az %20'sinde tolerans dışı fark → kırmızı; en az %10'unda ya da sayım eksikse → sarı; diğer → yeşil.
 - **Açılış (boşsa)** = son sayımın kapanışı + aradaki sayılmayan günlerin (Gelen + Gelen transfer − Giden transfer − Satılan − Zayi); son sayım yoksa ya da 31 günden eskiyse o günün sayımı başlangıçtır (fark yok). Dönem özetinde devredilen günlerin hareketi de toplanır.

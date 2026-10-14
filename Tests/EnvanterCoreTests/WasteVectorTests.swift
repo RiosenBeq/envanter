@@ -12,7 +12,7 @@ final class WasteVectorTests: XCTestCase {
         let texts: [String: String] = [
             "addTitle": WasteText.addTitle, "glossary": WasteText.glossary, "noteHint": WasteText.noteHint, "helpTip": WasteText.helpTip,
             "section": WasteText.section, "manualSection": WasteText.manualSection, "posSection": WasteText.posSection,
-            "lockedNote": WasteText.lockedNote, "empty": WasteText.empty, "qtyRequired": WasteText.qtyRequired,
+            "lockedNote": WasteText.lockedNote, "empty": WasteText.empty, "emptyItem": WasteText.emptyItem, "qtyRequired": WasteText.qtyRequired,
             "itemRequired": WasteText.itemRequired, "reasonRequired": WasteText.reasonRequired,
             "listLink2": WasteText.listLink(2),
         ]
@@ -86,8 +86,16 @@ final class WasteVectorTests: XCTestCase {
             for v in c["texts"]?.arrayValue ?? [] {
                 let date = v["date"]?.stringValue ?? "", id = v["itemID"]?.stringValue ?? ""
                 guard let r = row(v) else { XCTFail("\(name): satır yok"); continue }
-                XCTAssertEqual(VectorSupport.str(WasteText.duplicateHint(r, day: engine.data.days[date], item: try item(id))),
-                               v["expect"]?["duplicateHint"] ?? .null, "\(name) uyarı \(date)")
+                let it = try item(id), day = engine.data.days[date], legacy = day?.usesLegacySales ?? false
+                let actual: [String: String?] = [
+                    "duplicateHint": WasteText.duplicateHint(r, day: day, item: it),
+                    "cellHelp": WasteText.cellHelp(r, legacy: legacy, item: it),
+                    "legacyLine": WasteText.legacyLine(r, legacy: legacy, item: it),
+                ]
+                for (key, expected) in v["expect"]?.objectValue ?? [:] {
+                    guard let value = actual[key] else { XCTFail("\(name): bilinmeyen alan \(key)"); continue }
+                    XCTAssertEqual(VectorSupport.str(value), expected, "\(name) \(key) \(date)")
+                }
             }
         }
 
@@ -178,6 +186,64 @@ final class WasteVectorTests: XCTestCase {
         let mine = JSONValue.object(["note": .string("a"), "wasteLog": .array([e1])])
         let old = JSONValue.object(["note": .string("b")])
         XCTAssertEqual(JSONMerge.merge3(base: base, local: mine, remote: old), .object(["note": .string("b"), "wasteLog": .array([e1])]))
+    }
+
+    /// Dönem Excel'i "üzerine yaz" ile geri aktarılınca elle zayi iki kez sayılmaz: Alımlar'daki Zaiyat elle girileni içerir
+    func testHistoryReimportDoesNotDoubleCountManualWaste() throws {
+        var data = DemoData.make(endingAt: "2026-08-31", days: 35)
+        let d = "2026-08-26"
+        data.days[d]?.locked = nil  // demo geçmiş günleri kapatır; kapatılmış güne aktarım dokunmaz
+        let before = try XCTUnwrap(Engine(data: data).calc(date: d).rows.first { $0.itemID == "patates" })
+        XCTAssertEqual(before.manualWaste, 2)
+
+        let xlsx = Exporter.history(engine: Engine(data: data), from: "2026-08-01", to: "2026-08-31")
+        let imp = try WorkbookImporter.parse(data: xlsx, sourceName: "envanter-2026-08.xlsx", items: data.items)
+        XCTAssertEqual(try XCTUnwrap(imp.days[d]?.legacyWaste?["patates"]), before.waste, accuracy: 1e-9, "Zaiyat = toplam zayi")
+        let report = WorkbookImporter.apply(imp, to: &data, overwrite: true)
+        XCTAssertEqual(report.wasteReconciled, 1)
+        XCTAssertNotNil(report.wasteNote)
+
+        let day = try XCTUnwrap(data.days[d])
+        XCTAssertTrue(day.usesLegacySales)
+        XCTAssertEqual(day.wasteLog?.map { $0.id }, ["demo-zayi-1"], "elle kayıt kalır")
+        let after = try XCTUnwrap(Engine(data: data).calc(date: d).rows.first { $0.itemID == "patates" })
+        XCTAssertEqual(after.manualWaste, 2)
+        XCTAssertEqual(after.waste, before.waste, accuracy: 1e-6, "Zayi değişmez")
+        XCTAssertEqual(try XCTUnwrap(after.diff), try XCTUnwrap(before.diff), accuracy: 1e-6, "Fark değişmez")
+        let s0 = try XCTUnwrap(Engine(data: DemoData.make(endingAt: "2026-08-31", days: 35)).summary(from: "2026-08-01", to: "2026-08-31")
+            .first { $0.item.id == "patates" })
+        let s1 = try XCTUnwrap(Engine(data: data).summary(from: "2026-08-01", to: "2026-08-31").first { $0.item.id == "patates" })
+        XCTAssertEqual(s1.waste, s0.waste, accuracy: 1e-6, "dönem zayisi değişmez")
+    }
+
+    /// Zaiyat ile elle zayinin uzlaştırılması: Zaiyat ≥ elle → düşülür; Zaiyat < elle → o kalemin kayıtları silinir ([] kalır);
+    /// Zaiyat'ı olmayan kalemin kayıtları kalır
+    func testReconcileManualWaste() {
+        let p1 = WasteEntry(id: "p1", itemID: "patates", qty: 1.5, reason: "spoiled")
+        let p2 = WasteEntry(id: "p2", itemID: "patates", qty: 0.5, reason: "dropped")
+        let g = WasteEntry(id: "g", itemID: "g90", qty: 3, reason: "burnt")
+        let peynir = WasteEntry(id: "y", itemID: "peynir", qty: 1, reason: "other")
+
+        var r = WorkbookImporter.reconcileManualWaste(legacyWaste: ["patates": 2.5, "g90": 1], wasteLog: [p1, g, p2, peynir])
+        XCTAssertEqual(r.legacyWaste, ["patates": 0.5, "g90": 1], "patates 2,5 − 2 = 0,5; g90 Zaiyat'ı elle girilenden az: aynen kalır")
+        XCTAssertEqual(r.wasteLog, [p1, p2, peynir], "g90 kaydı silinir, Zaiyat'ı olmayan peynir kalır")
+        XCTAssertEqual(r.items, 2)
+
+        r = WorkbookImporter.reconcileManualWaste(legacyWaste: ["patates": 2], wasteLog: [p1, p2])
+        XCTAssertNil(r.legacyWaste, "Zaiyat tamamen elle girilen: Excel zayisi kalmaz")
+        XCTAssertEqual(r.wasteLog, [p1, p2])
+
+        r = WorkbookImporter.reconcileManualWaste(legacyWaste: ["g90": 1], wasteLog: [g])
+        XCTAssertEqual(r.legacyWaste, ["g90": 1])
+        XCTAssertEqual(r.wasteLog, [], "son kayıt silinince [] kalır")
+
+        r = WorkbookImporter.reconcileManualWaste(legacyWaste: nil, wasteLog: [g])
+        XCTAssertNil(r.legacyWaste)
+        XCTAssertEqual(r.wasteLog, [g])
+        XCTAssertEqual(r.items, 0)
+        r = WorkbookImporter.reconcileManualWaste(legacyWaste: ["g90": 1], wasteLog: nil)
+        XCTAssertEqual(r.legacyWaste, ["g90": 1])
+        XCTAssertNil(r.wasteLog)
     }
 
     /// Demo verisi: Dondurucu arızası günü patates için elle 2 kg zayi

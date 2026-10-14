@@ -213,6 +213,8 @@ enum SelfTest {
         if let row = store.engine.calc(date: d1).rows.first(where: { $0.itemID == "g90" }), let g90 = store.engine.itemsByID["g90"] {
             check(WasteText.duplicateHint(row, day: store.data.days[d1], item: g90)?.contains("elle 2 adet zayi girildi") == true,
                   "Zayi Ekle aynı zayinin iki kez girilmesine karşı uyarıyor")
+            let help = WasteText.cellHelp(row, legacy: store.data.days[d1]?.usesLegacySales ?? false, item: g90)
+            check(help.contains("elle 2") || help.contains("elle girildi"), "Zayi hücresi ipucu elle girilen zayiyi gösteriyor: \(help)")
         }
         if let withWaste = store.data.days[d1] {
             var plain = withWaste

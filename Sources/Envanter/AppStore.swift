@@ -605,9 +605,12 @@ final class AppStore: ObservableObject {
         guard applied else { return }
         if let d = imp.currentDate ?? imp.historyDates.last { selectedDate = d }
         section = .daily
-        alert = AppAlert(title: "Excel verileri aktarıldı",
-                         message: "\(report.added) gün eklendi" + (report.replaced > 0 ? ", \(report.replaced) gün değiştirildi" : "")
-                            + (report.skippedExisting > 0 ? ", verisi olan \(report.skippedExisting) güne dokunulmadı" : "") + ".")
+        var message = "\(report.added) gün eklendi"
+        if report.replaced > 0 { message += ", \(report.replaced) gün değiştirildi" }
+        if report.skippedExisting > 0 { message += ", verisi olan \(report.skippedExisting) güne dokunulmadı" }
+        message += "."
+        if let note = report.wasteNote { message += " " + note }
+        alert = AppAlert(title: "Excel verileri aktarıldı", message: message)
     }
 
     /// Verisi olan günler (yeniden eskiye)

@@ -44,18 +44,31 @@ struct WasteSheet: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Kalem").font(.callout.weight(.medium))
+                // Seçili kalem liste kaydırılsa da görünür
+                HStack(spacing: 6) {
+                    Text("Kalem").font(.callout.weight(.medium))
+                    if let item {
+                        Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(Brand.accent).lineLimit(1)
+                    }
+                }
                 TextField("Kalem ara (ör. patates)", text: $search)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { if list.count == 1 { itemID = list[0].id } }
-                List(list, selection: $itemID) { i in
-                    HStack {
-                        Text(i.name)
-                        Spacer()
-                        Text(i.unit.lowercased()).foregroundStyle(.secondary)
+                ScrollViewReader { proxy in
+                    List(list, selection: $itemID) { i in
+                        HStack {
+                            Text(i.name)
+                            Spacer()
+                            Text(i.unit.lowercased()).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(height: 170)
+                    .onAppear {
+                        // Hesap dökümünden açılınca seçili kalem listede görünsün (liste en üstten başlar)
+                        guard let id = initialItemID, store.engine.itemsByID[id] != nil else { return }
+                        DispatchQueue.main.async { proxy.scrollTo(id, anchor: .center) }
                     }
                 }
-                .frame(height: 170)
                 if tried && item == nil { errorText(WasteText.itemRequired) }
             }
 
@@ -149,7 +162,8 @@ struct WasteSheet: View {
 }
 
 /// Zayi kayıtları: "Patates 3 kg" · neden, not, kim · saat; düzenlenebilir günde silme düğmesi (⌘Z ile geri alınır).
-/// `showItem`: kalem adı da yazılır (gün düzeyindeki listede).
+/// Ayrıntı satırı kesilmez, alt satıra geçer (web ile aynı). `showItem`: kalem adı da yazılır (gün düzeyindeki listede);
+/// yoksa liste o kaleme süzülüdür ve boşken kaleme özgü metin gösterilir.
 struct WasteEntryList: View {
     @EnvironmentObject var store: AppStore
     let date: String
@@ -160,7 +174,7 @@ struct WasteEntryList: View {
         let editable = !store.isLocked(date)
         VStack(alignment: .leading, spacing: 6) {
             if entries.isEmpty {
-                Text(WasteText.empty).font(.callout).foregroundStyle(.secondary)
+                Text(showItem ? WasteText.empty : WasteText.emptyItem).font(.callout).foregroundStyle(.secondary)
             }
             ForEach(entries) { e in
                 let item = store.engine.itemsByID[e.itemID]
@@ -169,7 +183,7 @@ struct WasteEntryList: View {
                         Text(showItem ? WasteText.itemAmount(e, item: item) : WasteText.amount(e.qty, item: item))
                             .fontWeight(.medium).monospacedDigit()
                         Text([WasteText.detail(e), WasteLog.time(e)].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
                     if editable {
@@ -197,6 +211,7 @@ struct WastePopover: View {
         let item = store.engine.itemsByID[itemID]
         let calc = result.rows.first { $0.itemID == itemID }
         let pos = (result.analysis.contributions[itemID] ?? []).filter { $0.isWaste }.sorted { $0.amount > $1.amount }
+        let legacy = store.data.days[date]?.usesLegacySales ?? false
         VStack(alignment: .leading, spacing: 10) {
             if let item, let calc {
                 Text("\(item.name) · \(WasteText.section) \(WasteText.amount(calc.waste, item: item))").font(.headline)
@@ -210,6 +225,10 @@ struct WastePopover: View {
                         }
                         .font(.callout)
                     }
+                }
+                // Excel'den aktarılan günde Zayi'nin elle girilmeyen kısmı Excel'deki Zaiyat'tır (ModPos ZAYİ ürünü yok)
+                if let line = WasteText.legacyLine(calc, legacy: legacy, item: item) {
+                    Text(line).font(.callout).monospacedDigit()
                 }
                 Text(WasteText.manualSection).font(.subheadline.weight(.semibold))
                 WasteEntryList(date: date, entries: WasteLog.entries(store.data.days[date], itemID: itemID), showItem: false)

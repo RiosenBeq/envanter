@@ -72,6 +72,8 @@ public enum WasteText {
     /// Kapatılmış günde Zayi Ekle kapalı
     public static let lockedNote = "Gün kapatılmış; zayi girilemez."
     public static let empty = "Bu gün elle zayi girilmedi."
+    /// Kalemin dökümünde (liste o kaleme süzülü) boş liste
+    public static let emptyItem = "Bu kalem için bu gün elle zayi girilmedi."
     /// Miktar boş ya da 0
     public static let qtyRequired = "Miktar 0'dan büyük olmalı."
     public static let itemRequired = "Kalem seçin."
@@ -128,6 +130,31 @@ public enum WasteText {
             parts.append("Bu gün elle \(amount(manual, item: item)) zayi girildi (\(manualCount) kayıt).")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    /// Zayi hücresinin ipucu: "Zayi 1,5 kg (ModPos 0,4 + elle 1,1) — dökümü görmek için tıklayın". Excel'den aktarılan
+    /// günde (`usesLegacySales`) kaynak "Excel" yazılır.
+    public static func cellHelp(_ calc: ItemCalc, legacy: Bool, item: Item) -> String {
+        let source = legacy ? "Excel" : "ModPos"
+        let base = Engine.clean(calc.waste - calc.manualWaste)
+        let f: (Double) -> String = { Fmt.number($0, maxFraction: item.maxFraction) }
+        let parts: String
+        if !(calc.manualWaste > 0) {
+            parts = source
+        } else if base > 0 {
+            parts = "\(source) \(f(base)) + elle \(f(calc.manualWaste))"
+        } else {
+            parts = "elle girildi"
+        }
+        return "Zayi \(amount(calc.waste, item: item)) (\(parts)) — dökümü görmek için tıklayın"
+    }
+
+    /// Excel'den aktarılan günün dökümünde Zaiyat'ın açıklaması: "Excel'den aktarılan Zaiyat: 0,5 kg" (taban = toplam −
+    /// elle; gün Excel'den değilse ya da taban 0 ise nil)
+    public static func legacyLine(_ calc: ItemCalc, legacy: Bool, item: Item) -> String? {
+        let base = Engine.clean(calc.waste - calc.manualWaste)
+        guard legacy, base != 0 else { return nil }
+        return "Excel'den aktarılan Zaiyat: \(amount(base, item: item))"
     }
 
     /// Hesap satırından: `duplicateHint` (taban = toplam − elle)

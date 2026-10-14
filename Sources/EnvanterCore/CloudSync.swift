@@ -227,19 +227,24 @@ public struct SyncState: Codable, Equatable, Sendable {
     /// Bağlantı koduyla bağlanan bilgisayarın cihaz hesabı ve şifreleri (DeviceLogin.swift); kişi hesabıyla bağlıyken nil.
     /// Çıkışta korunur ("Yeniden Bağlan"), "Bu Mac'i Şubeden Ayır" ile silinir. Eski sürümlerin dosyasında yoktur.
     public var deviceLogin: DeviceLogin?
+    /// Yerel veri dosyasının bu tabanla yazıldığı veri biçimi düzeyi (`DataFormat.level`). Eski sürümlerin dosyasında yoktur
+    /// (1 sayılır): o sürüm sunucudaki gövdelerin yeni alanlarını (ör. `wasteLog`) yerel veriye almamıştır; açılışta
+    /// `CloudSyncEngine.upgradingFormat` bu alanları tabandan yerele taşır (docs/SYNC.md §3 "Ayrışma").
+    public var formatLevel: Int
 
     public init(config: CloudConfig? = nil, lastRev: Int64 = 0, base: [String: BaseDoc] = [:], dirty: Set<String> = [],
                 accessToken: String? = nil, refreshToken: String? = nil, expiresAt: Date? = nil, lastSyncAt: Date? = nil,
-                userEmail: String? = nil, initialized: Bool = false, signedOut: Bool = false, deviceLogin: DeviceLogin? = nil) {
+                userEmail: String? = nil, initialized: Bool = false, signedOut: Bool = false, deviceLogin: DeviceLogin? = nil,
+                formatLevel: Int = DataFormat.level) {
         self.config = config; self.lastRev = lastRev; self.base = base; self.dirty = dirty
         self.accessToken = accessToken; self.refreshToken = refreshToken; self.expiresAt = expiresAt
         self.lastSyncAt = lastSyncAt; self.userEmail = userEmail; self.initialized = initialized
-        self.signedOut = signedOut; self.deviceLogin = deviceLogin
+        self.signedOut = signedOut; self.deviceLogin = deviceLogin; self.formatLevel = formatLevel
     }
 
     enum CodingKeys: String, CodingKey {
         case config, lastRev, base, dirty, accessToken, refreshToken, expiresAt, lastSyncAt, userEmail, initialized, signedOut
-        case deviceLogin
+        case deviceLogin, formatLevel
     }
 
     public init(from decoder: Decoder) throws {
@@ -256,6 +261,8 @@ public struct SyncState: Codable, Equatable, Sendable {
         initialized = try c.decodeIfPresent(Bool.self, forKey: .initialized) ?? false
         signedOut = try c.decodeIfPresent(Bool.self, forKey: .signedOut) ?? false
         deviceLogin = try c.decodeIfPresent(DeviceLogin.self, forKey: .deviceLogin)
+        // Okunamayan değer eski dosya sayılır (durum dosyası bu yüzden kaybolmasın)
+        formatLevel = max(1, ((try? c.decodeIfPresent(Int.self, forKey: .formatLevel)) ?? nil) ?? 1)
     }
 
     /// Oturum var mı (erişim ya da yenileme anahtarı)
@@ -282,6 +289,7 @@ public struct SyncState: Codable, Equatable, Sendable {
     /// Şube eşleşmesini sıfırlar (şube değişince); bağlantı ayarları kalır
     public mutating func resetWorkspaceData() {
         lastRev = 0; base = [:]; dirty = []; initialized = false; lastSyncAt = nil; signedOut = false
+        formatLevel = DataFormat.level
     }
 
     /// Çıkış: oturum anahtarları silinir; şube eşleşmesi (şube, rol, taban, bekleyen değişiklikler) korunur. Yeniden
@@ -577,6 +585,48 @@ public enum DocCodec {
         (try? JSONCoding.value(DayRecord(date: date))) ?? .object(["date": .string(date)])
     }
 
+    /// Yerelde silinen (boşalan) günün birleştirmedeki karşılığı: boş gün gövdesi; tabanda `wasteLog` dizisi varsa
+    /// `wasteLog: []` ile (son kaydın silinmesi gibi: kayıtlar kimliğe göre birleşir, başka cihazın eklediği kalır).
+    public static func deletedDayBody(_ date: String, base: JSONValue?) -> JSONValue {
+        let empty = emptyDayBody(date)
+        guard case .array? = base?["wasteLog"], case .object(var o) = empty else { return empty }
+        o["wasteLog"] = .array([])
+        return .object(o)
+    }
+
+    /// Eşitlemedeki belge birleştirmesi (çekmede "dirty" belge, gönderimde çakışma; docs/SYNC.md §3 "Silinen gün"):
+    /// `JSONMerge.merge3`, ama yerelde silinmiş gün (`local` nil, tabanda var) boş gün sayılır (`deletedDayBody`).
+    /// merge3(taban, yok, uzak) yereli seçer (kural 6): boşalan günün silinmesi, başka cihazın bu arada eklediği zayi
+    /// kaydını, sayımı ve sayanı da silerdi. Böylece yalnızca yerelin sildiği alanlar silinir; birleşmiş gün yine boşsa
+    /// (saklanmayan gün) nil döner ve gün silinir.
+    public static func mergeDoc(key: String, base: JSONValue?, local: JSONValue?, remote: JSONValue?) -> JSONValue? {
+        guard local == nil, let base, !base.isNull, let date = DocKey.date(of: key) else {
+            return JSONMerge.merge3(base: base, local: local, remote: remote)
+        }
+        let merged = JSONMerge.merge3(base: base, local: deletedDayBody(date, base: base), remote: remote)
+        guard let merged, let day = Lenient.day(merged, date: date), storedDay(day) != nil else { return nil }
+        return merged
+    }
+
+    /// Belgenin veri biçimi `level` düzeyindeki bir sürümün (eski Mac) gördüğü hali: o düzeyden sonra eklenen alanlar
+    /// çıkarılır. Düzey 1 (Mac 2.0 ve öncesi): gün `wasteLog`'u ve siparişlerin `receivedWithoutIncoming`'i.
+    /// `CloudSyncEngine.upgradingFormat` bununla eski sürümün yerel veriye almadığı alanları bulur.
+    public static func view(key: String, body: JSONValue, formatLevel level: Int) -> JSONValue {
+        guard level < 2 else { return body }
+        if DocKey.isDay(key), case .object(var o) = body {
+            o["wasteLog"] = nil
+            return .object(o)
+        }
+        if key == DocKey.orders, case .array(let orders) = body {
+            return .array(orders.map { el in
+                guard case .object(var o) = el else { return el }
+                o["receivedWithoutIncoming"] = nil
+                return .object(o)
+            })
+        }
+        return body
+    }
+
     /// Mac'in bildiği gün alanları (`DayRecord`)
     static let knownDayKeys: Set<String> = [
         "date", "entries", "sales", "salesSource", "salesPeriod", "salesImportedAt", "legacySold", "legacyWaste",
@@ -641,22 +691,42 @@ public enum DocCodec {
     /// merge3(taban = new, yerel = current, uzak = old): işlemin değiştirdiği alanlar eski haline döner, sonradan
     /// değişen alanlar korunur (ikisi de değiştiyse sonradan gelen kalır). Belge işlemden sonra hiç değişmediyse
     /// birebir eski hali gelir (sıra dahil). Olmayan gün boş gün sayılır: günü açan işlem (ilk sayım girişi) geri alınınca
-    /// yalnızca işlemin alanları kalkar, sonradan yazılan not / giriş kalır; gün boş kalırsa kaydı silinir. Yineleme de
-    /// aynı yoldan geçer.
+    /// yalnızca işlemin alanları kalkar, sonradan yazılan not / giriş kalır; gün boş kalırsa kaydı silinir. Gün
+    /// gövdelerinden biri `wasteLog` taşıyorsa taşımayanlarda `wasteLog: []` sayılır: ilk zayi kaydını geri almak anahtarı
+    /// silmez, `[]` yazar (son kaydın silinmesi gibi; anahtar silinseydi başka cihazın eklediği kayıt birleştirmede
+    /// kaybolurdu) ve sonradan eklenen kayıtlar kalır. Yineleme de aynı yoldan geçer.
     public static func undoing(keys: Set<String>, old: AppData, new: AppData, current: AppData) -> AppData {
         var out = current
         for k in keys {
             let empty = DocKey.date(of: k).map { emptyDayBody($0) }
-            let n = body(for: k, in: new) ?? empty, c = body(for: k, in: current) ?? empty
+            let oldBody = body(for: k, in: old) ?? empty
+            var o = oldBody, n = body(for: k, in: new) ?? empty, c = body(for: k, in: current) ?? empty
+            if DocKey.isDay(k) { keepingWasteLogKey(&o, &n, &c) }
             if n == c {
-                out = replacing([k], in: out, from: old)
+                if o == oldBody {
+                    out = replacing([k], in: out, from: old)
+                } else if !apply(key: k, body: o, to: &out) {
+                    out = replacing([k], in: out, from: old)
+                }
                 continue
             }
-            let merged = JSONMerge.merge3(base: n, local: c, remote: body(for: k, in: old) ?? empty)
+            let merged = JSONMerge.merge3(base: n, local: c, remote: o)
             if merged == c { continue }
             if !apply(key: k, body: merged, to: &out) { out = replacing([k], in: out, from: old) }
         }
         return out
+    }
+
+    /// Gün gövdelerinden biri `wasteLog` dizisi taşıyorsa taşımayan (nesne) gövdelere `wasteLog: []` yazar
+    static func keepingWasteLogKey(_ a: inout JSONValue?, _ b: inout JSONValue?, _ c: inout JSONValue?) {
+        func has(_ v: JSONValue?) -> Bool { if case .array? = v?["wasteLog"] { return true } else { return false } }
+        guard has(a) || has(b) || has(c) else { return }
+        func graft(_ v: inout JSONValue?) {
+            guard !has(v), case .object(var o)? = v else { return }
+            o["wasteLog"] = .array([])
+            v = .object(o)
+        }
+        graft(&a); graft(&b); graft(&c)
     }
 
     /// Eşitleme sürerken kullanıcı veriyi değiştirdiyse: eşitlemenin sonucuna (`synced`) kullanıcının değişikliklerini
@@ -671,7 +741,7 @@ public enum DocCodec {
             if s == y {
                 out = replacing([k], in: out, from: current)
             } else {
-                let merged = JSONMerge.merge3(base: s, local: body(for: k, in: current), remote: y)
+                let merged = mergeDoc(key: k, base: s, local: body(for: k, in: current), remote: y)
                 if !apply(key: k, body: merged, to: &out) { out = replacing([k], in: out, from: current) }
             }
         }

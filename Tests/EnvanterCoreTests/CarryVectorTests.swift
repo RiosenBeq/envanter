@@ -34,7 +34,8 @@ enum VectorSupport {
          "sold": .number(r.sold), "waste": .number(r.waste), "actual": num(r.actual), "diff": num(r.diff),
          "severity": severity(r.severity), "belowMinimum": .bool(r.belowMinimum), "openingSource": .string(r.openingSource.rawValue),
          "openingBaseDate": str(r.openingBaseDate), "openingBaseKind": str(r.openingBaseKind?.rawValue),
-         "carriedNet": .number(r.carriedNet), "carriedDays": .number(Double(r.carriedDays)), "isBaseline": .bool(r.isBaseline),
+         "carriedNet": .number(r.carriedNet), "carriedDays": .number(Double(r.carriedDays)),
+         "carriedMoveDays": .number(Double(r.carriedMoveDays)), "isBaseline": .bool(r.isBaseline),
          "openingJump": num(r.openingJump), "openingJumpIsProblem": .bool(r.openingJumpIsProblem),
          "hasStaleBase": .bool(r.hasStaleBase), "isCounted": .bool(r.isCounted), "manualWaste": .number(r.manualWaste)]
     }

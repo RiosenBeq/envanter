@@ -313,6 +313,14 @@ private struct ThresholdsSheet: View {
             Text("Eşik önerileri").font(.title2.weight(.semibold))
             Text("Son \(Engine.thresholdLookbackDays) güne göre: tolerans, sayım farklarının %80'inin kaldığı sınır; kritik seviye, günlük tüketimin 1,5 katı. En az \(Engine.thresholdMinDays) günlük veri gerekir. Boş alanlar seçili gelir; elle girdiğiniz değerler yalnızca işaretlerseniz değişir.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            // Değeri boş ama önerisi olmayan kalemler (Genel Bakış → Kurulum'da eksik görünür; buradan doldurulamaz): adlarıyla
+            ForEach(gapLines, id: \.self) { line in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.warn)
+                    Text(line).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.callout)
+            }
             if changes.isEmpty {
                 Text("Şu an önerilecek bir değişiklik yok: eşikler önerilerle aynı ya da en az \(Engine.thresholdMinDays) günlük sayım / satış verisi henüz yok.")
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -353,6 +361,15 @@ private struct ThresholdsSheet: View {
     }
 
     private var chosen: [ThresholdChange] { changes.filter { selected.contains($0.id) } }
+
+    /// "Önerisi olmayan, kritik seviyesi boş 1 kalem: Donuk Ekmek. …" (web penceresiyle aynı metin)
+    private var gapLines: [String] {
+        let items = store.data.items
+        let gaps = ThresholdGaps.make(items: items, suggestions: suggestions)
+        let names: ([String]) -> [String] = { ids in ids.map { id in items.first { $0.id == id }?.name ?? id } }
+        return [ThresholdGaps.text(.tolerance, names: names(gaps.tolerance)),
+                ThresholdGaps.text(.minStock, names: names(gaps.minStock))].compactMap { $0 }
+    }
 
     private var itemsWithChanges: [Item] {
         let ids = Set(changes.map { $0.itemID })

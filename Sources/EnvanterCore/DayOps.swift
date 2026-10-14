@@ -25,9 +25,11 @@ public enum DayOps {
         return (day, rows.count, nil)
     }
 
-    /// Doldurulabilir satır: sayılmamış, hareketsiz, açılışı > 0 ve sayımdan ya da elle gelmiş
+    /// Doldurulabilir satır: sayılmamış, hareketsiz, açılışı > 0 ve sayımdan ya da elle gelmiş. Sayımdan gelen açılışta
+    /// aradaki sayılmayan günlerde hiç hareket olmamalı (`carriedMoveDays == 0`): birbirini götüren hareketler (net 0;
+    /// ör. Gelen 3, Satılan 3) de sayılmadığından açılış bir tahmindir, sayım yerine geçmez.
     public static func isIdle(_ r: ItemCalc) -> Bool {
         !r.isCounted && r.incoming == 0 && r.transferIn == 0 && r.transferOut == 0 && r.sold == 0 && r.waste == 0
-            && r.opening > 0 && (r.openingSource == .closing || r.openingSource == .manual)
+            && r.opening > 0 && (r.openingSource == .manual || (r.openingSource == .closing && r.carriedMoveDays == 0))
     }
 }

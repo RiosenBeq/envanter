@@ -857,6 +857,270 @@
       "expected": {
         "day:2026-08-30": null
       }
+    },
+    {
+      "name": "ilk zayi kaydının eklenmesi geri alınınca wasteLog anahtarı silinmez: [] yazılır",
+      "keys": [
+        "day:2026-10-12"
+      ],
+      "old": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      },
+      "current": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": []
+        }
+      }
+    },
+    {
+      "name": "ilk zayi kaydı geri alınırken sonradan başka cihazdan eklenen kayıt kalır",
+      "keys": [
+        "day:2026-10-12"
+      ],
+      "old": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": []
+        }
+      },
+      "new": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      },
+      "current": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            },
+            {
+              "id": "e2",
+              "itemID": "g90",
+              "qty": 2,
+              "reason": "burnt",
+              "at": "2026-10-12T10:05:00Z"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e2",
+              "itemID": "g90",
+              "qty": 2,
+              "reason": "burnt",
+              "at": "2026-10-12T10:05:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "yineleme: geri alınan ilk zayi kaydı yeniden eklenir",
+      "keys": [
+        "day:2026-10-12"
+      ],
+      "old": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      },
+      "new": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": []
+        }
+      },
+      "current": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": []
+        }
+      },
+      "expected": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {
+            "g90": {
+              "closing": 5
+            }
+          },
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "yalnızca zayi kaydı olan günün ilk kaydı geri alınınca gün kaydı kalkar",
+      "keys": [
+        "day:2026-10-12"
+      ],
+      "old": {},
+      "new": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      },
+      "current": {
+        "day:2026-10-12": {
+          "date": "2026-10-12",
+          "entries": {},
+          "sales": [],
+          "wasteLog": [
+            {
+              "id": "e1",
+              "itemID": "g90",
+              "qty": 1,
+              "reason": "spoiled",
+              "at": "2026-10-12T10:00:00Z"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "day:2026-10-12": null
+      }
     }
   ]
 }

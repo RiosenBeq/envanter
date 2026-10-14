@@ -1,5 +1,5 @@
 {
-  "about": "Tolerans / kritik seviye önerileri (Engine.thresholdSuggestions) ve Genel Bakış kurulum listesi (SetupChecklist) için ortak test vektörleri. Mac (EnvanterCoreTests/ThresholdVectorTests) ve web (test/thresholds.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. Tolerans: sayılmış günlerin |fark| değerlerinin %80'lik dilimi (⌈0,8·n⌉. değer, en az 7 gün; adet tam sayıya, kg 0,01'e yukarı; en az bir adım). Kritik seviye: günlük tüketim × 1,5 (en az 7 örnek gün; adet tam sayıya, kg 0,1'e yukarı). 'changes': Stok Kalemleri'ndeki pencerenin değişiklik listesi (yalnızca farklı olan alanlar; boş alanlar önceden seçili).",
+  "about": "Tolerans / kritik seviye önerileri (Engine.thresholdSuggestions) ve Genel Bakış kurulum listesi (SetupChecklist) için ortak test vektörleri. Mac (EnvanterCoreTests/ThresholdVectorTests) ve web (test/thresholds.test.ts) aynı dosyayı geçmelidir; dosya iki depoda birebir aynıdır. Tolerans: sayılmış günlerin |fark| değerlerinin %80'lik dilimi (⌈0,8·n⌉. değer, en az 7 gün; adet tam sayıya, kg 0,01'e yukarı; en az bir adım). Kritik seviye: günlük tüketim × 1,5 (en az 7 örnek gün; adet tam sayıya, kg 0,1'e yukarı). 'changes': Stok Kalemleri'ndeki pencerenin değişiklik listesi (yalnızca farklı olan alanlar; boş alanlar önceden seçili). 'gaps': değeri boş ve önerisi olmayan aktif kalemler (ThresholdGaps / thresholdGaps) ve pencere metni; 'gapNames': uzun listenin kısaltılması.",
   "minDays": 7,
   "lookbackDays": 28,
   "cases": [
@@ -524,6 +524,24 @@
             "isDone": false
           }
         }
+      ],
+      "gaps": [
+        {
+          "date": "2026-09-10",
+          "lookbackDays": 28,
+          "expect": {
+            "tolerance": [
+              "t4"
+            ],
+            "minStock": [
+              "t3"
+            ]
+          },
+          "text": {
+            "tolerance": "Önerisi olmayan, toleransı boş 1 kalem: Sos. En az 7 sayılmış gün gerekir; değeri Stok Kalemleri tablosunda elle girin.",
+            "minStock": "Önerisi olmayan, kritik seviyesi boş 1 kalem: Az veri. En az 7 gün tüketim (satış) gerekir; değeri Stok Kalemleri tablosunda elle girin."
+          }
+        }
       ]
     },
     {
@@ -602,7 +620,34 @@
             "isDone": false
           }
         }
+      ],
+      "gaps": [
+        {
+          "date": "2026-09-10",
+          "lookbackDays": 28,
+          "expect": {
+            "tolerance": [],
+            "minStock": []
+          },
+          "text": {
+            "tolerance": null,
+            "minStock": null
+          }
+        }
       ]
     }
-  ]
+  ],
+  "gapNames": {
+    "names": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H"
+    ],
+    "minStock": "Önerisi olmayan, kritik seviyesi boş 8 kalem: A, B, C, D, E, F ve 2 kalem daha. En az 7 gün tüketim (satış) gerekir; değeri Stok Kalemleri tablosunda elle girin."
+  }
 }

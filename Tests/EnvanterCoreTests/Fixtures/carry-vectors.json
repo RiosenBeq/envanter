@@ -1821,7 +1821,268 @@
       ]
     },
     {
-      "name": "hareketsizleri-doldur: satış yoksa yapılmaz; tahmini açılışa ve hareketli kaleme yazılmaz; kilitli günde yapılmaz",
+      "name": "ozet-sayilmayan-elle-acilis: sayılmayan günde elle girilen açılışa dayanan sayımda, açılışın tahminine giren önceki sayılmayan günler de dönem özetine devreder (sıçrama openingAdjust'ta, toplam tutar)",
+      "data": {
+        "schemaVersion": 1,
+        "items": [
+          {
+            "id": "k",
+            "name": "Köfte",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true,
+            "tolerance": 1
+          },
+          {
+            "id": "t",
+            "name": "Tavuk",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
+          }
+        ],
+        "products": [
+          {
+            "code": "K",
+            "name": "KÖFTE",
+            "category": "TEST",
+            "amounts": {
+              "k": 1
+            }
+          },
+          {
+            "code": "T",
+            "name": "TAVUK",
+            "category": "TEST",
+            "amounts": {
+              "t": 1
+            }
+          }
+        ],
+        "days": {
+          "2026-08-01": {
+            "date": "2026-08-01",
+            "entries": {
+              "k": {
+                "opening": 50,
+                "closing": 50
+              },
+              "t": {
+                "closing": 30
+              }
+            },
+            "sales": []
+          },
+          "2026-08-02": {
+            "date": "2026-08-02",
+            "entries": {
+              "k": {
+                "incoming": 10
+              }
+            },
+            "sales": [
+              {
+                "code": "K",
+                "name": "KÖFTE",
+                "qty": 3
+              },
+              {
+                "code": "T",
+                "name": "TAVUK",
+                "qty": 2
+              }
+            ],
+            "wasteLog": [
+              {
+                "id": "w1",
+                "itemID": "k",
+                "qty": 1,
+                "reason": "spoiled"
+              }
+            ]
+          },
+          "2026-08-03": {
+            "date": "2026-08-03",
+            "entries": {
+              "k": {
+                "opening": 40
+              },
+              "t": {
+                "opening": 25
+              }
+            },
+            "sales": [
+              {
+                "code": "K",
+                "name": "KÖFTE",
+                "qty": 2
+              },
+              {
+                "code": "T",
+                "name": "TAVUK",
+                "qty": 1
+              }
+            ]
+          },
+          "2026-08-04": {
+            "date": "2026-08-04",
+            "entries": {
+              "t": {
+                "opening": 20
+              }
+            },
+            "sales": [
+              {
+                "code": "T",
+                "name": "TAVUK",
+                "qty": 1
+              }
+            ]
+          },
+          "2026-08-05": {
+            "date": "2026-08-05",
+            "entries": {
+              "k": {
+                "closing": 30
+              },
+              "t": {
+                "closing": 15
+              }
+            },
+            "sales": [
+              {
+                "code": "K",
+                "name": "KÖFTE",
+                "qty": 4
+              },
+              {
+                "code": "T",
+                "name": "TAVUK",
+                "qty": 2
+              }
+            ]
+          }
+        },
+        "settings": {
+          "branchName": "",
+          "orderLookbackDays": 14,
+          "orderCoverDays": 3,
+          "staff": []
+        },
+        "employees": [],
+        "purchaseOrders": []
+      },
+      "calc": [
+        {
+          "date": "2026-08-03",
+          "itemID": "k",
+          "expect": {
+            "opening": 40,
+            "openingSource": "manual",
+            "openingBaseDate": "2026-08-01",
+            "openingJump": -16,
+            "isCounted": false
+          }
+        },
+        {
+          "date": "2026-08-05",
+          "itemID": "k",
+          "expect": {
+            "opening": 38,
+            "openingSource": "carried",
+            "openingBaseDate": "2026-08-03",
+            "actual": 8,
+            "diff": -4
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "t",
+          "expect": {
+            "opening": 25,
+            "openingSource": "manual",
+            "openingJump": -3
+          }
+        },
+        {
+          "date": "2026-08-04",
+          "itemID": "t",
+          "expect": {
+            "opening": 20,
+            "openingSource": "manual",
+            "openingBaseDate": "2026-08-03",
+            "openingJump": -4
+          }
+        },
+        {
+          "date": "2026-08-05",
+          "itemID": "t",
+          "expect": {
+            "opening": 19,
+            "openingSource": "carried",
+            "openingBaseDate": "2026-08-04",
+            "actual": 4,
+            "diff": -2
+          }
+        }
+      ],
+      "summary": [
+        {
+          "from": "2026-08-01",
+          "to": "2026-08-05",
+          "itemID": "k",
+          "expect": {
+            "daysCounted": 2,
+            "firstOpening": 50,
+            "lastClosing": 30,
+            "incoming": 10,
+            "transferIn": 0,
+            "transferOut": 0,
+            "sold": 9,
+            "waste": 1,
+            "actual": 14,
+            "diff": -4,
+            "openingAdjust": -16,
+            "daily": [
+              {
+                "date": "2026-08-01",
+                "diff": 0
+              },
+              {
+                "date": "2026-08-05",
+                "diff": -4
+              }
+            ]
+          }
+        },
+        {
+          "from": "2026-08-01",
+          "to": "2026-08-05",
+          "itemID": "t",
+          "expect": {
+            "daysCounted": 1,
+            "firstOpening": 30,
+            "lastClosing": 15,
+            "incoming": 0,
+            "sold": 6,
+            "waste": 0,
+            "actual": 8,
+            "diff": -2,
+            "openingAdjust": -7,
+            "daily": [
+              {
+                "date": "2026-08-05",
+                "diff": -2
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "hareketsizleri-doldur: satış yoksa yapılmaz; tahmini açılışa, hareketleri birbirini götüren (net 0) devre ve hareketli kaleme yazılmaz; kilitli günde yapılmaz",
       "data": {
         "schemaVersion": 1,
         "items": [
@@ -1856,6 +2117,14 @@
             "recipeUnit": "adet",
             "factor": 1,
             "active": true
+          },
+          {
+            "id": "f5",
+            "name": "Kalem 5",
+            "unit": "Adet",
+            "recipeUnit": "adet",
+            "factor": 1,
+            "active": true
           }
         ],
         "products": [
@@ -1875,6 +2144,9 @@
               },
               "f2": {
                 "closing": 3
+              },
+              "f5": {
+                "closing": 4
               }
             },
             "sales": []
@@ -1884,6 +2156,10 @@
             "entries": {
               "f2": {
                 "incoming": 2
+              },
+              "f5": {
+                "incoming": 3,
+                "transferOut": 3
               }
             },
             "sales": []
@@ -1959,6 +2235,24 @@
             "opening": 7,
             "openingSource": "manual",
             "openingJump": null
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "f5",
+          "expect": {
+            "opening": 4,
+            "openingSource": "closing",
+            "carriedNet": 0,
+            "carriedDays": 0,
+            "carriedMoveDays": 1
+          }
+        },
+        {
+          "date": "2026-08-03",
+          "itemID": "f1",
+          "expect": {
+            "carriedMoveDays": 0
           }
         }
       ],

@@ -75,6 +75,8 @@ public struct OpeningEstimate: Equatable, Sendable {
     public var carriedNet: Double
     /// Net hareketi sıfırdan farklı yürünen gün sayısı
     public var carriedDays: Int
+    /// Herhangi bir hareketi (gelen, transfer, satış, zayi; birbirini götürse de) olan yürünen gün sayısı
+    public var movedDays: Int = 0
 }
 
 /// Bir kalemin bir gündeki tahmini stoğu (sayıldıysa kapanış; değilse son sayım + sonraki hareketler)
@@ -121,6 +123,9 @@ public struct ItemCalc {
     /// Devreden net hareket (kaynak closing / carried iken; diğerlerinde 0)
     public var carriedNet: Double = 0
     public var carriedDays: Int = 0
+    /// Dayanaktan sonra herhangi bir hareketi olan sayılmayan gün sayısı (net 0 olsa da; kaynak closing / carried iken):
+    /// > 0 ise açılış bir tahmindir, "Hareketsizleri Doldur" yazmaz
+    public var carriedMoveDays: Int = 0
     /// İlk sayım: kapanış var, açılış elle girilmedi ve dayanak yok (ya da çok eski) → fark hesaplanmaz
     public var isBaseline: Bool = false
     /// Elle açılış − beklenen açılış (Excel'den aktarılan günlerde ve dayanak yoksa nil)
@@ -463,14 +468,15 @@ public struct Engine {
         guard let gap = DateKey.distance(from: base.date, to: date), gap <= Self.carryMaxDays else {
             return (base.date, base.kind, nil)
         }
-        var net = 0.0, days = 0
+        var net = 0.0, days = 0, moved = 0
         for d in walkDates(after: base.date, before: date, includeBase: base.kind == .manualOpening) {
             guard let m = movements(on: d)[itemID] else { continue }
             net += m.net
             if m.net != 0 { days += 1 }
+            if m.incoming != 0 || m.transferIn != 0 || m.transferOut != 0 || m.sold != 0 || m.waste != 0 { moved += 1 }
         }
         let est = OpeningEstimate(value: Self.clean(base.value + net), baseDate: base.date, baseKind: base.kind,
-                                  baseValue: base.value, carriedNet: Self.clean(net), carriedDays: days)
+                                  baseValue: base.value, carriedNet: Self.clean(net), carriedDays: days, movedDays: moved)
         return (base.date, base.kind, est)
     }
 
@@ -552,6 +558,7 @@ public struct Engine {
         if source == .closing || source == .carried, let est {
             row.carriedNet = est.carriedNet
             row.carriedDays = est.carriedDays
+            row.carriedMoveDays = est.movedDays
         }
         row.isBaseline = isBaseline
         row.openingJump = jump
@@ -622,7 +629,9 @@ public struct Engine {
     /// devredilen sayılmayan günler hesaba katılır; devredilen günün fiili tüketimi Satılan + Zayi sayılır. Böylece
     /// Fark = Satılan + Zayi - Fiili özdeşliği dönem toplamında da korunur. Sayılmayan gün, sonraki sayımın geçerli
     /// dayanağından sonraysa devredilir: hareketleri birbirini götürse de (net 0), sonraki sayımın açılışı elle
-    /// girilse de (sıçrama `openingAdjust`'ta).
+    /// girilse de (sıçrama `openingAdjust`'ta). Dayanak, sayılmayan bir günde elle girilen açılışsa o günün sıçraması
+    /// önceki dayanaktan yürünen tahminle ölçülmüştür: o tahminin günleri de devreder (zincir halinde), böylece
+    /// ilk açılış + Gelen + `openingAdjust` − son kapanış = Fiili kalır.
     public func summary(from: String, to: String) -> [SummaryRow] {
         let dates = sortedDates.filter { $0 >= from && $0 <= to }
         var perDay: [(String, [String: ItemCalc])] = []
@@ -643,6 +652,11 @@ public struct Engine {
                     carryBase = c.isBaseline ? nil : summaryCarryBase(c, date: d)
                 } else if let b = carryBase, d >= b {
                     carried.insert(d)
+                    // Sayılmayan günde elle açılış: sıçraması (openingAdjust) önceki dayanaktan bu güne yürünen tahminle
+                    // ölçüldü; o günler de devreder
+                    if c.openingSource == .manual, c.openingJump != nil, let e = estimatedOpening(itemID: item.id, date: d) {
+                        carryBase = e.baseDate
+                    }
                 }
             }
             for (d, calcs) in perDay {

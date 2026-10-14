@@ -742,9 +742,9 @@ enum SelfTest {
         check(issue.title == CloudSyncGuide.invalidPairCodeTitle, "yanlış / kullanılmış kodda durum etiketi \"\(CloudSyncGuide.invalidPairCodeTitle)\" (şifre değil)")
         check(CloudSyncController.issue(for: .invalidCredentials, connected: false, login: "ayse.yilmaz@envanter.local").title == "Şifre yanlış",
               "kişi hesabında durum etiketi: Şifre yanlış")
-        let removed = CloudSyncController.issue(for: .sessionExpired, connected: false, login: "pc-7kq2m9@envanter.local")
+        let loginRemoved = CloudSyncController.issue(for: .sessionExpired, connected: false, login: "pc-7kq2m9@envanter.local")
         let kept = CloudSyncController.issue(for: .sessionExpired, connected: false, login: "pc-7kq2m9@envanter.local", deviceKept: true)
-        check((removed.hint ?? "").contains("yeni bir bağlantı kodu") && !(kept.hint ?? "").contains("yeni bir bağlantı kodu")
+        check((loginRemoved.hint ?? "").contains("yeni bir bağlantı kodu") && !(kept.hint ?? "").contains("yeni bir bağlantı kodu")
               && (kept.hint ?? "").contains("Yeniden Bağlan"),
               "oturum düştü: kayıt silindiyse yeni kod, kayıt duruyorsa Yeniden Bağlan")
         let offline = CloudSyncController.issue(for: .network("timeout"), connected: true, login: "pc-7kq2m9@envanter.local", deviceKept: true)

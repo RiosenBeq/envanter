@@ -1070,3 +1070,234 @@ extension CloudSyncTests {
         XCTAssertEqual(box.calls.map { $0.1 }, [2, 2, 2])
     }
 }
+
+// MARK: - İnceleme düzeltmeleri: biçim yükseltmesi, silinen gün, zayi geri alma
+
+extension CloudSyncTests {
+    private func syncOK(_ c: SimClient, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let out = try await c.sync()
+        XCTAssertNil(out.error, file: file, line: line)
+    }
+
+    private func wasteJSON(_ id: String, _ itemID: String, qty: Double = 2) -> JSONValue {
+        .object(["id": .string(id), "itemID": .string(itemID), "qty": .number(qty), "reason": .string("spoiled"),
+                 "by": .string("Ayşe"), "at": .string("2026-10-12T10:00:00Z")])
+    }
+
+    /// 2.0 Mac'in yazdığı hal: yerel veride elle zayi ve "Teslim alındı say" yok (o sürüm çözemez), taban ham gövdeyi
+    /// tutar, esitleme.json'da `formatLevel` yok
+    private func asOldVersion(_ c: SimClient) throws {
+        for (date, var day) in c.data.days {
+            day.wasteLog = nil
+            c.data.days[date] = DocCodec.storedDay(day)
+        }
+        for i in c.data.purchaseOrders.indices { c.data.purchaseOrders[i].receivedWithoutIncoming = nil }
+        // Eski dosya: alan yok → 1
+        guard case .object(var o) = try JSONCoding.parse(SyncStore.encoder().encode(c.state)) else { return XCTFail("nesne") }
+        o["formatLevel"] = nil
+        c.state = try SyncStore.decoder().decode(SyncState.self, from: JSONCoding.data(.object(o)))
+        XCTAssertEqual(c.state.formatLevel, 1)
+    }
+
+    /// Bulguda: 2.0'dan 2.1'e güncellenen Mac açılıştaki ayrışma denetiminde web'de girilen elle zayiyi ve "Teslim alındı
+    /// say" işaretini "yerelde silinmiş" sanıp sunucudan siliyordu (yalnızca zayi kaydı olan gün de siliniyordu).
+    func testFormatUpgradeKeepsFieldsTheOldVersionCouldNotStore() async throws {
+        let (server, apiA, _) = makeServer()
+        let mac = SimClient(data: DemoData.make(endingAt: "2026-10-11", days: 3), api: apiA, workspace: ws)
+        try await mac.connect()
+        try await syncOK(mac)
+        let item = mac.data.items[0].id
+        let d1 = "2026-10-12", d2 = "2026-10-13", d3 = "2026-10-11"
+        server.write(ws: ws, user: "personel", key: DocKey.day(d1), body: .object([
+            "date": .string(d1), "entries": .object([item: .object(["closing": .number(5)])]), "sales": .array([]),
+            "wasteLog": .array([wasteJSON("e1", item)]),
+        ]))
+        server.write(ws: ws, user: "personel", key: DocKey.day(d2), body: .object([
+            "date": .string(d2), "entries": .object([:]), "sales": .array([]), "wasteLog": .array([wasteJSON("e2", item)]),
+        ]))
+        var d3Body = try XCTUnwrap(server.doc(ws, DocKey.day(d3))?.body.objectValue)
+        d3Body["wasteLog"] = .array([wasteJSON("e3", item)])
+        server.write(ws: ws, user: "personel", key: DocKey.day(d3), body: .object(d3Body))
+        server.write(ws: ws, user: "personel", key: DocKey.orders, body: .array([.object([
+            "id": .string("o1"), "date": .string(d1), "supplier": .string("Et"),
+            "lines": .array([.object(["itemID": .string(item), "qty": .number(3), "received": .number(3)])]),
+            "status": .string("received"), "receivedOn": .string(d2), "receivedWithoutIncoming": .bool(true),
+        ])]))
+        try await syncOK(mac)
+        try asOldVersion(mac)
+        XCTAssertNil(mac.data.days[d2])
+        // 2.0'da (güncellemeden önce) d3'e not yazıldı ve gönderilemedi ("dirty")
+        mac.edit { $0.days[d3]?.note = "Eski Mac notu" }
+        XCTAssertEqual(mac.state.dirty, [DocKey.day(d3)])
+
+        // Düzeltme olmasaydı: yeni alanlar ayrışmış sayılırdı (gönderilip silinirlerdi)
+        var unhealed = mac.state
+        unhealed.formatLevel = DataFormat.level
+        XCTAssertTrue(CloudSyncEngine.divergentKeys(local: mac.data, state: unhealed)
+            .isSuperset(of: [DocKey.day(d1), DocKey.day(d2), DocKey.orders]))
+
+        // Açılış (CloudSyncController.attach): önce yükseltme, sonra ayrışma denetimi
+        var st = mac.state
+        let up = CloudSyncEngine.upgradingFormat(local: mac.data, state: &st)
+        XCTAssertEqual(up.changed, [DocKey.day(d1), DocKey.day(d2), DocKey.day(d3), DocKey.orders])
+        XCTAssertEqual(st.formatLevel, DataFormat.level)
+        XCTAssertEqual(CloudSyncEngine.divergentKeys(local: up.data, state: st), [DocKey.day(d3)])
+        XCTAssertEqual(up.data.days[d3]?.note, "Eski Mac notu")              // eski sürümdeki yerel değişiklik kalır
+        XCTAssertEqual(up.data.days[d3]?.wasteLog?.map(\.id), ["e3"])
+        mac.data = up.data
+        mac.state = st
+        // İkinci kez çalışmaz
+        let again = CloudSyncEngine.upgradingFormat(local: mac.data, state: &st)
+        XCTAssertEqual(again.changed, [])
+
+        let out = try await mac.sync()
+        XCTAssertNil(out.error)
+        XCTAssertEqual(out.pushed, [DocKey.day(d3)])
+        XCTAssertEqual(server.doc(ws, DocKey.day(d1))?.body["wasteLog"]?.arrayValue?.count, 1)
+        XCTAssertEqual(server.doc(ws, DocKey.day(d2))?.deleted, false)
+        XCTAssertEqual(server.doc(ws, DocKey.day(d2))?.body["wasteLog"]?.arrayValue?.first?["id"], .string("e2"))
+        XCTAssertEqual(server.doc(ws, DocKey.day(d3))?.body["wasteLog"]?.arrayValue?.first?["id"], .string("e3"))
+        XCTAssertEqual(server.doc(ws, DocKey.day(d3))?.body["note"], .string("Eski Mac notu"))
+        XCTAssertEqual(server.doc(ws, DocKey.orders)?.body.arrayValue?.first?["receivedWithoutIncoming"], .bool(true))
+    }
+
+    /// Oturum kapalıyken güncellenen Mac: yeniden girişte (`resume`) de önce yükseltme yapılır
+    func testFormatUpgradeOnResume() async throws {
+        let (server, apiA, _) = makeServer()
+        let mac = SimClient(data: DemoData.make(endingAt: "2026-10-11", days: 2), api: apiA, workspace: ws)
+        try await mac.connect()
+        try await syncOK(mac)
+        let item = mac.data.items[0].id
+        server.write(ws: ws, user: "personel", key: DocKey.day("2026-10-13"), body: .object([
+            "date": .string("2026-10-13"), "entries": .object([:]), "sales": .array([]), "wasteLog": .array([wasteJSON("e9", item)]),
+        ]))
+        try await syncOK(mac)
+        try asOldVersion(mac)
+        var st = mac.state
+        st.signOut()
+        let data = CloudSyncEngine.resume(workspace: CloudWorkspace(id: ws, name: "Test Şubesi", role: CloudRole.owner),
+                                          local: mac.data, state: &st)
+        XCTAssertEqual(st.formatLevel, DataFormat.level)
+        XCTAssertEqual(data.days["2026-10-13"]?.wasteLog?.map(\.id), ["e9"])
+        XCTAssertFalse(st.dirty.contains(DocKey.day("2026-10-13")))
+    }
+
+    func testSyncStateFormatLevelCoding() throws {
+        XCTAssertEqual(SyncState().formatLevel, DataFormat.level)
+        let old = try SyncStore.decoder().decode(SyncState.self, from: Data(#"{"lastRev":3,"initialized":true}"#.utf8))
+        XCTAssertEqual(old.formatLevel, 1)
+        let bad = try SyncStore.decoder().decode(SyncState.self, from: Data(#"{"lastRev":3,"formatLevel":"x"}"#.utf8))
+        XCTAssertEqual(bad.formatLevel, 1)
+        XCTAssertEqual(bad.lastRev, 3)
+        let round = try SyncStore.decoder().decode(SyncState.self, from: SyncStore.encoder().encode(SyncState(lastRev: 4)))
+        XCTAssertEqual(round.formatLevel, DataFormat.level)
+        var reset = old
+        reset.resetWorkspaceData()
+        XCTAssertEqual(reset.formatLevel, DataFormat.level)
+    }
+
+    /// Bulguda: yalnızca zayi kaydı olan günün son kaydı silinince gün silinir; arada başka cihaz o güne kayıt, sayım ve
+    /// sayan yazdıysa merge3(taban, yok, uzak) yereli (silmeyi) seçip hepsini siliyordu. Yerelde silinen gün artık boş gün
+    /// sayılır: yalnızca yerelin sildiği alanlar gider.
+    func testDeletingLastWasteEntryKeepsConcurrentWritesOnPull() async throws {
+        let (server, a, b) = try await connectedPair()
+        let item = a.data.items[0].id
+        let d = "2026-09-05"
+        let e1 = try XCTUnwrap(WasteLog.make(id: "e1", itemID: item, qty: 1, reason: .spoiled))
+        a.edit { $0.days[d] = WasteLog.adding(e1, to: DayRecord(date: d)) }
+        try await syncOK(a)
+        try await syncOK(b)
+        // B: ikinci kayıt, sayım ve sayan
+        let e2 = try XCTUnwrap(WasteLog.make(id: "e2", itemID: item, qty: 2, reason: .burnt))
+        b.edit { data in
+            var day = data.days[d]!
+            day = WasteLog.adding(e2, to: day)
+            day.entries[item] = DayEntry(closing: 40)
+            day.countedBy = "Ali"
+            data.days[d] = day
+        }
+        try await syncOK(b)
+        // A (çekmeden): e1'i siler → gün boşalır (silinir)
+        a.edit { $0.days[d] = WasteLog.removing(id: "e1", from: $0.days[d]!) }
+        XCTAssertNil(DocCodec.body(for: DocKey.day(d), in: a.data))
+        let out = try await a.sync()
+        XCTAssertNil(out.error)
+        let doc = try XCTUnwrap(server.doc(ws, DocKey.day(d)))
+        XCTAssertFalse(doc.deleted)
+        XCTAssertEqual(doc.body["wasteLog"]?.arrayValue?.compactMap { $0["id"]?.stringValue }, ["e2"])
+        XCTAssertEqual(doc.body["entries"]?[item]?["closing"], .number(40))
+        XCTAssertEqual(doc.body["countedBy"], .string("Ali"))
+        try await syncOK(b)
+        XCTAssertSameDocs(a.data, b.data)
+    }
+
+    /// Aynı durum gönderim çakışmasında (sunucu, gönderim sırasında değişti)
+    func testDeletingLastWasteEntryKeepsConcurrentWritesOnPushConflict() async throws {
+        let (server, a, _) = try await connectedPair()
+        let item = a.data.items[0].id
+        let d = "2026-09-06"
+        let e1 = try XCTUnwrap(WasteLog.make(id: "e1", itemID: item, qty: 1, reason: .spoiled))
+        a.edit { $0.days[d] = WasteLog.adding(e1, to: DayRecord(date: d)) }
+        try await syncOK(a)
+        a.edit { $0.days[d] = WasteLog.removing(id: "e1", from: $0.days[d]!) }
+        var injected = false
+        server.beforePut = { [ws] key in
+            guard key == DocKey.day(d), !injected else { return }
+            injected = true
+            server.write(ws: ws, user: "personel", key: key, body: .object([
+                "date": .string(d), "entries": .object([item: .object(["closing": .number(40)])]), "sales": .array([]),
+                "countedBy": .string("Ali"), "wasteLog": .array([self.wasteJSON("e1", item, qty: 1), self.wasteJSON("e2", item)]),
+            ]))
+        }
+        let out = try await a.sync()
+        XCTAssertNil(out.error)
+        XCTAssertTrue(out.conflicts.contains(DocKey.day(d)))
+        let doc = try XCTUnwrap(server.doc(ws, DocKey.day(d)))
+        XCTAssertFalse(doc.deleted)
+        XCTAssertEqual(doc.body["wasteLog"]?.arrayValue?.compactMap { $0["id"]?.stringValue }, ["e2"])
+        XCTAssertEqual(doc.body["countedBy"], .string("Ali"))
+        XCTAssertEqual(a.data.days[d]?.entries[item]?.closing, 40)
+    }
+
+    /// Birleşmiş gün yine boşsa silinir (aynı anda kimse yazmadıysa olağan silme)
+    func testMergeDocDeletesDayThatStaysEmpty() {
+        let d = "2026-09-07"
+        let base = j(#"{"date":"2026-09-07","entries":{},"sales":[],"wasteLog":[{"id":"e1","itemID":"a","qty":1,"reason":"spoiled"}]}"#)
+        let remoteSame = base
+        XCTAssertNil(DocCodec.mergeDoc(key: DocKey.day(d), base: base, local: nil, remote: remoteSame))
+        // Uzakta yalnızca not değişti: not kalır, kayıt silinir
+        let remoteNote = j(#"{"date":"2026-09-07","entries":{},"sales":[],"note":"n","wasteLog":[{"id":"e1","itemID":"a","qty":1,"reason":"spoiled"}]}"#)
+        XCTAssertEqual(DocCodec.mergeDoc(key: DocKey.day(d), base: base, local: nil, remote: remoteNote),
+                       j(#"{"date":"2026-09-07","entries":{},"sales":[],"note":"n","wasteLog":[]}"#))
+        // Uzakta da silindi
+        XCTAssertNil(DocCodec.mergeDoc(key: DocKey.day(d), base: base, local: nil, remote: nil))
+        // Tanım belgesi ve tabanı olmayan gün: olağan merge3
+        XCTAssertNil(DocCodec.mergeDoc(key: DocKey.day(d), base: nil, local: nil, remote: nil))
+        XCTAssertEqual(DocCodec.mergeDoc(key: DocKey.items, base: j("[]"), local: j(#"[{"id":"x"}]"#), remote: j("[]")), j(#"[{"id":"x"}]"#))
+    }
+
+    /// Bulguda: ilk "Zayi ekleme"yi geri almak `wasteLog` anahtarını siliyordu; çakışmada merge3 başka cihazın eklediği
+    /// kaydı düşürüyordu. Geri alma artık `[]` yazar.
+    func testUndoFirstWasteEntryKeepsConcurrentEntry() async throws {
+        let (server, a, b) = try await connectedPair()
+        let item = a.data.items[0].id
+        let d = "2026-08-31"
+        XCTAssertNil(a.data.days[d]?.wasteLog)
+        let before = a.data
+        let e1 = try XCTUnwrap(WasteLog.make(id: "e1", itemID: item, qty: 1, reason: .spoiled))
+        a.edit { $0.days[d] = WasteLog.adding(e1, to: $0.days[d]!) }
+        let after = a.data
+        try await syncOK(a)
+        try await syncOK(b)
+        let e2 = try XCTUnwrap(WasteLog.make(id: "e2", itemID: item, qty: 2, reason: .burnt))
+        b.edit { $0.days[d] = WasteLog.adding(e2, to: $0.days[d]!) }
+        try await syncOK(b)
+        // A geri alır (çekmeden)
+        let undone = DocCodec.undoing(keys: [DocKey.day(d)], old: before, new: after, current: a.data)
+        XCTAssertEqual(undone.days[d]?.wasteLog, [])
+        a.edit { $0 = undone }
+        try await syncOK(a)
+        XCTAssertEqual(server.doc(ws, DocKey.day(d))?.body["wasteLog"]?.arrayValue?.compactMap { $0["id"]?.stringValue }, ["e2"])
+        XCTAssertEqual(a.data.days[d]?.wasteLog?.map(\.id), ["e2"])
+    }
+}

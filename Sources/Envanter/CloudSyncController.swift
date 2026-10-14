@@ -274,14 +274,34 @@ final class CloudSyncController: ObservableObject {
         // Kayıtlı oturumla açılış: canlı bağlantı hemen kurulur (state didSet başlatıcıda çalışmaz)
         updateRealtime(tokenChanged: false)
 
-        // Uygulama kapanmadan önce durum dosyası yazılamamış değişiklikleri bul (tabandan ayrışan belgeler)
+        // Uygulama kapanmadan önce durum dosyası yazılamamış değişiklikleri bul (tabandan ayrışan belgeler). Önce veri
+        // biçimi yükseltmesi: eski sürümün (ör. 2.0) yerel veriye alamadığı alanlar (elle zayi, "Teslim alındı say")
+        // tabandan yerele taşınır; yoksa ayrışmış sanılıp sunucudan silinirlerdi (docs/SYNC.md §3 "Ayrışma").
         guard state.config?.workspaceID != nil, state.initialized else { startupCheckDone = true; return }
         let data = app.data, st = state
         Task { [weak self] in
-            let keys = await Task.detached(priority: .utility) { CloudSyncEngine.divergentKeys(local: data, state: st) }.value
-            guard let self else { return }
-            if !keys.isEmpty {
-                self.state.dirty.formUnion(keys)
+            let (healed, upgradedLevel, keys) = await Task.detached(priority: .utility) { () -> (AppData, Int, Set<String>) in
+                var s = st
+                let up = CloudSyncEngine.upgradingFormat(local: data, state: &s)
+                return (up.data, s.formatLevel, CloudSyncEngine.divergentKeys(local: up.data, state: s))
+            }.value
+            guard let self, let app = self.app else { return }
+            var dataChanged = false
+            if !DocCodec.changedKeys(data, healed).isEmpty {
+                // Denetim sürerken yapılan yerel değişiklikler korunur (eşitleme turundaki gibi) ve gönderilmek üzere işaretlenir
+                let current = app.data
+                let (final, changedMeanwhile) = DocCodec.rebase(started: data, current: current, synced: healed)
+                dataChanged = !DocCodec.changedKeys(current, final).isEmpty
+                if dataChanged { app.applyRemote(final) }
+                self.state.dirty.formUnion(changedMeanwhile)
+            }
+            let levelChanged = self.state.formatLevel != upgradedLevel
+            self.state.formatLevel = upgradedLevel
+            self.state.dirty.formUnion(keys)
+            if dataChanged {
+                // Önce veri dosyası, sonra durum (yükseltilmiş düzey eski veriyle diskte kalmasın)
+                self.checkpoint(app, dataChanged: true)
+            } else if !keys.isEmpty || levelChanged {
                 self.saveState()
             }
             self.startupCheckDone = true

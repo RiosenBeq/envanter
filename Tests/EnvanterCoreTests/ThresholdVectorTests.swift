@@ -35,6 +35,16 @@ final class ThresholdVectorTests: XCTestCase {
                 ThresholdChange.apply(changes, to: &items)
                 XCTAssertTrue(ThresholdChange.changes(items: items, suggestions: engine.thresholdSuggestions(asOf: date)).isEmpty, name)
             }
+            for v in c["gaps"]?.arrayValue ?? [] {
+                let date = v["date"]?.stringValue ?? ""
+                let gaps = ThresholdGaps.make(items: engine.data.items,
+                                              suggestions: engine.thresholdSuggestions(asOf: date, lookbackDays: Int(v["lookbackDays"]?.doubleValue ?? 28)))
+                XCTAssertEqual(gaps.tolerance, (v["expect"]?["tolerance"]?.arrayValue ?? []).compactMap { $0.stringValue }, name)
+                XCTAssertEqual(gaps.minStock, (v["expect"]?["minStock"]?.arrayValue ?? []).compactMap { $0.stringValue }, name)
+                let names: ([String]) -> [String] = { ids in ids.map { id in engine.data.items.first { $0.id == id }?.name ?? id } }
+                XCTAssertEqual(ThresholdGaps.text(.tolerance, names: names(gaps.tolerance)), v["text"]?["tolerance"]?.stringValue, name)
+                XCTAssertEqual(ThresholdGaps.text(.minStock, names: names(gaps.minStock)), v["text"]?["minStock"]?.stringValue, name)
+            }
             for v in c["setup"]?.arrayValue ?? [] {
                 let date = v["date"]?.stringValue ?? ""
                 let s = SetupChecklist.make(engine: engine, date: date, computerLinked: v["computerLinked"]?.boolValue ?? false)
@@ -47,6 +57,13 @@ final class ThresholdVectorTests: XCTestCase {
                 VectorSupport.check(actual, v["expect"], "\(name) kurulum \(date)")
             }
         }
+    }
+
+    func testThresholdGapTextShortensLongList() throws {
+        let root = try VectorSupport.load("threshold-vectors")
+        let names = (root["gapNames"]?["names"]?.arrayValue ?? []).compactMap { $0.stringValue }
+        XCTAssertEqual(ThresholdGaps.text(.minStock, names: names), root["gapNames"]?["minStock"]?.stringValue)
+        XCTAssertNil(ThresholdGaps.text(.tolerance, names: []))
     }
 
     func testRoundUpIgnoresFloatResidue() {

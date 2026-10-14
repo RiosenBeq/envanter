@@ -144,3 +144,37 @@ public struct ThresholdChange: Equatable, Sendable, Identifiable {
         }
     }
 }
+
+/// Değeri boş (tanımsız ya da 0) ama önerisi de olmayan aktif kalemler (kalem sırasıyla; web `thresholdGaps`): kurulum
+/// listesinde eksik görünürler ama "Eşik önerileri" onları dolduramaz (az veri; kritik seviyede tüketim yok). Pencere
+/// adlarını yazar: değer Stok Kalemleri tablosunda elle girilir.
+public struct ThresholdGaps: Equatable, Sendable {
+    public var tolerance: [String]
+    public var minStock: [String]
+
+    public static func make(items: [Item], suggestions: [ThresholdSuggestion]) -> ThresholdGaps {
+        let byID = Dictionary(suggestions.map { ($0.itemID, $0) }, uniquingKeysWith: { a, _ in a })
+        var out = ThresholdGaps(tolerance: [], minStock: [])
+        for item in items where item.active {
+            let s = byID[item.id]
+            if !((item.tolerance ?? 0) > 0) && s?.tolerance == nil { out.tolerance.append(item.id) }
+            if !((item.minStock ?? 0) > 0) && s?.minStock == nil { out.minStock.append(item.id) }
+        }
+        return out
+    }
+
+    /// Pencerede adı yazılan en çok kalem (fazlası "ve N kalem daha")
+    public static let shownNames = 6
+
+    /// "Önerisi olmayan, kritik seviyesi boş 1 kalem: Donuk Ekmek. En az 7 gün tüketim (satış) gerekir; değeri Stok
+    /// Kalemleri tablosunda elle girin." Kalem yoksa nil.
+    public static func text(_ field: ThresholdChange.Field, names: [String]) -> String? {
+        guard !names.isEmpty else { return nil }
+        let shown = names.prefix(shownNames).joined(separator: ", ")
+        let list = names.count > shownNames ? "\(shown) ve \(names.count - shownNames) kalem daha" : shown
+        let what = field == .tolerance ? "toleransı" : "kritik seviyesi"
+        let need = field == .tolerance ? "En az \(Engine.thresholdMinDays) sayılmış gün gerekir"
+                                       : "En az \(Engine.thresholdMinDays) gün tüketim (satış) gerekir"
+        return "Önerisi olmayan, \(what) boş \(names.count) kalem: \(list). \(need); değeri Stok Kalemleri tablosunda elle girin."
+    }
+}

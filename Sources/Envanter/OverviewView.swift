@@ -6,8 +6,19 @@ import EnvanterCore
 /// kalem eğilimi ve dikkat gerektirenler. Tutar gösterilmez: farklar kalemin biriminde (adet / kg) ve kalem sayısıdır.
 struct OverviewView: View {
     @EnvironmentObject var store: AppStore
-    /// Kurulum listesi bu Mac'te gizlendi (yerel tercih; eşitlenmez)
-    @AppStorage("setupChecklistHidden") private var setupHidden = false
+    /// Kurulum listesinin bu Mac'te gizlendiği şubeler (yerel tercih; eşitlenmez): satır başına şube kimliği, web paneline
+    /// bağlı değilken "yerel". Web paneli de şube başına tutar. Gizlenen liste "Diğer işlemler" → "Kurulum Listesini
+    /// Göster" ile geri gelir.
+    @AppStorage("setupChecklistHiddenFor") private var setupHiddenFor = ""
+
+    private var setupKey: String { store.cloud.state.config?.workspaceID ?? "yerel" }
+    private var setupHidden: Bool { setupHiddenFor.split(separator: "\n").contains { String($0) == setupKey } }
+
+    private func setSetupHidden(_ hidden: Bool) {
+        var keys = setupHiddenFor.split(separator: "\n").map(String.init).filter { $0 != setupKey }
+        if hidden { keys.append(setupKey) }
+        setupHiddenFor = keys.joined(separator: "\n")
+    }
 
     var body: some View {
         let date = store.selectedDate
@@ -21,7 +32,8 @@ struct OverviewView: View {
         let firstRun = store.isFirstRun
         // Kurulum listesi (patron / müdür; tamamlanınca kaybolur): tolerans, kritik seviye, tanımsız reçete, web paneli
         let setup = store.setupChecklist(date: date)
-        let showSetup = !firstRun && store.canEditCatalog && !setupHidden && !setup.isDone && setup.activeItems > 0
+        let setupPending = !firstRun && store.canEditCatalog && !setup.isDone && setup.activeItems > 0
+        let showSetup = setupPending && !setupHidden
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .center) {
@@ -40,7 +52,7 @@ struct OverviewView: View {
                             trendCard(Array(trend30.suffix(14)))
                         }
                         .frame(maxWidth: .infinity)
-                        todayCard(o).frame(width: 300)
+                        todayCard(o, canShowSetup: setupPending && setupHidden).frame(width: 300)
                     }
                     attention(rows: rows, analysis: analysis, overview: o)
                 }
@@ -90,9 +102,9 @@ struct OverviewView: View {
                     Label("Kurulum", systemImage: "wrench.and.screwdriver").font(.headline)
                     Text("Doğru uyarılar için eksikleri tamamlayın").font(.callout).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Gizle") { setupHidden = true }
+                    Button("Gizle") { setSetupHidden(true) }
                         .buttonStyle(.link)
-                        .help("Kurulum listesini bu Mac'te gizler")
+                        .help("Kurulum listesini bu Mac'te bu şube için gizler; Diğer işlemler menüsünden yeniden açılır")
                 }
                 HStack(spacing: 10) {
                     setupItem("Tolerans", "\(s.withTolerance)/\(s.activeItems)", done: s.toleranceDone) {
@@ -232,7 +244,7 @@ struct OverviewView: View {
 
     /// Günün üç adımı (web panelindeki "Bugün" kartıyla aynı sıra): ① satış raporunu aktar ② sayımı tamamla ③ günü kapat.
     /// Sıradaki adımın düğmesi vurgulu; diğer işlemler altta tek bir menüde.
-    private func todayCard(_ o: DayOverview) -> some View {
+    private func todayCard(_ o: DayOverview, canShowSetup: Bool) -> some View {
         let steps = DaySteps(o)
         let lock = store.lockAction(o.date)
         return Card {
@@ -274,7 +286,7 @@ struct OverviewView: View {
                     }
                 }
                 Divider()
-                otherActions
+                otherActions(canShowSetup: canShowSetup)
             }
         }
     }
@@ -323,7 +335,7 @@ struct OverviewView: View {
     }
 
     /// Diğer işlemler: tek menüde (Bugün kartının altında)
-    private var otherActions: some View {
+    private func otherActions(canShowSetup: Bool) -> some View {
         Menu {
             Button { store.beginPasteImport() } label: { Label("Panodan satış yapıştır", systemImage: "doc.on.clipboard") }
             Button { store.section = .orders } label: { Label("Sipariş önerisi", systemImage: "shippingbox.and.arrow.backward") }
@@ -332,6 +344,10 @@ struct OverviewView: View {
             Divider()
             Button { store.exportCountSheet() } label: { Label("Sayım formu (Excel)…", systemImage: "printer") }
             Button { store.exportDayExcel() } label: { Label("Günü Excel'e aktar…", systemImage: "square.and.arrow.up") }
+            if canShowSetup {
+                Divider()
+                Button { setSetupHidden(false) } label: { Label("Kurulum Listesini Göster", systemImage: "wrench.and.screwdriver") }
+            }
         } label: {
             Label("Diğer işlemler", systemImage: "ellipsis.circle")
         }

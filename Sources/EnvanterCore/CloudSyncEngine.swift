@@ -135,6 +135,7 @@ public enum CloudSyncEngine {
             break
         }
         state.initialized = true
+        state.formatLevel = DataFormat.level
         return data
     }
 
@@ -144,7 +145,8 @@ public enum CloudSyncEngine {
     /// yeniden başlar ve tabandan ayrışan belgeler (oturum kapalıyken yapılanlar) gönderilmek üzere "dirty" işaretlenir.
     /// Gönderim 3 yollu birleştirmeyle yapılır: arada web panelinde yapılan değişiklikler korunur.
     public static func resume(workspace: CloudWorkspace, local: AppData, state: inout SyncState) -> AppData {
-        let healed = restoreReadOnlyDocs(local: local, state: state)
+        let upgraded = upgradingFormat(local: local, state: &state).data
+        let healed = restoreReadOnlyDocs(local: upgraded, state: state)
         state.config?.workspaceName = workspace.name
         state.config?.role = workspace.role
         state.signedOut = false
@@ -200,6 +202,36 @@ public enum CloudSyncEngine {
         return local != DocCodec.normalize(key: key, body: base.body)
     }
 
+    /// Veri biçimi yükseltmesi (docs/SYNC.md §3 "Ayrışma"): yerel veri ve taban daha eski bir sürümle yazıldıysa
+    /// (`state.formatLevel` < `DataFormat.level`; ör. 2.0'dan 2.1'e güncellenen Mac) o sürüm sunucudaki gövdelerin yeni
+    /// alanlarını (gün `wasteLog`'u, siparişin `receivedWithoutIncoming`'i) çözemediği için yerel veriye almamıştır; taban
+    /// ise ham gövdeyi tutar. Bu alanlar ayrışma denetiminden (`divergentKeys`) ÖNCE yerele taşınmalıdır: yoksa yeni sürüm
+    /// onları "yerelde silinmiş" sanıp gönderir, web'de girilen elle zayi kayıtları ve "Teslim alındı say" işareti
+    /// sunucudan silinir (yalnızca zayi kaydı olan gün de silinirdi). Her belge için
+    /// merge3(taban = tabanın eski sürümdeki görünümü (`DocCodec.view`), yerel, uzak = tabanın bu sürümdeki görünümü):
+    /// yerelde (eski sürümle, "dirty" olsun olmasın) yapılan değişiklikler korunur, yalnızca eski sürümün göremediği
+    /// alanlar eklenir; tabanda olup yerelde olmayan gün boş gün sayılır. Sonra `state.formatLevel` güncellenir.
+    /// Yerele uygulanan anahtarlar döner (`dirty`'ye dokunulmaz; ayrışan belgeleri `divergentKeys` bulur).
+    @discardableResult
+    public static func upgradingFormat(local: AppData, state: inout SyncState) -> (data: AppData, changed: Set<String>) {
+        let from = state.formatLevel
+        guard from < DataFormat.level else { return (local, []) }
+        var data = local
+        var changed = Set<String>()
+        for (k, b) in state.base where !b.deleted && DocKey.isValid(k) {
+            guard let newView = DocCodec.decoded(key: k, body: b.body) else { continue }   // yok ya da çözülemiyor
+            let oldView = DocCodec.view(key: k, body: newView, formatLevel: from)
+            if oldView == newView { continue }
+            let before = DocCodec.body(for: k, in: data)
+            let localBody = before ?? DocKey.date(of: k).map { DocCodec.emptyDayBody($0) }
+            guard let merged = JSONMerge.merge3(base: oldView, local: localBody, remote: newView), merged != localBody,
+                  DocCodec.apply(key: k, body: merged, to: &data) else { continue }
+            if DocCodec.body(for: k, in: data) != before { changed.insert(k) }
+        }
+        state.formatLevel = DataFormat.level
+        return (data, changed)
+    }
+
     /// Yerel verinin tabandan ayrıştığı anahtarlar (uygulama kapanmadan önce "dirty" kaydedilemediyse bulunur).
     /// `canWriteCatalog` false ise (personel) tabanı olmayan tanım belgeleri sayılmaz. Tabandaki gövdesi Mac'çe
     /// çözülemeyen belge (ileriki sürümün biçimi, bozuk alan) ayrışmış sayılmaz: kullanıcı değiştirmeden üzerine
@@ -246,7 +278,7 @@ public enum CloudSyncEngine {
                     let base = state.base[key]
                     let baseN = (base?.deleted ?? true) ? nil : DocCodec.normalize(key: key, body: base?.body)
                     let localBody = DocCodec.body(for: key, in: out.data)
-                    let merged = JSONMerge.merge3(base: baseN, local: localBody, remote: remoteN)
+                    let merged = DocCodec.mergeDoc(key: key, base: baseN, local: localBody, remote: remoteN)
                     if merged != localBody { applyLocal(key, merged, &out) }
                     if key == DocKey.settings, state.config?.canWriteCatalog ?? true {
                         // Dizide kimlik olmadığından birleştirme yereldeki (taşınıp boşaltılmış) listeyi seçer; eski bir
@@ -376,7 +408,7 @@ public enum CloudSyncEngine {
                     // Sunucudaki gövde çözülemedi: yerel hal yeni tabanla yeniden gönderilir
                     out.undecodable.insert(key)
                 } else {
-                    let merged = JSONMerge.merge3(base: baseN, local: local, remote: serverN)
+                    let merged = DocCodec.mergeDoc(key: key, base: baseN, local: local, remote: serverN)
                     if merged != local { applyLocal(key, merged, &out) }
                     if key == DocKey.settings, state.config?.canWriteCatalog ?? true,
                        !legacyStaffMigrationOnHold(state: state, undecodable: []) {

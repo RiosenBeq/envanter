@@ -31,6 +31,21 @@ public enum SessionWorker {
         return out
     }
 
+    /// Çalışanın tutulduğu cihaz hesabı: e-postanın kullanıcı adı ("pc-7kq2m9"; büyük / küçük harf ve boşluk farkı yok).
+    /// Cihaz hesabı değilse nil (kişisel hesapta çalışan sorulmaz ve kullanılmaz).
+    public static func account(email: String?) -> String? {
+        guard let email else { return nil }
+        return PairCode.deviceName(forEmail: email)
+    }
+
+    /// Geçerli çalışan: yalnızca bir cihaz hesabıyla bağlıyken (`account`) ve seçim o hesapta yapıldıysa (`chosenOn`).
+    /// Çıkış yapılıp kişisel hesapla bağlanınca ya da yerel çalışılınca kullanılmaz; başka bir cihaz hesabıyla bağlanınca
+    /// yeniden sorulur (web: oturum anahtarı kullanıcı kimliğine göredir, `currentWorker`).
+    public static func active(_ worker: String?, chosenOn: String?, account: String?) -> String? {
+        guard let account, account == chosenOn else { return nil }
+        return normalized(worker)
+    }
+
     /// Seçilen ad (boşluklar atılır; boşsa nil)
     public static func normalized(_ name: String?) -> String? {
         let n = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

@@ -888,8 +888,9 @@ final class CloudSyncController: ObservableObject {
         let started = app.data
         var st = state
         do {
-            // Paylaşılan bilgisayarda çalışan değişiklik geçmişi özetine eklenir (" · Murat A."; SessionWorker)
-            let out = try await CloudSyncEngine.syncOnce(local: started, state: &st, api: api, worker: app.sessionWorker) { done, total in
+            // Paylaşılan bilgisayarda çalışan değişiklik geçmişi özetine eklenir (" · Murat A."; SessionWorker). Yalnızca
+            // seçildiği cihaz hesabıyla bağlıyken (`activeWorker`): kişisel hesapla bağlanınca eklenmez
+            let out = try await CloudSyncEngine.syncOnce(local: started, state: &st, api: api, worker: app.activeWorker) { done, total in
                 Task { @MainActor [weak self] in
                     if total > 1 && done < total {
                         self?.progress = (done: done, total: total)

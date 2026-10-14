@@ -33,4 +33,22 @@ final class WorkerTests: XCTestCase {
                            v["expect"]?.stringValue, "\(v)")
         }
     }
+
+    /// Çalışan yalnızca seçildiği cihaz hesabıyla bağlıyken geçerlidir (çıkış, kişisel hesap, başka cihaz hesabı: yok)
+    func testActiveWorkerFollowsDeviceAccount() {
+        let pc = SessionWorker.account(email: " PC-7KQ2M9@envanter.local ")
+        XCTAssertEqual(pc, "pc-7kq2m9")
+        XCTAssertNil(SessionWorker.account(email: "ayse.yilmaz@envanter.local"))
+        XCTAssertNil(SessionWorker.account(email: nil))
+        XCTAssertEqual(SessionWorker.active(" Murat A. ", chosenOn: pc, account: "pc-7kq2m9"), "Murat A.")
+        // Çıkış yapıldı ya da yerel çalışılıyor; kişisel hesapla bağlı
+        XCTAssertNil(SessionWorker.active("Murat A.", chosenOn: pc, account: nil))
+        XCTAssertNil(SessionWorker.active("Murat A.", chosenOn: pc, account: SessionWorker.account(email: "patron@ornek.com")))
+        // Başka bir cihaz hesabı; henüz sorulmadı
+        XCTAssertNil(SessionWorker.active("Murat A.", chosenOn: pc, account: SessionWorker.account(email: "pc-abcdef@envanter.local")))
+        XCTAssertNil(SessionWorker.active("Murat A.", chosenOn: nil, account: pc))
+        // Atlandı
+        XCTAssertNil(SessionWorker.active(nil, chosenOn: pc, account: pc))
+        XCTAssertNil(SessionWorker.active("  ", chosenOn: pc, account: pc))
+    }
 }

@@ -142,13 +142,22 @@ final class AppStore: ObservableObject {
     @Published var dailyFilter: DailyRowFilter = .all
     /// Gün menüsündeki "Kalem Ara" (⌘F): Günlük Sayım arama kutusuna odaklanır (ekran açılınca da), sonra sıfırlanır
     @Published var focusDailySearch = false
+    /// "Kalem Ara" (⌘F) Stok Kalemleri açıkken: oradaki arama kutusuna odaklanır (ekrandan çıkılmaz), sonra sıfırlanır
+    @Published var focusItemsSearch = false
+    /// "Sayılmayanları Göster": Günlük Sayım'daki kalem araması temizlenir (sayılmayanların hepsi görünsün; web ile aynı),
+    /// sonra sıfırlanır
+    @Published var clearDailySearch = false
     /// Genel Bakış'taki "Kapatılmamış günler" penceresi
     @Published var showUnclosedDays = false
-    /// Paylaşılan mağaza bilgisayarında (cihaz hesabı) şu an çalışan: yalnızca bu uygulama açık kaldıkça tutulur, eşitlenmez
-    /// (`SessionWorker`); değişiklik geçmişi özetine eklenir, Sayan ve Zayi Ekle "Kim" varsayılanı olur
+    /// Paylaşılan mağaza bilgisayarında (cihaz hesabı) seçilen çalışan: yalnızca bu uygulama açık kaldıkça tutulur, eşitlenmez
+    /// (`SessionWorker`). Kullanılan değer `activeWorker`dır (seçildiği cihaz hesabıyla bağlıyken).
     @Published private(set) var sessionWorker: String?
     /// "Şu an kim çalışıyor?" penceresi
     @Published var showWorkerPrompt = false
+    /// Pencere yan menüden ("Değiştir") açıldı: Esc / "Vazgeç" seçili çalışanı korur (ilk soruda kapatmak "Atla" sayılır)
+    @Published private(set) var workerPromptIsChange = false
+    /// Otomatik test: web eşitlemesi kapalıyken bağlı cihaz hesabının yerine geçer ("pc-7kq2m9"; SelfTest)
+    var testDeviceAccount: String?
     /// Açık "Web Paneline Bağlan" penceresi (Web'e Bağlan düğmeleri, menü ya da envanter://baglan… bağlantısı)
     @Published var connectRequest: ConnectRequest?
     /// Ekran görüntüsü aracı: bağlanma penceresinin içeriği ana pencerenin üstünde gösterilir (pencere görüntüsüne
@@ -168,8 +177,9 @@ final class AppStore: ObservableObject {
     private var saveGeneration = 0
     private var lastBackupAt: Date?
     private var saveErrorReported = false
-    /// Çalışan bu uygulama oturumunda soruldu
-    private var workerAsked = false
+    /// Çalışanın sorulduğu (ve seçildiği) cihaz hesabı ("pc-7kq2m9"): bu oturumda o hesap için bir daha kendiliğinden
+    /// sorulmaz; başka bir hesapla bağlanınca seçim kullanılmaz (`SessionWorker.active`)
+    private var workerAccount: String?
     /// Personelin eski güne giriş uyarısı bu oturumda gösterildi
     private var oldDayWarned = false
 
@@ -440,7 +450,7 @@ final class AppStore: ObservableObject {
     /// (`SessionWorker.countedBy`; aynı geri alma adımında)
     func updateEntry(_ itemID: String, date: String, _ mutate: (inout DayEntry) -> Void) {
         guard !isLocked(date) else { NSSound.beep(); return }
-        let worker = sessionWorker
+        let worker = activeWorker
         mutateData("Sayım Girişi") { d in
             var day = d.days[date] ?? DayRecord(date: date)
             let before = day.entries[itemID] ?? DayEntry()
@@ -501,11 +511,13 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Onay penceresindeki "Sayılmayanları Göster": Günlük Sayım'da Sayılmayan filtresi
+    /// Onay penceresindeki "Sayılmayanları Göster": Günlük Sayım'da Sayılmayan filtresi; kalem araması temizlenir (yoksa
+    /// sayılmayanların bir kısmı aramaya takılıp görünmez; web ile aynı)
     func showUncounted(_ date: String) {
         pendingDayClose = nil
         selectedDate = date
         dailyFilter = .uncounted
+        clearDailySearch = true
         section = .daily
     }
 
@@ -522,8 +534,13 @@ final class AppStore: ObservableObject {
         UnclosedDays.list(engine: engine, asOf: selectedDate, canChangeLockedDay: canChangeLockedDays)
     }
 
-    /// Gün menüsü → Kalem Ara (⌘F): Günlük Sayım açılır, arama kutusuna odaklanılır
-    func requestDailySearch() {
+    /// Gün menüsü → Kalem Ara (⌘F): Stok Kalemleri açıksa oradaki arama kutusuna odaklanılır; değilse Günlük Sayım açılır
+    /// ve onun arama kutusuna odaklanılır
+    func requestItemSearch() {
+        if section == .items {
+            focusItemsSearch = true
+            return
+        }
         section = .daily
         focusDailySearch = true
     }
@@ -606,13 +623,25 @@ final class AppStore: ObservableObject {
     func defaultWasteBy(date: String) -> String {
         var linked: String?
         if let email = cloud.state.config?.email, !PairCode.isDeviceAccount(email) { linked = employee(linkedTo: email)?.name }
-        return SessionWorker.defaultBy(countedBy: data.days[date]?.countedBy, worker: sessionWorker, linkedName: linked)
+        return SessionWorker.defaultBy(countedBy: data.days[date]?.countedBy, worker: activeWorker, linkedName: linked)
     }
 
     // MARK: - Paylaşılan bilgisayarda çalışan
 
+    /// Bağlı cihaz hesabı ("pc-7kq2m9"): bu Mac bağlantı koduyla web paneline bağlıyken; kişisel hesapla, çıkış yapılmışken
+    /// ya da yerel çalışırken nil
+    var deviceAccount: String? {
+        if let t = testDeviceAccount { return t }
+        guard cloud.isConnected else { return nil }
+        return SessionWorker.account(email: cloud.state.config?.email)
+    }
+
     /// Bu Mac bağlantı koduyla (cihaz hesabı pc-…) web paneline bağlı: "Şu an kim çalışıyor?" sorulur
-    var asksWorker: Bool { cloud.isConnected && SessionWorker.asks(email: cloud.state.config?.email) }
+    var asksWorker: Bool { deviceAccount != nil }
+
+    /// Şu an geçerli çalışan: yalnızca seçildiği cihaz hesabıyla bağlıyken. Çıkış yapılıp kişisel hesapla bağlanınca ya da
+    /// yerel çalışılınca Sayan, Zayi Ekle "Kim" ve değişiklik geçmişi özetinde kullanılmaz (web `currentWorker` ile aynı).
+    var activeWorker: String? { SessionWorker.active(sessionWorker, chosenOn: workerAccount, account: deviceAccount) }
 
     /// Seçenekler: aktif ekip üyeleri
     var workerOptions: [String] { SessionWorker.options(data.employees) }
@@ -620,18 +649,43 @@ final class AppStore: ObservableObject {
     /// Uygulama oturumunda bir kez sorar (cihaz hesabıyla bağlanınca). Başka bir pencere (bağlanma, satış aktarımı) açıkken
     /// beklenir; o kapanınca yeniden denenir.
     func askWorkerIfNeeded() {
-        guard asksWorker, !workerAsked, !showWorkerPrompt,
+        guard let account = deviceAccount, account != workerAccount, !showWorkerPrompt,
               connectRequest == nil, importPreview == nil, workbookPreview == nil else { return }
+        workerPromptIsChange = false
         showWorkerPrompt = true
     }
 
-    /// Pencere göründü: bu oturumda bir daha kendiliğinden sorulmaz
-    func markWorkerAsked() { workerAsked = true }
+    /// Pencere göründü: bu hesap için bu oturumda bir daha kendiliğinden sorulmaz. Başka bir cihaz hesabının seçimi silinir.
+    func markWorkerAsked() {
+        guard let account = deviceAccount, account != workerAccount else { return }
+        workerAccount = account
+        sessionWorker = nil
+    }
 
-    /// Çalışanı seçer (nil / boş: "Atla"); pencere kapanır
+    /// Yan menüdeki ad ("Değiştir"): pencere yeniden açılır; Esc / "Vazgeç" seçili çalışanı korur
+    func requestWorkerChange() {
+        guard asksWorker else { return }
+        workerPromptIsChange = true
+        showWorkerPrompt = true
+    }
+
+    /// Çalışanı seçer (nil / boş: "Atla", kimse seçilmedi); pencere kapanır
     func setWorker(_ name: String?) {
+        workerAccount = deviceAccount
         sessionWorker = SessionWorker.normalized(name)
+        workerPromptIsChange = false
         showWorkerPrompt = false
+    }
+
+    /// Pencere seçim yapılmadan kapandı (Esc): ilk soruda "Atla" sayılır, "Değiştir"de seçili çalışan kalır (web
+    /// `closeWorkerPrompt` ile aynı)
+    func closeWorkerPrompt() {
+        if workerPromptIsChange {
+            workerPromptIsChange = false
+            showWorkerPrompt = false
+        } else {
+            setWorker(nil)
+        }
     }
 
     // MARK: - Eşik önerileri ve kurulum

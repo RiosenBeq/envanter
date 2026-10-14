@@ -21,6 +21,8 @@ final class DayCloseTests: XCTestCase {
         XCTAssertEqual(k?["unclosedSubtitle"]?.stringValue, UnclosedDays.subtitle)
         XCTAssertEqual(k?["unclosedEmpty"]?.stringValue, UnclosedDays.emptyText)
         XCTAssertEqual(k?["closeSelectedLabel"]?.stringValue, UnclosedDays.closeSelectedLabel)
+        XCTAssertEqual(k?["unclosedDismissLabel"]?.stringValue, UnclosedDays.dismissLabel)
+        XCTAssertEqual(k?["unclosedBadgeHelp"]?.stringValue, UnclosedDays.badgeHelp)
         XCTAssertEqual(k?["oldDayDays"]?.doubleValue, Double(OldDayWarning.days))
         XCTAssertEqual(k?["oldDayTitle"]?.stringValue, OldDayWarning.title)
         XCTAssertEqual(DayLockAction.confirmMessage, DayCloseCheck.staffRule)
@@ -36,6 +38,7 @@ final class DayCloseTests: XCTestCase {
             let n = Int(t["count"]?.doubleValue ?? 0)
             XCTAssertEqual(UnclosedDays.title(n), t["title"]?.stringValue)
             XCTAssertEqual(UnclosedDays.closedText(n), t["closed"]?.stringValue)
+            XCTAssertEqual(UnclosedDays.badge(n), t["badge"]?.stringValue)
         }
 
         let evaluate = root["evaluate"]?.arrayValue ?? []

@@ -41,7 +41,7 @@ Diğer:
 | ⌘E | Günü Excel'e aktar |
 | ⌘[ / ⌘] / ⌘T | Önceki gün / sonraki gün / bugün |
 | ⌘L | Günü kapat / kilidi aç |
-| ⌘F | Kalem ara (Günlük Sayım) |
+| ⌘F | Kalem ara (Günlük Sayım; Stok Kalemleri açıksa oradaki arama) |
 | ⌘1 … ⌘8 | Genel Bakış, Günlük Sayım, Satış Dökümü, Sipariş, Raporlar, Stok Kalemleri, Reçeteler, Ekip |
 | ⌘, | Ayarlar |
 | ⌘Z / ⇧⌘Z | Geri al / yinele |
@@ -99,7 +99,7 @@ Mac uygulaması, patron ve müdürlerin kullandığı **web paneliyle** ([envant
 - **Kapatılmış gün:** Kapatılmış (kilitli) günü yalnızca patron ve müdür değiştirebilir, kilidini açabilir ya da silebilir; sunucu da personelin bu yazmalarını reddeder.
 - **Çakışmalar:** Veri belgelere bölünür (stok kalemleri, reçeteler, ayarlar, ekip, siparişler ve her gün ayrı bir belge). Aynı belge iki yerde değiştirilirse alan bazında birleştirilir: aynı güne farklı kalemlerin sayımı girilirse ikisi de korunur; aynı alan iki yerde değiştirilirse son gönderilen geçerli olur. Mac'in bilmediği alanlar (eski sürümlerin maliyet ve vardiya alanları dahil) kaybolmaz.
 - **Değişiklik geçmişi:** Her gönderim web panelindeki geçmişe kısa bir özetle yazılır, ör. "09.10.2026 sayımı: 90 Gr kapanış 120 → 110", "09.10.2026 satış raporu aktarıldı (121 satır)", "Ekip: Ayşe eklendi".
-- **Paylaşılan bilgisayarda kim çalışıyor:** Bağlantı koduyla bağlanan Mac (cihaz hesabı) açılınca bir kez "Şu an kim çalışıyor?" diye sorar (aktif ekip üyeleri; *Atla* ile geçilebilir, yan menüdeki addan değiştirilir). Seçilen ad yalnızca bu Mac'te, uygulama açık kaldıkça tutulur: değişiklik geçmişi özetine eklenir ("… → 110 · Murat A."), günün *Sayan*'ı boşsa ilk kapanışta yazılır ve *Zayi Ekle*'de "Kim" varsayılanı olur.
+- **Paylaşılan bilgisayarda kim çalışıyor:** Bağlantı koduyla bağlanan Mac (cihaz hesabı) açılınca bir kez "Şu an kim çalışıyor?" diye sorar (aktif ekip üyeleri; *Atla* ile geçilebilir, yan menüdeki addan değiştirilir; değiştirirken *Vazgeç* seçili adı korur). Seçilen ad yalnızca bu Mac'te, uygulama açık kaldıkça ve o cihaz hesabıyla bağlıyken kullanılır (çıkış yapılıp kişisel hesapla girilince kullanılmaz): değişiklik geçmişi özetine eklenir ("… → 110 · Murat A."), günün *Sayan*'ı boşsa ilk kapanışta yazılır ve *Zayi Ekle*'de "Kim" varsayılanı olur.
 - **Geri al:** ⌘Z yalnızca kendi yaptığınız değişikliğin alanlarını geri alır; arada web panelinden gelen değişiklikler korunur.
 - **Oturum ve gizlilik:** Kişi hesaplarının şifresi saklanmaz (bağlantı koduyla bağlanan Mac'in cihaz hesabı şifresi, Mac'in kendi ürettiği rastgele şifredir; yukarıya bakın). Oturum anahtarları ve eşitleme durumu veri klasöründeki `esitleme.json` dosyasında yalnızca kullanıcının okuyabileceği izinle (0600) tutulur; yedeklere girmez. *Çıkış Yap* eşitlemeyi durdurur, bu Mac'teki veriyi silmez ve şube eşleşmesini korur. *Çıkış Yap ve Bu Mac'i Şubeden Ayır* eşleşmeyi de siler.
 - Otomatik test (`ENVANTER_SELFTEST`) ve ekran görüntüsü (`ENVANTER_SNAPSHOT_DIR`) modlarında eşitleme kapalıdır.

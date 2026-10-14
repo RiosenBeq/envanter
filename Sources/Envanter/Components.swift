@@ -288,7 +288,7 @@ struct DateNavigator: View {
 /// Sayı hücresi: Türkçe (virgül) ve nokta kabul eder; Enter/↓ alt satıra, ↑ üst satıra geçer.
 /// Odak kaybında ve hücre ekrandan kalkarken (ör. gün değiştirilince) yazılan değer kaydedilir.
 /// `isKg` verilirse (sayım hücreleri) toplayarak giriş kabul edilir: "12+8+5", "3x24+7" (`Fmt.parseCountExpression`);
-/// kaydedilen işlem ("12+8+5 = 25") hücrenin ipucu olur ve VoiceOver'a duyurulur.
+/// kaydedilen işlem ("12+8+5 = 25") hücrenin değeri o sonuç kaldıkça ipucudur ve VoiceOver'a duyurulur.
 struct NumberCell: View {
     let id: CellID
     /// Görünen satırların kalem sırası (↑/↓/Enter ile geçiş için)
@@ -306,8 +306,10 @@ struct NumberCell: View {
     @FocusState.Binding var focus: CellID?
     @State private var text = ""
     @State private var dirty = false
-    /// Bu hücreye toplayarak girilen son işlem ("12+8+5 = 25"); hücre ekranda kaldıkça ipucudur
+    /// Bu hücreye toplayarak girilen son işlem ("12+8+5 = 25") ve sonucu. Yalnızca hücrenin değeri bu sonuç kaldıkça
+    /// ipucudur: düz sayı yazılınca, silinince, geri alınınca ya da eşitlemeyle değişince açılışın dayanağı geri gelir.
     @State private var expression: String?
+    @State private var expressionValue: Double?
     @Environment(\.isEnabled) private var isEnabled
 
     private var isFocused: Bool { focus == id }
@@ -340,7 +342,13 @@ struct NumberCell: View {
             .onSubmit { commit(); move(1) }
             .onKeyPress(.downArrow) { commit(); move(1); return .handled }
             .onKeyPress(.upArrow) { commit(); move(-1); return .handled }
-            .help(expression ?? cellHelp)
+            .help(expressionHelp ?? cellHelp)
+    }
+
+    /// Kayıtlı işlem, hücrenin değeri hâlâ onun sonucuysa
+    private var expressionHelp: String? {
+        guard let expression, let expressionValue, value == expressionValue else { return nil }
+        return expression
     }
 
     private var background: Color {
@@ -366,6 +374,7 @@ struct NumberCell: View {
         if trimmed.isEmpty {
             if value != nil { value = nil }
             text = ""
+            expression = nil
             return
         }
         let parsed: Double?
@@ -380,7 +389,11 @@ struct NumberCell: View {
         text = display(v)
         if isKg != nil, let said = Fmt.countExpressionText(trimmed, value: v, maxFraction: maxFraction) {
             expression = said
+            expressionValue = v
             announce(label.isEmpty ? said : "\(label): \(said)")
+        } else {
+            // Düz sayı: eski işlem ipucu olarak kalmaz
+            expression = nil
         }
     }
 

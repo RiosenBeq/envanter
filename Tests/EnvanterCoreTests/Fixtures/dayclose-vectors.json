@@ -11,6 +11,8 @@
     "unclosedSubtitle": "Son 60 gün: sayımı girilmiş ama kapatılmamış günler. Kapatılan günün sayım ve satışı kilitlenir.",
     "unclosedEmpty": "Son 60 günde sayılmış ama kapatılmamış gün yok.",
     "closeSelectedLabel": "Seçilenleri Kapat",
+    "unclosedDismissLabel": "Vazgeç",
+    "unclosedBadgeHelp": "Son 60 günün kapatılmamış günleri: kontrol listesiyle aç, seçilenleri kapat",
     "oldDayDays": 7,
     "oldDayTitle": "7 günden eski bir güne giriş yapıyorsunuz"
   },
@@ -32,12 +34,14 @@
     {
       "count": 1,
       "title": "Kapatılmamış günler (1)",
-      "closed": "1 gün kapatıldı"
+      "closed": "1 gün kapatıldı",
+      "badge": "1 sayılmış gün kapatılmadı"
     },
     {
       "count": 12,
       "title": "Kapatılmamış günler (12)",
-      "closed": "12 gün kapatıldı"
+      "closed": "12 gün kapatıldı",
+      "badge": "12 sayılmış gün kapatılmadı"
     }
   ],
   "evaluate": [

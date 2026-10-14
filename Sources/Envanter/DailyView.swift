@@ -82,9 +82,11 @@ struct DailyView: View {
             legend(rows: allRows, locked: locked)
         }
         .navigationTitle("Günlük Sayım")
-        // Gün menüsü → Kalem Ara (⌘F): ekran yeni açıldıysa da arama kutusuna odaklanılır
-        .onAppear { takeSearchRequest() }
+        // Gün menüsü → Kalem Ara (⌘F): ekran yeni açıldıysa da arama kutusuna odaklanılır. "Sayılmayanları Göster"
+        // aramayı temizler (sayılmayanların hepsi görünsün)
+        .onAppear { takeSearchRequest(); takeClearRequest() }
         .onChange(of: store.focusDailySearch) { _, _ in takeSearchRequest() }
+        .onChange(of: store.clearDailySearch) { _, _ in takeClearRequest() }
         .overlay { if dropTargeted { dropOverlay } }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard let p = providers.first else { return false }
@@ -106,6 +108,13 @@ struct DailyView: View {
         guard store.focusDailySearch else { return }
         store.focusDailySearch = false
         DispatchQueue.main.async { searchFocused = true }
+    }
+
+    /// "Sayılmayanları Göster" isteği: arama temizlenir
+    private func takeClearRequest() {
+        guard store.clearDailySearch else { return }
+        store.clearDailySearch = false
+        query = ""
     }
 
     /// "Zayi Ekle" (açık döküm penceresi önce kapanır; sayfa penceresi onun ardından açılır)

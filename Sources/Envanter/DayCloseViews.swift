@@ -65,7 +65,7 @@ struct UnclosedDaysSheet: View {
             }
             HStack {
                 Spacer()
-                Button("Kapat") { dismiss() }
+                Button(UnclosedDays.dismissLabel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(SoftButtonStyle())
                 if manager && !days.isEmpty {
@@ -117,12 +117,14 @@ struct UnclosedDaysSheet: View {
 }
 
 /// Paylaşılan mağaza bilgisayarında (bağlantı koduyla bağlı, cihaz hesabı) "Şu an kim çalışıyor?": uygulama oturumunda
-/// bir kez ve yan menüdeki adla açılır. Seçim yalnızca bu uygulama açık kaldıkça tutulur.
+/// bir kez ve yan menüdeki adla ("Değiştir") açılır. Seçim yalnızca bu uygulama açık kaldıkça tutulur. İlk soruda Esc
+/// "Atla" demektir; "Değiştir"de Esc / "Vazgeç" seçili çalışanı korur, "Atla" kimseyi seçmez (web WorkerPrompt ile aynı).
 struct WorkerSheet: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
         let names = store.workerOptions
+        let current = store.activeWorker
         VStack(alignment: .leading, spacing: 12) {
             Text(SessionWorker.promptTitle).font(.title3.weight(.semibold))
             Text(SessionWorker.promptMessage).font(.callout).foregroundStyle(.secondary)
@@ -132,7 +134,7 @@ struct WorkerSheet: View {
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                     ForEach(names, id: \.self) { n in
-                        let selected = n == store.sessionWorker
+                        let selected = n == current
                         Button { store.setWorker(n) } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "person.crop.circle").foregroundStyle(selected ? Brand.accent : Color.secondary)
@@ -152,9 +154,17 @@ struct WorkerSheet: View {
             }
             HStack {
                 Spacer()
-                Button(SessionWorker.skipLabel) { store.setWorker(nil) }
-                    .keyboardShortcut(.cancelAction)
-                    .buttonStyle(SoftButtonStyle())
+                if store.workerPromptIsChange {
+                    Button(SessionWorker.skipLabel) { store.setWorker(nil) }
+                        .buttonStyle(SoftButtonStyle())
+                    Button("Vazgeç") { store.closeWorkerPrompt() }
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(SoftButtonStyle())
+                } else {
+                    Button(SessionWorker.skipLabel) { store.closeWorkerPrompt() }
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(SoftButtonStyle())
+                }
             }
         }
         .padding(20)
@@ -170,10 +180,10 @@ struct WorkerRow: View {
 
     var body: some View {
         if cloud.isConnected && store.asksWorker {
-            Button { store.showWorkerPrompt = true } label: {
+            Button { store.requestWorkerChange() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "person.crop.circle").foregroundStyle(Brand.accent)
-                    Text(store.sessionWorker ?? "Çalışan seçilmedi").lineLimit(1)
+                    Text(store.activeWorker ?? "Çalışan seçilmedi").lineLimit(1)
                     Spacer(minLength: 4)
                     Text(SessionWorker.changeLabel).foregroundStyle(.secondary)
                 }

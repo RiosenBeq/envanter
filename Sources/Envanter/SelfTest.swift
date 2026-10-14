@@ -516,9 +516,12 @@ enum SelfTest {
         check(store.lockMenuTitle(d2) == "Günü Kapat…", "müdür: eksik günde Gün menüsünde \"Günü Kapat…\"")
         store.requestLockToggle(d2)
         check(store.pendingDayClose == d2 && !store.isLocked(d2), "müdür: eksik gün kapatılmadan önce onay bekliyor")
+        store.clearDailySearch = false
         store.showUncounted(d2)
         check(store.pendingDayClose == nil && store.dailyFilter == .uncounted && store.section == .daily && !store.isLocked(d2),
               "\"Sayılmayanları Göster\": Günlük Sayım Sayılmayan filtresiyle açıldı, gün açık")
+        check(store.clearDailySearch, "\"Sayılmayanları Göster\": kalem araması temizleniyor (web ile aynı)")
+        store.clearDailySearch = false
         store.dailyFilter = .all
         store.requestLockToggle(d2)
         if let pending = store.pendingDayClose { store.confirmDayClose(pending) }
@@ -549,11 +552,34 @@ enum SelfTest {
               "arama satırları daraltıyor (\"pat\": \(patRows.count) / \(allD1.count))")
         check(store.dailyRows(date: d1, filter: .all, query: "zzz-yok").isEmpty, "eşleşmeyen arama boş liste")
         check(store.dailyRows(date: d1, filter: .uncounted, query: "").allSatisfy { !$0.isCounted }, "filtre ve arama birlikte")
+        // Kalem Ara (⌘F): Stok Kalemleri açıksa oradaki aramaya odaklanır, değilse Günlük Sayım'a geçer
+        let sectionBefore = store.section
+        store.section = .items
+        store.requestItemSearch()
+        check(store.section == .items && store.focusItemsSearch && !store.focusDailySearch, "⌘F Stok Kalemleri'nde kendi aramasına odaklanıyor")
+        store.focusItemsSearch = false
+        store.section = .overview
+        store.requestItemSearch()
+        check(store.section == .daily && store.focusDailySearch && !store.focusItemsSearch, "⌘F başka ekranda Günlük Sayım aramasına geçiyor")
+        store.focusDailySearch = false
+        store.section = sectionBefore
         check(Fmt.parseCountExpression("12+8+5", isKg: false) == 25 && Fmt.parseCountExpression("1.200", isKg: false) == 1200
               && Fmt.parseCountExpression("5-7", isKg: false) == nil, "toplayarak giriş: 12+8+5 = 25, adet 1.200 = 1200, 5-7 geçersiz")
-        check(!store.asksWorker, "bağlantı koduyla bağlı değilken çalışan sorulmuyor")
+        check(!store.asksWorker && store.activeWorker == nil, "bağlantı koduyla bağlı değilken çalışan sorulmuyor")
+        store.askWorkerIfNeeded()
+        check(!store.showWorkerPrompt, "kişisel hesapla / yerelde \"Şu an kim çalışıyor?\" açılmıyor")
+        // Cihaz hesabıyla bağlı (otomatik testte web eşitlemesi kapalı: hesap doğrudan verilir); araya giren pencere yok
+        store.connectRequest = nil
+        store.importPreview = nil
+        store.workbookPreview = nil
+        store.testDeviceAccount = "pc-7kq2m9"
+        store.askWorkerIfNeeded()
+        check(store.showWorkerPrompt && !store.workerPromptIsChange, "cihaz hesabıyla bağlanınca çalışan soruluyor")
+        store.markWorkerAsked()
         store.setWorker("  Murat A. ")
-        check(store.sessionWorker == "Murat A." && !store.showWorkerPrompt, "çalışan seçildi")
+        check(store.activeWorker == "Murat A." && !store.showWorkerPrompt, "çalışan seçildi")
+        store.askWorkerIfNeeded()
+        check(!store.showWorkerPrompt, "aynı hesapta oturumda bir kez soruluyor")
         let wDay = "2026-08-26"
         store.entryBinding(item: "g90", date: wDay, \.closing).wrappedValue = 5
         check(store.data.days[wDay]?.countedBy == "Murat A.", "ilk kapanış girilince Sayan çalışan oldu")
@@ -561,10 +587,37 @@ enum SelfTest {
         store.entryBinding(item: "peynir", date: wDay, \.closing).wrappedValue = 2
         check(store.data.days[wDay]?.countedBy == "Selin K.", "Sayan doluyken değişmedi")
         check(store.defaultWasteBy(date: "2026-08-27") == "Murat A.", "Zayi Ekle \"Kim\" varsayılanı çalışan")
-        check(SessionWorker.summary("01.08.2026 sayımı: 90 Gr kapanış 120", worker: store.sessionWorker) == "01.08.2026 sayımı: 90 Gr kapanış 120 · Murat A.",
+        check(SessionWorker.summary("01.08.2026 sayımı: 90 Gr kapanış 120", worker: store.activeWorker) == "01.08.2026 sayımı: 90 Gr kapanış 120 · Murat A.",
               "değişiklik geçmişi özetine çalışan eklenir")
+        // "Değiştir" → Esc / Vazgeç: seçili çalışan kalır (web closeWorkerPrompt)
+        store.requestWorkerChange()
+        check(store.showWorkerPrompt && store.workerPromptIsChange, "Değiştir: pencere yeniden açıldı")
+        store.closeWorkerPrompt()
+        check(!store.showWorkerPrompt && store.activeWorker == "Murat A.", "Değiştir → Vazgeç: çalışan değişmedi")
+        // Çıkış yapılıp kişisel hesapla (ya da yerel) çalışılınca seçilen çalışan kullanılmaz
+        store.testDeviceAccount = nil
+        let pDay = "2026-08-28"
+        check(store.data.days[pDay] == nil, "denemedeki gün boş")
+        store.entryBinding(item: "g90", date: pDay, \.closing).wrappedValue = 7
+        check(store.activeWorker == nil && store.data.days[pDay]?.entries["g90"]?.closing == 7 && store.data.days[pDay]?.countedBy == nil
+              && store.defaultWasteBy(date: "2026-08-27") != "Murat A.",
+              "çıkıştan sonra çalışan Sayan'a, Zayi \"Kim\"e ve özete yazılmıyor")
+        // Başka bir cihaz hesabı: önceki seçim kullanılmaz, yeniden sorulur
+        store.testDeviceAccount = "pc-abcdef"
+        check(store.activeWorker == nil, "başka cihaz hesabında önceki çalışan kullanılmıyor")
+        store.askWorkerIfNeeded()
+        check(store.showWorkerPrompt && !store.workerPromptIsChange, "başka cihaz hesabında çalışan yeniden soruluyor")
+        store.markWorkerAsked()
+        store.closeWorkerPrompt()
+        check(!store.showWorkerPrompt && store.activeWorker == nil, "ilk soruda Esc: Atla (çalışan seçilmedi)")
+        // İlk hesaba dönünce de önceki seçim kullanılmaz (bu Mac yalnızca son sorulan hesabın seçimini tutar), yeniden sorulur
+        store.testDeviceAccount = "pc-7kq2m9"
+        store.askWorkerIfNeeded()
+        check(store.activeWorker == nil && store.showWorkerPrompt, "ilk cihaz hesabına dönünce çalışan yeniden soruluyor")
+        store.markWorkerAsked()
         store.setWorker(nil)
-        check(store.sessionWorker == nil, "Atla: çalışan seçilmedi")
+        check(!store.showWorkerPrompt && store.activeWorker == nil, "Atla: çalışan seçilmedi")
+        store.testDeviceAccount = nil
 
         print("17) Eşitleme kayıt noktası arayüzü bekletmez (önce veri, sonra durum)")
         let year = DemoData.make(endingAt: d2, days: 365)

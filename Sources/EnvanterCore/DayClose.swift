@@ -149,6 +149,12 @@ public enum UnclosedDays {
     public static let subtitle = "Son 60 gün: sayımı girilmiş ama kapatılmamış günler. Kapatılan günün sayım ve satışı kilitlenir."
     public static let emptyText = "Son 60 günde sayılmış ama kapatılmamış gün yok."
     public static let closeSelectedLabel = "Seçilenleri Kapat"
+    /// Pencereyi kapatma düğmesi ("Kapat" değil: günleri kapatmakla karışmasın; tek gün onayındaki gibi)
+    public static let dismissLabel = "Vazgeç"
+    /// Genel Bakış'taki bağlantı / satır ipucu
+    public static let badgeHelp = "Son 60 günün kapatılmamış günleri: kontrol listesiyle aç, seçilenleri kapat"
+    /// Genel Bakış'taki bağlantı: "3 sayılmış gün kapatılmadı" (sayı bu listenin uzunluğu; iki istemcide aynı)
+    public static func badge(_ count: Int) -> String { "\(count) sayılmış gün kapatılmadı" }
     /// "3 gün kapatıldı"
     public static func closedText(_ count: Int) -> String { "\(count) gün kapatıldı" }
 }

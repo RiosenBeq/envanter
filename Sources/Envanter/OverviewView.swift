@@ -185,10 +185,10 @@ struct OverviewView: View {
                     let unclosed = store.unclosedDays().count
                     if unclosed > 0 {
                         Button { store.showUnclosedDays = true } label: {
-                            Label("\(unclosed) sayılmış gün kapatılmadı", systemImage: "lock.open")
+                            Label(UnclosedDays.badge(unclosed), systemImage: "lock.open")
                         }
                         .buttonStyle(.link).font(.callout)
-                        .help("Son \(UnclosedDays.lookbackDays) günün kapatılmamış günleri: kontrol listesiyle aç, seçilenleri kapat")
+                        .help(UnclosedDays.badgeHelp)
                     }
                 }
                 Chart {

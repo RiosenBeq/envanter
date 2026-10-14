@@ -17,8 +17,10 @@ struct ItemsView: View {
     @State private var newName = ""
     @State private var newUnit = "Adet"
     @State private var deleting: Item?
-    /// Kalem arama (ad ya da kimlik; Günlük Sayım'daki aramayla aynı kural: `ItemSearch`)
+    /// Kalem arama (ad ya da kimlik; Günlük Sayım'daki aramayla aynı kural: `ItemSearch`); Gün → Kalem Ara (⌘F) bu ekran
+    /// açıkken buraya odaklanır
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         let activeCount = store.data.items.filter { $0.active }.count
@@ -48,6 +50,7 @@ struct ItemsView: View {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField(ItemSearch.placeholder, text: $query)
                         .textFieldStyle(.plain)
+                        .focused($searchFocused)
                         .onExitCommand { query = "" }
                         .accessibilityLabel(ItemSearch.placeholder)
                     if !query.isEmpty {
@@ -114,6 +117,8 @@ struct ItemsView: View {
             .disabled(!store.canEditCatalog)
         }
         .navigationTitle("Stok Kalemleri")
+        .onAppear { takeSearchRequest() }
+        .onChange(of: store.focusItemsSearch) { _, _ in takeSearchRequest() }
         .sheet(isPresented: $store.showThresholds) {
             ThresholdsSheet(changes: changes, suggestions: suggestions).environmentObject(store)
         }
@@ -131,6 +136,13 @@ struct ItemsView: View {
         guard !n.isEmpty else { return }
         store.addItem(name: n, unit: newUnit)
         newName = ""
+    }
+
+    /// Kalem Ara isteği (⌘F, bu ekran açıkken): arama kutusuna odaklanır
+    private func takeSearchRequest() {
+        guard store.focusItemsSearch else { return }
+        store.focusItemsSearch = false
+        DispatchQueue.main.async { searchFocused = true }
     }
 }
 

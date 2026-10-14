@@ -85,8 +85,8 @@ struct EnvanterApp: App {
                     store.showUnclosedDays = true
                 }
                 Divider()
-                // Günlük Sayım'daki arama kutusu (ad ya da kimlik)
-                Button("Kalem Ara") { store.requestDailySearch() }
+                // Günlük Sayım'daki arama kutusu (ad ya da kimlik); Stok Kalemleri açıksa oradaki
+                Button("Kalem Ara") { store.requestItemSearch() }
                     .keyboardShortcut("f")
             }
             CommandMenu("Git") {

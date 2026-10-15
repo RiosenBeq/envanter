@@ -385,7 +385,7 @@ async function main() {
       assert.equal(await win.textContent("#adres"), `127.0.0.1:${port}`);
       // CSP özetleri doğru: satır içi betik çalışıyor (geri sayım) ve stil uygulanıyor
       await waitFor(async () => /saniye sonra kendiliğinden yeniden denenecek/.test(await win.textContent("#durum")), { what: "geri sayım" });
-      assert.equal(await win.evaluate(() => getComputedStyle(document.getElementById("dene")).borderTopLeftRadius), "4px");
+      assert.equal(await win.evaluate(() => getComputedStyle(document.getElementById("dene")).borderTopLeftRadius), "6px");
     });
 
     await check("sunucu geri gelince panel kendiliğinden açılır (15 sn'de bir deneme)", async () => {

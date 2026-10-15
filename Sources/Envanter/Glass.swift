@@ -9,13 +9,13 @@ import AppKit
 /// ilerleme çubuğu ve anahtar düğmede kalır.
 enum Radius {
     /// Küçük rozet, renk açıklaması karesi, grafik çubuğu
-    static let tiny: CGFloat = 2
+    static let tiny: CGFloat = 3
     /// Düğme, giriş alanı, seçici, etiket (Pill), menü öğesi, bildirim şeridi
-    static let control: CGFloat = 4
+    static let control: CGFloat = 6
     /// Kart, panel, tablo, bilgi kutusu, yan menü satırı
-    static let container: CGFloat = 6
+    static let container: CGFloat = 8
     /// Sayfa penceresi / iletişim kutusu dış köşesi (en büyük değer)
-    static let sheet: CGFloat = 8
+    static let sheet: CGFloat = 12
 }
 
 /// Ölçekteki köşe şekilleri (hepsi aynı köşe stiliyle çizilir)
@@ -98,7 +98,7 @@ private extension NSColor {
 }
 
 extension View {
-    /// Kart yüzeyi: düz kart rengi, 1 px çizgi, köşe 6 (gölge yok). İçerik köşeden taşmaz.
+    /// Kart yüzeyi: düz kart rengi, 1 px çizgi, köşe 8 (gölge yok). İçerik köşeden taşmaz.
     func cardSurface(radius: CGFloat = Radius.container) -> some View {
         let shape = Shapes.rounded(radius)
         return self
@@ -107,7 +107,7 @@ extension View {
             .overlay(shape.strokeBorder(Brand.line, lineWidth: 1))
     }
 
-    /// Düğme ve küçük kontrol grubu yüzeyi (gün seçici, canlı bağlantı satırı): kart rengi, 1 px çizgi, köşe 4
+    /// Düğme ve küçük kontrol grubu yüzeyi (gün seçici, canlı bağlantı satırı): kart rengi, 1 px çizgi, köşe 6
     func controlSurface(fill: Color = Brand.card, radius: CGFloat = Radius.control) -> some View {
         let shape = Shapes.rounded(radius)
         return self
@@ -115,7 +115,7 @@ extension View {
             .overlay(shape.strokeBorder(Brand.line, lineWidth: 1))
     }
 
-    /// Giriş alanı: düz zemin, 1 px çizgi, köşe 4; odaktayken 1 px dışında 2 px marka rengi çerçeve (iç gölge yok)
+    /// Giriş alanı: düz zemin, 1 px çizgi, köşe 6; odaktayken 1 px dışında 2 px marka rengi çerçeve (iç gölge yok)
     func inputSurface(focused: Bool, fill: Color = Brand.field, radius: CGFloat = Radius.control) -> some View {
         let shape = Shapes.rounded(radius)
         return self
@@ -131,7 +131,7 @@ extension View {
             }
     }
 
-    /// Bilgi / uyarı kutusu ve renkli etiket zemini: durum renginin hafif tonu, kenarlıksız (varsayılan köşe 6)
+    /// Bilgi / uyarı kutusu ve renkli etiket zemini: durum renginin hafif tonu, kenarlıksız (varsayılan köşe 8)
     func tintedSurface(_ color: Color, opacity: Double = 0.10, radius: CGFloat = Radius.container) -> some View {
         background(Shapes.rounded(radius).fill(color.opacity(opacity)))
     }

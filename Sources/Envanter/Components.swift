@@ -45,7 +45,7 @@ struct CellID: Hashable {
     var col: Int
 }
 
-/// İçerik kartı: düz kart yüzeyi, 1 px çizgi, köşe 6 (gölge yok)
+/// İçerik kartı: düz kart yüzeyi, 1 px çizgi, köşe 8 (gölge yok)
 struct Card<Content: View>: View {
     var padding: CGFloat = 14
     @ViewBuilder var content: Content
@@ -57,7 +57,7 @@ struct Card<Content: View>: View {
     }
 }
 
-/// Durum etiketi: köşe 4, durum renginin %12 tonu, yazı durumun koyu (koyu modda açık) tonuyla; kenarlık ve gölge yok
+/// Durum etiketi: köşe 6, durum renginin %12 tonu, yazı durumun koyu (koyu modda açık) tonuyla; kenarlık ve gölge yok
 struct Pill: View {
     var text: String
     var color: Color
@@ -201,7 +201,7 @@ struct TrackerLegend: View {
     }
 }
 
-/// Birincil düğme: düz marka turuncusu, beyaz yazı, köşe 4 (gölge ve büyüme efekti yok); üzerine gelince ve
+/// Birincil düğme: düz marka turuncusu, beyaz yazı, köşe 6 (gölge ve büyüme efekti yok); üzerine gelince ve
 /// basılıyken koyu turuncu
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -226,7 +226,7 @@ private struct PrimaryButtonBody: View {
     }
 }
 
-/// İkincil düğme: kart rengi, 1 px çizgi, köşe 4; renkli düğmede yazı rengin koyu tonuyla (okunaklı).
+/// İkincil düğme: kart rengi, 1 px çizgi, köşe 6; renkli düğmede yazı rengin koyu tonuyla (okunaklı).
 /// Üzerine gelince ve basılıyken hafif ton.
 struct SoftButtonStyle: ButtonStyle {
     var tint: Color = .primary

@@ -77,8 +77,7 @@ struct ItemsView: View {
                 }
                 .padding(.horizontal, 8)
                 .frame(width: 240, height: 28)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Brand.field))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Brand.line.opacity(0.6), lineWidth: 0.5))
+                .inputSurface(focused: searchFocused)
                 .help("Ada ya da kimliğe göre ara · aramadayken sıralama sürüklenemez · Esc: temizle")
                 Text("Günlük Sayım ekranındaki satırlar bunlardır (90 Gr, Peynir, Patates…). Sırayı sürükleyerek değiştirebilir, kullanılmayanları gizleyebilirsiniz. \"Katsayı\", reçetedeki birimin envanter birimine çevrilmesidir (ör. 1 dilim peynir = 0,014 kg). Kritik seviye sipariş önerisini ve uyarıları, tolerans ise \"normal\" sayılan farkı belirler.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -100,7 +99,7 @@ struct ItemsView: View {
             }
             .font(.caption.weight(.semibold)).multilineTextAlignment(.center)
             .padding(.vertical, 6).padding(.horizontal, 12)
-            .background(Color.primary.opacity(0.05))
+            .background(Brand.header)
             let shown = store.data.items.filter { ItemSearch.matches($0, query: query) }
             if shown.isEmpty && !query.isEmpty {
                 VStack(spacing: 10) {
@@ -137,7 +136,7 @@ struct ItemsView: View {
         .onAppear { takeSearchRequest() }
         .onChange(of: store.focusItemsSearch) { _, _ in takeSearchRequest() }
         .sheet(isPresented: $store.showThresholds) {
-            ThresholdsSheet(changes: changes, suggestions: suggestions).environmentObject(store)
+            ThresholdsSheet(changes: changes, suggestions: suggestions).environmentObject(store).sheetSurface()
         }
         // Silme: geçmişi olan aktif kalemde önerilen işlem "Pasif Yap"; kalıcı silme kapatılmış günlere dokunmaz (CatalogOps)
         .confirmationDialog("\"\(deleting?.name ?? "")\" silinsin mi?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),

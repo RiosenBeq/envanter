@@ -27,7 +27,7 @@ Yan menü sade tutulur: üstte günlük işler (Genel Bakış, Günlük Sayım, 
 
 Diğer:
 - **Terim açıklamaları:** Devreden, Kalan, olması gereken, tolerans, fazla çıkış gibi terimlerin yanındaki ⓘ işaretinin üzerine gelince kısa açıklama çıkar, tıklayınca ayrıntılı açıklama açılır.
-- **Liquid Glass tasarım:** macOS 26'da Apple'ın yerel Liquid Glass yüzeyleri; macOS 14–15'te aynı yüzeyler buzlu cam malzemesiyle çizilir.
+- **Sade tasarım:** Web paneliyle aynı ölçüler: düz zemin, düz kartlar ve 1 px çizgiler; köşeler küçük (düğme ve giriş alanı 4 px, kart ve panel 6 px, pencere 8 px). Cam, bulanıklık, degrade ve kart gölgesi kullanılmaz.
 - **Geri al / Yinele** (⌘Z / ⇧⌘Z) tüm veri değişikliklerinde çalışır.
 - **Gün dönümü:** Uygulama gece açık kalırsa ve "bugün" seçiliyse gece yarısından sonra (uygulama öne gelince, Mac uyanınca ya da dakikada bir) yeni güne geçilir; üstte "Yeni gün başladı: … · **Dünkü güne dön**" şeridi çıkar (kapatılana kadar kalır). Başka bir gün açıksa seçili gün değişmez; açık bir pencere varken ya da sayım sürerken (hücre odakta, son 15 dakikada klavye / fare kullanılmış) geçiş beklenir, hücrede yazılmış değer önceki güne kaydedilir.
 - **Sürüm uyumu:** Uygulama canlı bağlantıda veri biçimi düzeyini (`fmt`, bu sürümde 2) bildirir; web paneli düzeyi düşük (eski sürüm) bir Mac'i "Mac eski sürüm" diye uyarır. Şubede bu Mac'ten yeni bir sürüm çalışıyorsa kenar çubuğunda **Yeni sürüm var: güncelleyin** görünür (docs/SYNC.md §2 "Sürüm uyumu").
@@ -162,7 +162,7 @@ ENVANTER_DATA_DIR=~/Desktop/demo "/Applications/NextGen Envanter.app/Contents/Ma
 
 ```
 Sources/EnvanterCore   Platformdan bağımsız iş mantığı (motor, ekip, satın alma, eşitleme, anlık bağlantı, Excel/ZIP okuma-yazma, kayıt)
-Sources/Envanter       SwiftUI uygulaması (yalnızca macOS; Glass.swift: Liquid Glass yüzeyleri)
+Sources/Envanter       SwiftUI uygulaması (yalnızca macOS; Glass.swift: köşe ölçüsü, yüzey renkleri ve yüzey düzenleyicileri)
 Sources/EnvanterTool   Komut satırı aracı
 Tests/EnvanterCoreTests
 Scripts/               build_app.sh (paket), make_icon.swift (ikon), e2e_cli.sh (komut satırı uçtan uca testi)

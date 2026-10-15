@@ -12,12 +12,19 @@ struct ContentView: View {
     // uzun listeleri olan ekranlarda içeriğin "ideal" yüksekliğini pencere yüksekliği sayıp pencereden taşıyordu.
     var body: some View {
         HStack(spacing: 0) {
-            // Yüzen cam yan menü (macOS 26 Liquid Glass; önceki sürümlerde buzlu cam)
+            // Düz yan menü: kart yüzeyi, sağında 1 px çizgi; pencerenin tepesine kadar uzanır. Genişlik önceki yüzen
+            // menünün kapladığı yerle aynı (en küçük pencerede tablolar taşmasın)
             sidebar
-                .frame(width: 228)
+                .frame(width: 238)
                 .frame(maxHeight: .infinity)
-                .glassSurface(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .padding(.leading, 10).padding(.vertical, 10)
+                .padding(.top, 10)
+                .background {
+                    HStack(spacing: 0) {
+                        Brand.card
+                        Brand.line.frame(width: 1)
+                    }
+                    .ignoresSafeArea()
+                }
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Gün dönümü: "bugün" seçiliyken yeni güne geçildi
@@ -25,7 +32,8 @@ struct ContentView: View {
                     if let notice = store.dayRollover { DayRolloverBanner(notice: notice) }
                 }
         }
-        .background(AmbientBackground())
+        // Düz pencere zemini (degrade ya da renkli ışık yok)
+        .background(Brand.page, ignoresSafeAreaEdges: .all)
         .onAppear { store.undoManager = undoManager }
         // Satış raporu, sayım Excel'i ya da eski Excel dosyası her ekranda pencereye bırakılabilir (Günlük Sayım'a geçilir)
         .overlay { if dropTargeted { dropOverlay } }
@@ -41,14 +49,14 @@ struct ContentView: View {
             return true
         }
         .sheet(item: $store.importPreview) { p in
-            ImportSheet(report: p.report, initialDate: store.selectedDate).environmentObject(store)
+            ImportSheet(report: p.report, initialDate: store.selectedDate).environmentObject(store).sheetSurface()
         }
         .sheet(item: $store.workbookPreview) { p in
-            WorkbookImportSheet(imp: p.imp).environmentObject(store)
+            WorkbookImportSheet(imp: p.imp).environmentObject(store).sheetSurface()
         }
         // Sayım Excel'i yükleme önizlemesi ("Excel'den Yükle…" ya da bırakılan sayım şablonu)
         .sheet(item: $store.countImportPreview) { p in
-            CountImportSheet(preview: p).environmentObject(store)
+            CountImportSheet(preview: p).environmentObject(store).sheetSurface()
         }
         .alert(store.alert?.title ?? "", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } }),
                presenting: store.alert) { _ in
@@ -71,11 +79,11 @@ struct ContentView: View {
         }
         // Genel Bakış → "N gün kapatılmadı" ve Gün menüsü: kapatılmamış günler (patron / müdür topluca kapatır)
         .sheet(isPresented: $store.showUnclosedDays) {
-            UnclosedDaysSheet().environmentObject(store)
+            UnclosedDaysSheet().environmentObject(store).sheetSurface()
         }
         // Paylaşılan bilgisayar (bağlantı koduyla bağlı): "Şu an kim çalışıyor?"
         .sheet(isPresented: $store.showWorkerPrompt) {
-            WorkerSheet().environmentObject(store)
+            WorkerSheet().environmentObject(store).sheetSurface()
         }
         .background(WorkerPromptTrigger(cloud: store.cloud))
         // "Web Paneline Bağlan" penceresi (Web'e Bağlan düğmeleri, menü komutu, envanter://baglan… bağlantısı)
@@ -83,6 +91,7 @@ struct ContentView: View {
             ConnectPanel(cloud: store.cloud, request: request,
                          close: { store.connectRequest = nil },
                          openSettings: { store.section = .backup })
+                .sheetSurface()
         }
         // Ekran görüntüsü aracı: pencere görüntüsüne sayfa pencereleri girmediği için aynı içerik pencerenin üstünde
         .overlay { if store.previewConnectPanel { connectPreview } }
@@ -94,15 +103,14 @@ struct ContentView: View {
             Color.black.opacity(0.28)
             ConnectPanel(cloud: store.cloud, request: ConnectRequest(code: "7KQ2M9XP4TRAHW3D"),
                          close: { store.previewConnectPanel = false }, openSettings: {}, isPreview: true)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
-                .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 10)
+                .floatingSurface(fill: Brand.page, radius: Radius.sheet)
         }
         .ignoresSafeArea()
     }
 
     private var dropOverlay: some View {
-        RoundedRectangle(cornerRadius: 14)
-            .strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+        Shapes.container
+            .strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
             .background(Brand.accent.opacity(0.08))
             .overlay {
                 VStack(spacing: 8) {
@@ -138,7 +146,7 @@ struct ContentView: View {
                     Text(Brand.shortName).foregroundStyle(Brand.accent)
                     Text(" Envanter").foregroundStyle(.primary)
                 }
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(size: 18, weight: .semibold))
                 Text(store.settings.branchName.isEmpty ? "Stok, sayım ve sipariş takibi" : store.settings.branchName)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
@@ -229,13 +237,13 @@ private struct DayRolloverBanner: View {
         }
         .font(.callout)
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(.regularMaterial, in: Capsule())
-        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
+        // Yüzen bildirim: düz yüzey, 1 px çizgi, köşe 4, çok hafif gölge
+        .floatingSurface(radius: Radius.control)
         .padding(.top, 12)
     }
 }
 
-/// Yan menü satırı: seçili satır yumuşak vurgulu, fareyle üzerine gelince hafif arka plan
+/// Yan menü satırı: seçili satır hafif marka tonu ve solda 2 px marka çizgisi, fareyle üzerine gelince hafif ton
 private struct SidebarRow: View {
     let section: AppSection
     let selected: Bool
@@ -256,20 +264,21 @@ private struct SidebarRow: View {
                     Text(badge.text)
                         .font(.caption2.weight(.bold)).monospacedDigit()
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .foregroundStyle(badge.color)
-                        .background(Capsule().fill(badge.color.opacity(0.15)))
+                        .foregroundStyle(Brand.ink(for: badge.color))
+                        .background(Shapes.tiny.fill(badge.color.opacity(0.12)))
                 }
             }
+            // Seçili satırın yazısı ana yazı renginde (marka tonlu zeminde okunaklı); simge ve çizgi marka renginde
             .font(.system(size: 13, weight: selected ? .semibold : .regular))
-            .foregroundStyle(selected ? Brand.accent : Color.primary)
+            .foregroundStyle(Color.primary)
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? Brand.accent.opacity(0.15) : (hovering ? Color.primary.opacity(0.06) : Color.clear))
+                Shapes.container
+                    .fill(selected ? Brand.selection : (hovering ? Brand.hover : Color.clear))
             )
             .overlay(alignment: .leading) {
                 if selected {
-                    Capsule().fill(Brand.accent).frame(width: 3, height: 16).offset(x: 1)
+                    Rectangle().fill(Brand.accent).frame(width: 2, height: 16)
                 }
             }
             .contentShape(Rectangle())

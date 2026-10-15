@@ -8,7 +8,7 @@ private enum W {
     static let calc: CGFloat = 80
     /// Kalan: asıl giriş (diğer girişlerden geniş)
     static let closing: CGFloat = 100
-    /// Fark kapsülü ("0,126 kg eksik")
+    /// Fark etiketi ("0,126 kg eksik")
     static let diff: CGFloat = 124
     static let info: CGFloat = 30
     static let nameMin: CGFloat = 130
@@ -67,11 +67,12 @@ struct DailyView: View {
                 let order = rows.map { $0.itemID }
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.itemID) { idx, calc in
+                        ForEach(Array(rows.enumerated()), id: \.element.itemID) { _, calc in
                             if let item = store.engine.itemsByID[calc.itemID] {
+                                // Zebra yerine 1 px satır ayırıcı
                                 DailyRow(order: order, calc: calc, item: item, date: date,
                                          focus: $focus, detail: $detailItem, onAddWaste: { openWaste($0) })
-                                    .background(idx % 2 == 0 ? Color.clear : Color.primary.opacity(0.03))
+                                    .rowSeparator(leading: 12)
                             }
                         }
                     }
@@ -104,6 +105,7 @@ struct DailyView: View {
         .sheet(item: $wasteRequest) { r in
             WasteSheet(date: date, initialItemID: r.itemID, onSaved: { fillMessage = $0 + " (⌘Z ile geri alınır)" })
                 .environmentObject(store)
+                .sheetSurface()
         }
     }
 
@@ -220,8 +222,7 @@ struct DailyView: View {
         }
         .padding(.horizontal, 8)
         .frame(width: 200, height: 28)
-        .background(RoundedRectangle(cornerRadius: 7).fill(Brand.field))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(searchFocused ? Brand.accent : Brand.line.opacity(0.6), lineWidth: searchFocused ? 1.5 : 0.5))
+        .inputSurface(focused: searchFocused)
         .help("Kalem ara (⌘F) · Enter: ilk kalemin Kalan'ı · Esc: temizle")
     }
 
@@ -312,7 +313,7 @@ struct DailyView: View {
         .font(.caption.weight(.semibold))
         .multilineTextAlignment(.center)
         .padding(.vertical, 8).padding(.trailing, 8)
-        .background(Color.primary.opacity(0.05))
+        .background(Brand.header)
     }
 
     private func legend(rows: [ItemCalc], locked: Bool) -> some View {
@@ -340,8 +341,8 @@ struct DailyView: View {
     }
 
     private var dropOverlay: some View {
-        RoundedRectangle(cornerRadius: 14)
-            .strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+        Shapes.container
+            .strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
             .background(Brand.accent.opacity(0.08))
             .overlay {
                 VStack(spacing: 8) {
@@ -390,7 +391,7 @@ private struct DayNotePopover: View {
             TextEditor(text: $note)
                 .font(.body)
                 .frame(width: 360, height: 110)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Brand.line))
+                .overlay(Shapes.control.strokeBorder(Brand.line, lineWidth: 1))
                 .disabled(readOnly)
             Text(String(WasteText.noteHint.prefix(1)).uppercased() + String(WasteText.noteHint.dropFirst()) + ". Not Excel'e ve raporlara geçer.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -492,9 +493,9 @@ private struct DailyRow: View {
                 .lineLimit(1).minimumScaleFactor(0.8)
             if calc.openingSource == .manual {
                 Text(CountText.manualMark)
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(Brand.warn)
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(Brand.ink(for: Brand.warn))
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Capsule().fill(Brand.warn.opacity(0.14)))
+                    .background(Shapes.tiny.fill(Brand.warn.opacity(0.12)))
             }
         }
         .frame(width: W.calc)
@@ -525,8 +526,7 @@ private struct DailyRow: View {
             }
             .frame(minWidth: 40)
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Brand.line.opacity(0.6), lineWidth: 0.5))
+            .controlSurface()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -550,7 +550,7 @@ private struct DailyRow: View {
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 7).padding(.vertical, 3)
             .foregroundStyle(.secondary)
-            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .background(Shapes.control.fill(Color.primary.opacity(0.06)))
             .frame(width: W.diff)
             .help(OpeningText.baselineHelp(calc, date: date))
     }
@@ -563,7 +563,7 @@ private struct DailyRow: View {
             .frame(width: W.calc)
     }
 
-    /// Fark kapsülü: "Tamam" (✓, tolerans içinde), "0,126 kg eksik", "3 adet fazla"; sayılmadıysa "—"; ilk sayım
+    /// Fark etiketi (köşe 4): "Tamam" (✓, tolerans içinde), "0,126 kg eksik", "3 adet fazla"; sayılmadıysa "—"; ilk sayım
     @ViewBuilder private var diffCell: some View {
         if calc.isBaseline {
             baselinePill
@@ -576,8 +576,8 @@ private struct DailyRow: View {
             .font(.callout.weight(.semibold))
             .lineLimit(1).minimumScaleFactor(0.7)
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .foregroundStyle(color)
-            .background(Capsule().fill(color.opacity(sev.isProblem ? 0.13 : 0.08)))
+            .foregroundStyle(Brand.ink(for: color))
+            .background(Shapes.control.fill(color.opacity(sev.isProblem ? 0.12 : 0.10)))
             .frame(width: W.diff)
             .help(CountText.diffHelp(calc, item: item))
         } else {
@@ -706,7 +706,7 @@ struct ItemDetailView: View {
                         .textSelection(.enabled)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                        .tintedSurface(Color.primary, opacity: 0.05)
                     Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                         line(CountText.opening + (calc.openingSource == .manual ? " (\(CountText.manualMark))" : ""),
                              CountText.openingValue(calc, item: item))

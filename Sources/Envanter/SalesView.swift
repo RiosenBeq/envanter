@@ -10,6 +10,8 @@ struct SalesView: View {
     @EnvironmentObject var store: AppStore
     @State private var search = ""
     @State private var filter: SalesFilter = .all
+    /// Arama alanının odağı (yalnızca odak çerçevesi için)
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         let date = store.selectedDate
@@ -43,9 +45,10 @@ struct SalesView: View {
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                         TextField("Ürün veya kod ara", text: $search).textFieldStyle(.plain).frame(width: 190)
+                            .focused($searchFocused)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
+                    .inputSurface(focused: searchFocused)
                 }
                 .padding(.horizontal, 20).padding(.bottom, 8)
                 if !store.canEditCatalog && !analysis.unknownLines.isEmpty {
@@ -77,6 +80,8 @@ struct SalesView: View {
                         }
                     }.width(130)
                 }
+                // Zebra satır yok (web paneliyle aynı sade tablo; sistem tablosunun varsayılan çizgili satırları kapalı)
+                .alternatingRowBackgrounds(.disabled)
             }
         }
         .navigationTitle("Satış Dökümü")
@@ -116,11 +121,11 @@ struct SalesView: View {
 
     private func chip(_ big: String, _ small: String, _ color: Color) -> some View {
         HStack(spacing: 6) {
-            Text(big).font(.title3.weight(.bold)).foregroundStyle(color)
+            Text(big).font(.title3.weight(.bold)).foregroundStyle(Brand.ink(for: color))
             Text(small).font(.callout).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.10)))
+        .tintedSurface(color, radius: Radius.control)
     }
 
     @ViewBuilder private func statusPill(_ s: LineStatus) -> some View {

@@ -140,7 +140,7 @@ struct ImportSheet: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
+        .tintedSurface(color)
     }
 
     private func notice(icon: String, color: Color, text: String) -> some View {
@@ -150,7 +150,7 @@ struct ImportSheet: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
+        .tintedSurface(color)
     }
 }
 
@@ -201,7 +201,7 @@ struct WorkbookImportSheet: View {
                     Toggle("Bu günlerin üzerine yaz (uygulamadaki girişler silinir)", isOn: $overwrite)
                     if !overwrite { Text("Seçmezseniz bu günlere dokunulmaz, yalnızca yeni günler eklenir.").font(.callout).foregroundStyle(.secondary) }
                 }
-                .padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Brand.warn.opacity(0.12)))
+                .padding(10).tintedSurface(Brand.warn)
             }
             HStack {
                 Spacer()
@@ -324,7 +324,7 @@ struct CountImportSheet: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.10)))
+        .tintedSurface(color)
     }
 
     private func notice(icon: String, color: Color, text: String) -> some View {
@@ -334,6 +334,6 @@ struct CountImportSheet: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
+        .tintedSurface(color)
     }
 }

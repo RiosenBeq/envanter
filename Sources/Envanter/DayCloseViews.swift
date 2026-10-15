@@ -111,7 +111,7 @@ struct UnclosedDaysSheet: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .background(Shapes.container
             .fill(on && manager ? Brand.accent.opacity(0.08) : Color.primary.opacity(0.04)))
     }
 }
@@ -144,8 +144,8 @@ struct WorkerSheet: View {
                             }
                             .padding(.horizontal, 10).padding(.vertical, 8)
                             .frame(maxWidth: .infinity)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(selected ? Brand.accent.opacity(0.15) : Color.primary.opacity(0.05)))
+                            .background(Shapes.container
+                                .fill(selected ? Brand.selection : Color.primary.opacity(0.05)))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

@@ -321,7 +321,7 @@ struct CloudIssueBox: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.10)))
+        .tintedSurface(color)
         .textSelection(.enabled)
     }
 }

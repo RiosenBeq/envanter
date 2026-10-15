@@ -135,6 +135,18 @@ public enum WasteText {
     /// Zayi hücresinin ipucu: "Zayi 1,5 kg (ModPos 0,4 + elle 1,1) — dökümü görmek için tıklayın". Excel'den aktarılan
     /// günde (`usesLegacySales`) kaynak "Excel" yazılır.
     public static func cellHelp(_ calc: ItemCalc, legacy: Bool, item: Item) -> String {
+        summary(calc, legacy: legacy, item: item) + " — dökümü görmek için tıklayın"
+    }
+
+    /// Günlük Sayım'daki Zayi düğmesinin ipucu: "Zayi 1,5 kg (ModPos 0,4 + elle 1,1) — Zayi Ekle'yi açmak için tıklayın";
+    /// zayi yoksa "Zayi yok — eklemek için tıklayın"
+    public static func buttonHelp(_ calc: ItemCalc, legacy: Bool, item: Item) -> String {
+        guard calc.waste != 0 else { return "Zayi yok — eklemek için tıklayın" }
+        return summary(calc, legacy: legacy, item: item) + " — \(addTitle)'yi açmak için tıklayın"
+    }
+
+    /// "Zayi 1,5 kg (ModPos 0,4 + elle 1,1)"
+    static func summary(_ calc: ItemCalc, legacy: Bool, item: Item) -> String {
         let source = legacy ? "Excel" : "ModPos"
         let base = Engine.clean(calc.waste - calc.manualWaste)
         let f: (Double) -> String = { Fmt.number($0, maxFraction: item.maxFraction) }
@@ -146,7 +158,7 @@ public enum WasteText {
         } else {
             parts = "elle girildi"
         }
-        return "Zayi \(amount(calc.waste, item: item)) (\(parts)) — dökümü görmek için tıklayın"
+        return "Zayi \(amount(calc.waste, item: item)) (\(parts))"
     }
 
     /// Excel'den aktarılan günün dökümünde Zaiyat'ın açıklaması: "Excel'den aktarılan Zaiyat: 0,5 kg" (taban = toplam −

@@ -60,7 +60,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
-/// Raporlar ekranının sekmeleri: dönem özeti (kalem kalem miktarlar) ve kalem analizi (beklenen / fiili tüketim, fark,
+/// Raporlar ekranının sekmeleri: dönem özeti (kalem kalem miktarlar) ve kalem analizi (satış + zayi / gerçek kullanım, fark,
 /// stok seviyesi). Seçili sekme `AppStore.reportsTab`'da tutulur (Özet'teki "Ayrıntılı analiz" bağlantısı sekmeyi değiştirir).
 enum ReportsTab: String, CaseIterable, Identifiable {
     case summary = "Dönem Özeti", item = "Kalem Analizi"
@@ -116,6 +116,14 @@ struct WorkbookPreview: Identifiable {
     var imp: WorkbookImport
 }
 
+/// Sayım Excel'i yükleme önizlemesi: dosya, hedef gün (açıldığında seçili gün) ve okunan değerler
+struct CountImportPreview: Identifiable {
+    let id = UUID()
+    var sourceName: String
+    var date: String
+    var result: CountImport.Result
+}
+
 enum SaveState: Equatable {
     case saved, saving, failed(String)
 }
@@ -129,6 +137,10 @@ final class AppStore: ObservableObject {
     @Published var section: AppSection? = .overview
     @Published var importPreview: ImportPreview?
     @Published var workbookPreview: WorkbookPreview?
+    /// "Excel'den Yükle" önizlemesi (Günlük Sayım, Gün menüsü, Genel Bakış ya da pencereye bırakılan sayım Excel'i)
+    @Published var countImportPreview: CountImportPreview?
+    /// Günlük Sayım'ın araç çubuğunda bir kez gösterilecek bildirim (ör. "Excel'den yüklendi: 4 kalem güncellendi")
+    @Published var dailyNotice: String?
     @Published var alert: AppAlert?
     /// Reçeteler ekranında seçili ürün kodu
     @Published var recipeSelection: String?
@@ -783,10 +795,15 @@ final class AppStore: ObservableObject {
 
     // MARK: - Satış içe aktarma
 
-    /// Satış raporu veya (sürüklenen) eski Excel envanter dosyası
+    /// Satış raporu, sayım Excel'i veya (sürüklenen) eski Excel envanter dosyası
     func beginImport(url: URL) {
         let ext = url.pathExtension.lowercased()
         if ext == "xlsm" { importWorkbook(url: url); return }
+        // Sayım şablonu (ya da Kalem / Kod ve Giren, Çıkan, Zayi, Kalan sütunlu tablo): seçili güne yükleme önizlemesi
+        if let grid = countImportGrid(url: url) {
+            presentCountImport(grid: grid, sourceName: url.lastPathComponent)
+            return
+        }
         do {
             presentImport(try SalesParser.parse(fileURL: url))
         } catch SalesParseError.noLines where ext == "xlsx" {
@@ -854,6 +871,79 @@ final class AppStore: ObservableObject {
         message += "."
         if let note = report.wasteNote { message += " " + note }
         alert = AppAlert(title: "Excel verileri aktarıldı", message: message)
+    }
+
+    // MARK: - Sayım Excel'i (şablon ve yükleme)
+
+    /// "Excel'den Yükle…": dosya seçilir, seçili gün için önizleme açılır
+    func pickCountImport() {
+        guard let url = Files.openFile(types: Files.countTypes, message: "Doldurulan sayım Excel'ini seçin (.xlsx, .csv, .tsv)") else { return }
+        beginCountImport(url: url)
+    }
+
+    /// Seçilen dosyayı okur (başlık bulunamasa da önizleme açılır ve nedeni yazar)
+    func beginCountImport(url: URL) {
+        do {
+            let grid = try CountImport.readGrid(data: Data(contentsOf: url), fileName: url.lastPathComponent)
+            presentCountImport(grid: grid, sourceName: url.lastPathComponent)
+        } catch {
+            alert = AppAlert(title: "Sayım Excel'i okunamadı", message: error.localizedDescription)
+        }
+    }
+
+    private func presentCountImport(grid: [[CountImport.Cell?]], sourceName: String) {
+        countImportPreview = CountImportPreview(sourceName: sourceName, date: selectedDate,
+                                                result: CountImport.parse(grid: grid, items: engine.activeItems))
+    }
+
+    /// Bırakılan dosya sayım Excel'i mi: ilk sayfada (ya da metinde) sayım başlığı var ve eski envanter dosyası (Alımlar
+    /// sayfası) değil. Değilse nil (satış raporu / eski dosya aktarımı denenir).
+    private func countImportGrid(url: URL) -> [[CountImport.Cell?]]? {
+        let ext = url.pathExtension.lowercased()
+        guard ["xlsx", "csv", "tsv", "txt"].contains(ext), let data = try? Data(contentsOf: url) else { return nil }
+        let grid: [[CountImport.Cell?]]
+        if ext == "xlsx" {
+            guard let sheets = try? XlsxReader.read(data: data), let first = sheets.first else { return nil }
+            let tr = Locale(identifier: "tr_TR")
+            if sheets.contains(where: { $0.name.lowercased(with: tr).trimmingCharacters(in: .whitespaces) == "alımlar" }) { return nil }
+            grid = CountImport.grid(sheet: first)
+        } else {
+            grid = CountImport.grid(text: SalesParser.decodeText(data))
+        }
+        return CountImport.isCountSheet(grid) ? grid : nil
+    }
+
+    /// Önizlemedeki "Uygula": tüm değerler önizlemenin gününe tek geri alma adımında yazılır. Kapatılmış günde yapılmaz
+    /// (satış aktarımındaki ileti); personel de uygulayabilir (günlük kayıt). Zayi kalemin `excel-<kimlik>` kaydıdır, "Kim"
+    /// Zayi Ekle'deki varsayılan; 0 kaydı siler.
+    @discardableResult
+    func applyCountImport(_ preview: CountImportPreview) -> Bool {
+        let date = preview.date
+        // Pencere önce kapanır (ret iletisi pencerenin arkasında kalmasın)
+        countImportPreview = nil
+        guard !isLocked(date) else {
+            let hint = canChangeLockedDays ? "Yüklemek için önce günün kilidini açın." : CloudPermission.lockedDayPickAnotherNote
+            alert = AppAlert(title: "Gün kapatılmış", message: "\(DateKey.short(date)) günü kilitli. \(hint)")
+            return false
+        }
+        let updates = preview.result.updates
+        let changes = CountImport.changes(updates, day: data.days[date])
+        guard !changes.isEmpty else { return false }
+        let by = defaultWasteBy(date: date)
+        let worker = activeWorker
+        let countedNow = changes.contains { $0.change(.closing) != nil }
+        let applied = mutateData(CountImportText.actionName) { d in
+            var day = CountImport.apply(updates, to: d.days[date] ?? DayRecord(date: date), wasteBy: by)
+            if let name = SessionWorker.countedBy(current: day.countedBy, worker: worker, hasClosing: countedNow) {
+                day.countedBy = name
+            }
+            if day.isEmpty && !day.isLocked { d.days[date] = nil } else { d.days[date] = day }
+        }
+        guard applied else { return false }
+        selectedDate = date
+        section = .daily
+        dailyNotice = CountImportText.applied(changes.count) + " (⌘Z ile geri alınır)"
+        return true
     }
 
     /// Verisi olan günler (yeniden eskiye)
@@ -1162,8 +1252,8 @@ final class AppStore: ObservableObject {
             let lines = try Purchasing.receive(orderID: id, on: date, quantities: quantities, addToIncoming: addToIncoming, data: &copy)
             guard mutateData(addToIncoming ? "Teslim Al" : "Teslim Alındı Say", { $0 = copy }) else { return false }
             alert = addToIncoming
-                ? AppAlert(title: "Teslim alındı", message: "\(lines) kalem \(DateKey.short(date)) gününün Gelen sütununa işlendi.")
-                : AppAlert(title: "Teslim alındı sayıldı", message: "\(lines) kalem · \(DateKey.short(date)) Gelen'ine dokunulmadı.")
+                ? AppAlert(title: "Teslim alındı", message: "\(lines) kalem \(DateKey.short(date)) gününün Giren sütununa işlendi.")
+                : AppAlert(title: "Teslim alındı sayıldı", message: "\(lines) kalem · \(DateKey.short(date)) Giren'ine dokunulmadı.")
             return true
         } catch {
             alert = AppAlert(title: "Teslim alınamadı", message: error.localizedDescription)
@@ -1267,6 +1357,12 @@ final class AppStore: ObservableObject {
 
 enum Files {
     static let xlsx = UTType(filenameExtension: "xlsx") ?? .data
+    /// Sayım Excel'i: .xlsx, .csv, .tsv (ve sekmeli .txt)
+    static let countTypes: [UTType] = {
+        var t: [UTType] = [.commaSeparatedText, .tabSeparatedText, .plainText]
+        if let x = UTType(filenameExtension: "xlsx") { t.insert(x, at: 0) }
+        return t
+    }()
     static let salesTypes: [UTType] = {
         var t: [UTType] = [.commaSeparatedText, .tabSeparatedText, .plainText]
         if let x = UTType(filenameExtension: "xlsx") { t.append(x) }

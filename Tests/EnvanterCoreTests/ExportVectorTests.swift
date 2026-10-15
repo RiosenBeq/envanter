@@ -2,7 +2,7 @@ import XCTest
 @testable import EnvanterCore
 
 /// Ortak dışa aktarım vektörleri (Fixtures/export-vectors.json; web: test/people/exportVectors.test.ts aynı dosyayı okur):
-/// sayım formu, gün kitabı ve sipariş önerisinin sayfa adları, başlıkları ve sütun genişlikleri; satış durumu metinleri;
+/// sayım şablonu (başlık satırıyla), gün kitabı ve sipariş önerisinin sayfa adları, başlıkları ve sütun genişlikleri; satış durumu metinleri;
 /// dosya adları. Web paneli (Windows mağaza bilgisayarı) aynı Excel dosyalarını üretir.
 final class ExportVectorTests: XCTestCase {
     private func vectors() throws -> JSONValue {
@@ -26,8 +26,12 @@ final class ExportVectorTests: XCTestCase {
         let v = try vectors()
         let date = try XCTUnwrap(v["date"]?.stringValue), branch = try XCTUnwrap(v["branch"]?.stringValue)
         let engine = Engine(data: AppData(items: [], products: []))
-        assertSheet(Exporter.countSheetData(engine: engine, date: date, branch: branch), v["countSheet"])
-        XCTAssertEqual(Exporter.countSheetData(engine: engine, date: date).header.first, v["countSheetTitleWithoutBranch"]?.stringValue)
+        let count = Exporter.countSheetData(engine: engine, date: date, branch: branch)
+        assertSheet(count, v["countSheet"])
+        // Sayım şablonu: 1. satır başlık, 2. satır sütunlar (CountImport, countimport-vectors.json "template")
+        XCTAssertEqual(count.title, v["countSheet"]?["title"]?.stringValue)
+        XCTAssertEqual(count.headerRow, 2)
+        XCTAssertEqual(Exporter.countSheetData(engine: engine, date: date).title, v["countSheetTitleWithoutBranch"]?.stringValue)
         let day = Exporter.daySheets(engine: engine, date: date)
         let expectedDay = v["daySheets"]?.arrayValue ?? []
         XCTAssertEqual(day.count, expectedDay.count)

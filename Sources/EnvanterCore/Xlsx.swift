@@ -215,9 +215,15 @@ public struct XlsxSheetData {
     public var header: [String]
     public var rows: [[XlsxCell]]
     public var widths: [Double]
-    public init(name: String, header: [String], rows: [[XlsxCell]], widths: [Double] = []) {
-        self.name = name; self.header = header; self.rows = rows; self.widths = widths
+    /// Başlık satırının üstündeki kalın başlık (1. satır; ör. "Kadıköy · Sayım 31.08.2026"). Varsa sütun başlıkları 2.
+    /// satıra, veriler 3. satırdan başlar.
+    public var title: String?
+    public init(name: String, header: [String], rows: [[XlsxCell]], widths: [Double] = [], title: String? = nil) {
+        self.name = name; self.header = header; self.rows = rows; self.widths = widths; self.title = title
     }
+
+    /// Sütun başlıklarının satırı (1'den): başlık varsa 2, yoksa 1
+    public var headerRow: Int { title == nil ? 1 : 2 }
 }
 
 public enum XlsxWriter {
@@ -311,21 +317,25 @@ public enum XlsxWriter {
     }
 
     private static func sheetXML(_ s: XlsxSheetData) -> String {
+        let hr = s.headerRow
         var x = #"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">"#
-        x += #"<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>"#
+        x += #"<sheetViews><sheetView workbookViewId="0"><pane ySplit="\#(hr)" topLeftCell="A\#(hr + 1)" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>"#
         if !s.widths.isEmpty {
             x += "<cols>"
             for (i, w) in s.widths.enumerated() { x += #"<col min="\#(i + 1)" max="\#(i + 1)" width="\#(w)" customWidth="1"/>"# }
             x += "</cols>"
         }
         x += "<sheetData>"
-        x += #"<row r="1" ht="32" customHeight="1">"#
+        if let title = s.title {
+            x += #"<row r="1" ht="22" customHeight="1"><c r="A1" s="4" t="inlineStr"><is><t xml:space="preserve">\#(escape(title))</t></is></c></row>"#
+        }
+        x += #"<row r="\#(hr)" ht="32" customHeight="1">"#
         for (c, h) in s.header.enumerated() {
-            x += #"<c r="\#(colName(c))1" s="1" t="inlineStr"><is><t xml:space="preserve">\#(escape(h))</t></is></c>"#
+            x += #"<c r="\#(colName(c))\#(hr)" s="1" t="inlineStr"><is><t xml:space="preserve">\#(escape(h))</t></is></c>"#
         }
         x += "</row>"
         for (r, row) in s.rows.enumerated() {
-            let rn = r + 2
+            let rn = r + hr + 1
             x += #"<row r="\#(rn)">"#
             for (c, cell) in row.enumerated() {
                 let ref = "\(colName(c))\(rn)"

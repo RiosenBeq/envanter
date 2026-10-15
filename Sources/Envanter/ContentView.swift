@@ -27,7 +27,7 @@ struct ContentView: View {
         }
         .background(AmbientBackground())
         .onAppear { store.undoManager = undoManager }
-        // Satış raporu / Excel dosyası her ekranda pencereye bırakılabilir (Günlük Sayım'a geçilir)
+        // Satış raporu, sayım Excel'i ya da eski Excel dosyası her ekranda pencereye bırakılabilir (Günlük Sayım'a geçilir)
         .overlay { if dropTargeted { dropOverlay } }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard let p = providers.first else { return false }
@@ -45,6 +45,10 @@ struct ContentView: View {
         }
         .sheet(item: $store.workbookPreview) { p in
             WorkbookImportSheet(imp: p.imp).environmentObject(store)
+        }
+        // Sayım Excel'i yükleme önizlemesi ("Excel'den Yükle…" ya da bırakılan sayım şablonu)
+        .sheet(item: $store.countImportPreview) { p in
+            CountImportSheet(preview: p).environmentObject(store)
         }
         .alert(store.alert?.title ?? "", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } }),
                presenting: store.alert) { _ in
@@ -103,7 +107,7 @@ struct ContentView: View {
             .overlay {
                 VStack(spacing: 8) {
                     Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 40))
-                    Text("Satış raporunu veya Excel envanter dosyasını buraya bırakın").font(.title3.weight(.semibold))
+                    Text("Satış raporunu, sayım Excel'ini veya Excel envanter dosyasını buraya bırakın").font(.title3.weight(.semibold))
                 }.foregroundStyle(Brand.accent)
             }
             .padding(10)

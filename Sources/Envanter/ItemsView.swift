@@ -95,7 +95,7 @@ struct ItemsView: View {
                 Text("Kritik\nseviye").frame(width: IW.min + 10).explains(.minStock)
                 Text("Tolerans\n(± birim)").frame(width: IW.tol + 10).explains(.tolerance)
                 Text("Tahmini\nstok").frame(width: IW.estimate + 10)
-                    .help("Bugün: sayıldıysa kapanış, değilse son sayım + sonraki hareketler (≈)")
+                    .help("Bugün: sayıldıysa Kalan, değilse son sayım + sonraki hareketler (≈)")
                 Color.clear.frame(width: IW.delete, height: 1)
             }
             .font(.caption.weight(.semibold)).multilineTextAlignment(.center)
@@ -267,7 +267,7 @@ private struct ItemRow: View {
             OptionalDecimalField(value: Binding(get: { item.minStock }, set: { v in store.updateItem(item.id, actionName: "Kritik Seviye") { $0.minStock = v } }),
                                  placeholder: "—", maxFraction: item.maxFraction, width: IW.min)
                 .padding(.horizontal, 5)
-                .help("Kapanış bu değerin altına düşerse uyarı verilir (\(item.unit.lowercased()))")
+                .help("Kalan bu değerin altına düşerse uyarı verilir (\(item.unit.lowercased()))")
             OptionalDecimalField(value: Binding(get: { item.tolerance }, set: { v in store.updateItem(item.id, actionName: "Tolerans") { $0.tolerance = v } }),
                                  placeholder: "0", maxFraction: item.maxFraction, width: IW.tol)
                 .padding(.horizontal, 5)

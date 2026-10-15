@@ -106,7 +106,7 @@ enum SelfTest {
             store.entryBinding(item: "g90", date: d1, \.closing).wrappedValue = 120
         }
         var calc = store.engine.calc(date: d1).rows.first { $0.itemID == "g90" }
-        check(near(calc?.actual, 30), "fiili tüketim = 100 + 50 − 120 = 30")
+        check(near(calc?.actual, 30), "gerçek kullanım = 100 + 50 − 120 = 30")
         check(!store.isFirstRun, "ilk sayım girilince başlangıç kartı kayboluyor")
         check(near(calc?.diff, -30), "satış yokken fark −30")
 
@@ -411,7 +411,7 @@ enum SelfTest {
             let cells = x.flatMap { $0.rows.values.flatMap { $0.values } }
             check(!cells.contains { $0.contains("₺") || $0.contains("Maliyet") }, "geçmiş Excel'inde tutar ya da maliyet yok")
         } else { check(false, "geçmiş Excel'i okunabilir") }
-        check((try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: d2)))?.first?.name == "Sayım Formu", "sayım formu")
+        check((try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: d2)))?.first?.name == "Sayım Formu", "sayım şablonu")
         check((try? XlsxReader.read(data: Exporter.day(engine: store.engine, date: d1)))?.count == 2, "gün Excel'i 2 sayfa")
         // Web paneliyle aynı dosya adı kuralı (Fixtures/export-vectors.json)
         check(Exporter.fileName(branch: " A/B:C ", base: "Sayım Formu 01.08.2026") == "NextGen Envanter – A-B-C – Sayım Formu 01.08.2026.xlsx",
@@ -693,6 +693,136 @@ enum SelfTest {
         store.setWorker(nil)
         check(!store.showWorkerPrompt && store.activeWorker == nil, "Atla: çalışan seçilmedi")
         store.testDeviceAccount = nil
+
+        print("16c) Sayım ekranı ve Sayım Excel'i (şablon, yükleme önizlemesi, tek adımda uygulama, geri alma)")
+        check(CountText.columns == ["Ürün", "Devreden", "Giren", "Çıkan", "Satılan", "Zayi", "Kalan", "Fark"],
+              "sayım sütunları: Ürün · Devreden · Giren · Çıkan · Satılan · Zayi · Kalan · Fark")
+        check(Term.opening.title == "Devreden" && Term.incoming.title == "Giren" && Term.transferOut.title == "Çıkan"
+              && Term.transferIn.title == "Şubeden gelen" && Term.closing.title == "Kalan" && Term.expected.title == "Olması gereken"
+              && Term.actualUsage.title == "Gerçek kullanım" && Term.expectedUsage.title == "Satış + zayi",
+              "sözlük yeni adlarla (Devreden, Giren, Çıkan, Şubeden gelen, Kalan, Olması gereken, Gerçek kullanım)")
+        check(!Term.allCases.contains { $0.title.contains("Fiili") || $0.text.contains("Fiili") }, "sözlükte \"Fiili\" yok")
+        check(CountText.subtitle == "Gün sonunda kalanı sayın; giren, çıkan ve zayiyi girin. Fark satış raporuna göre hesaplanır.",
+              "sayım ekranının alt başlığı")
+        let xDay = "2026-08-12"
+        setClosings(DateKey.addDays(-1, to: xDay), ["g90": 100, "patates": 20])
+        store.entryBinding(item: "g90", date: xDay, \.incoming).wrappedValue = 50
+        if let xRow = store.engine.calc(date: xDay).rows.first(where: { $0.itemID == "g90" }), let xItem = store.engine.itemsByID["g90"] {
+            check(CountText.openingValue(xRow, item: xItem) == "100" && CountText.closingPlaceholder(xRow, item: xItem) == "≈ 150"
+                  && CountText.diffPill(xRow, item: xItem) == "—",
+                  "Devreden 100, Kalan alanında olması gereken ≈ 150, sayılmadan Fark \"—\"")
+            check(WasteText.buttonHelp(xRow, legacy: false, item: xItem) == "Zayi yok — eklemek için tıklayın",
+                  "Zayi düğmesi (0): tıklayınca Zayi Ekle açılır")
+        } else { check(false, "12.08 satırı hesaplandı") }
+        store.entryBinding(item: "g90", date: xDay, \.closing).wrappedValue = 140
+        if let xRow = store.engine.calc(date: xDay).rows.first(where: { $0.itemID == "g90" }), let xItem = store.engine.itemsByID["g90"] {
+            check(CountText.diffPill(xRow, item: xItem) == "10 adet eksik"
+                  && CountText.formula(xRow, item: xItem) == "Devreden 100 + Giren 50 − Çıkan 0 − Satılan 0 − Zayi 0 = Olması gereken 150 · Sayılan 140 → 10 adet eksik",
+                  "Fark sözle (10 adet eksik) ve dökümde düz formül")
+        } else { check(false, "12.08 satırı sayıldı") }
+        // Zayi düğmesi bu kalem seçili Zayi Ekle'yi açar; pencere yalnızca o kalemin elle girilen kayıtlarını listeler
+        if let xWaste = WasteLog.make(id: "selftest-xzayi", itemID: "patates", qty: 0.5, reason: .burnt) { store.addWaste(date: xDay, entry: xWaste) }
+        if let pRow = store.engine.calc(date: xDay).rows.first(where: { $0.itemID == "patates" }), let pItem = store.engine.itemsByID["patates"] {
+            check(WasteText.buttonHelp(pRow, legacy: false, item: pItem).hasSuffix("— Zayi Ekle'yi açmak için tıklayın")
+                  && WasteLog.entries(store.data.days[xDay], itemID: "patates").map { $0.id } == ["selftest-xzayi"]
+                  && WasteLog.entries(store.data.days[xDay], itemID: "g90").isEmpty,
+                  "Zayi düğmesi ipucu ve Zayi Ekle'deki kalem kayıtları")
+        }
+        if let xSheet = (try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: xDay, branch: store.settings.branchName)))?.first {
+            check(xSheet.name == "Sayım Formu" && xSheet.value(row: 1, col: 1) == "Test Şube · Sayım 12.08.2026"
+                  && (1...9).map { xSheet.value(row: 2, col: $0) ?? "" } == CountImport.templateHeader,
+                  "şablon: 1. satır başlık, 2. satır Kalem, Kod, Birim, Devreden, Giren, Çıkan, Zayi, Kalan (sayım), Not")
+            var xGrid = CountImport.grid(sheet: xSheet)
+            let xBack = CountImport.parse(grid: xGrid, items: store.engine.activeItems)
+            check(xBack.headerRow == 2 && xBack.unknown.isEmpty && xBack.errors.isEmpty && CountImport.isCountSheet(xGrid)
+                  && CountImport.changes(xBack.updates, day: store.data.days[xDay]).isEmpty,
+                  "indirilen şablon geri yüklenince değişiklik yok (\(xBack.updates.count) kalem okundu)")
+            // Depoda doldurulan şablon: g90 Kalan "120+25", Çıkan okunamaz; patates Zayi 1,5 ve Kalan 17,5; bilinmeyen ve yinelenen satır
+            func put(_ itemID: String, _ col: Int, _ value: CountImport.Cell?) {
+                guard let r = xGrid.firstIndex(where: { $0.count > 1 && $0[1] == .text(itemID) }) else { return }
+                while xGrid[r].count <= col { xGrid[r].append(nil) }
+                xGrid[r][col] = value
+            }
+            put("g90", 7, .text("120+25"))
+            put("g90", 5, .text("abc"))
+            put("patates", 6, .text("1,5"))
+            put("patates", 7, .number(17.5))
+            xGrid.append([.text("Bilinmeyen Kalem"), nil, .text("Adet"), nil, .number(5)])
+            xGrid.append([.text("Patates"), .text("patates"), nil, nil, nil, nil, nil, .number(99)])
+            let xParsed = CountImport.parse(grid: xGrid, items: store.engine.activeItems)
+            let xChanges = CountImport.changes(xParsed.updates, day: store.data.days[xDay])
+            let xSummary = CountImportText.summary(changed: xChanges.count, unchanged: xParsed.updates.count - xChanges.count,
+                                                   unknown: xParsed.unknown.count, errors: xParsed.errors.count,
+                                                   duplicates: xParsed.duplicates.count)
+            check(xChanges.map { $0.itemID } == ["g90", "patates"]
+                  && xSummary == "2 kalem değişecek · 1 bilinmeyen kalem · 1 okunamayan hücre · 1 yinelenen satır",
+                  "önizleme: \(xSummary)")
+            if let pItem = store.engine.itemsByID["patates"], let wasteChange = xChanges.last?.change(.waste) {
+                check(CountImportText.change(wasteChange, item: pItem) == "— → 1,5", "önizleme satırı eski → yeni (Zayi — → 1,5)")
+            }
+            // Uygula: tek geri alma adımı (pencerede tek tıklama; gruplar elle açılıp kapanır, bkz. 8. bölüm)
+            let xUndo = UndoManager()
+            xUndo.groupsByEvent = false
+            store.undoManager = xUndo
+            await settle()
+            store.alert = nil
+            xUndo.beginUndoGrouping()
+            let xApplied = store.applyCountImport(CountImportPreview(sourceName: "selftest.xlsx", date: xDay, result: xParsed))
+            xUndo.endUndoGrouping()
+            // Günlük Sayım açılınca bildirimi alır; beklemeden önce okunur
+            let xNotice = store.dailyNotice ?? ""
+            await settle()
+            let xExcel = CountImport.excelWaste(store.data.days[xDay], itemID: "patates")
+            check(xApplied && store.data.days[xDay]?.entries["g90"]?.closing == 145 && store.data.days[xDay]?.entries["patates"]?.closing == 17.5
+                  && store.data.days[xDay]?.entries["g90"]?.incoming == 50 && store.data.days[xDay]?.entries["g90"]?.transferOut == nil,
+                  "Uygula: Kalan 145 ve 17,5 yazıldı; okunamayan Çıkan ve yinelenen satır yazılmadı")
+            check(xExcel?.id == "excel-patates" && xExcel?.qty == 1.5 && xExcel?.reason == "other" && xExcel?.note == "Excel'den yüklendi"
+                  && store.data.days[xDay]?.wasteLog?.map { $0.id } == ["selftest-xzayi", "excel-patates"],
+                  "Zayi: excel-patates kaydı (Diğer, \"Excel'den yüklendi\"); elle girilen kayıt korundu")
+            check(xUndo.undoActionName == CountImportText.actionName && store.countImportPreview == nil
+                  && store.section == .daily && store.selectedDate == xDay && xNotice.hasPrefix("Excel'den yüklendi: 2 kalem"),
+                  "Düzen menüsünde \"\(CountImportText.actionName) Geri Al\"; Günlük Sayım bildirimi")
+            store.dailyNotice = nil
+            xUndo.undo()
+            await settle()
+            check(store.data.days[xDay]?.entries["g90"]?.closing == 140 && store.data.days[xDay]?.entries["patates"]?.closing == nil
+                  && CountImport.excelWaste(store.data.days[xDay], itemID: "patates") == nil
+                  && store.data.days[xDay]?.wasteLog?.map { $0.id } == ["selftest-xzayi"],
+                  "geri al: yüklemenin tamamı tek adımda geri alındı")
+            xUndo.redo()
+            await settle()
+            check(store.data.days[xDay]?.entries["g90"]?.closing == 145 && CountImport.excelWaste(store.data.days[xDay], itemID: "patates")?.qty == 1.5,
+                  "yinele: yükleme yeniden uygulandı")
+            store.undoManager = nil
+            xUndo.removeAllActions()
+            // Yeniden indirilen şablonda Zayi = kalemin Excel zayi kaydı; 0 yüklenince kayıt silinir
+            if let again2 = (try? XlsxReader.read(data: Exporter.countSheet(engine: store.engine, date: xDay)))?.first {
+                var zeroGrid = CountImport.grid(sheet: again2)
+                if let r = zeroGrid.firstIndex(where: { $0.count > 6 && $0[1] == .text("patates") }) {
+                    check(zeroGrid[r][6] == .number(1.5), "yeniden indirilen şablonda Zayi 1,5")
+                    zeroGrid[r][6] = .number(0)
+                } else { check(false, "şablonda patates Zayi'si var") }
+                let zeroPreview = CountImportPreview(sourceName: "selftest-0.xlsx", date: xDay,
+                                                     result: CountImport.parse(grid: zeroGrid, items: store.engine.activeItems))
+                // Kapatılmış günde uygulanmaz (satış aktarımındaki ileti)
+                store.setLocked(xDay, true)
+                store.alert = nil
+                check(!store.applyCountImport(zeroPreview) && store.alert?.title == "Gün kapatılmış"
+                      && CountImport.excelWaste(store.data.days[xDay], itemID: "patates") != nil,
+                      "kapatılmış günde yükleme reddedildi (Gün kapatılmış)")
+                store.alert = nil
+                store.setLocked(xDay, false)
+                // Personel de uygulayabilir (günlük kayıt)
+                store.enforcedRole = CloudRole.staff
+                check(store.applyCountImport(zeroPreview) && CountImport.excelWaste(store.data.days[xDay], itemID: "patates") == nil
+                      && store.data.days[xDay]?.wasteLog?.map { $0.id } == ["selftest-xzayi"] && store.alert == nil,
+                      "personel: Zayi 0 yüklendi, Excel zayi kaydı silindi, elle girilen kaldı")
+                store.enforcedRole = nil
+                store.dailyNotice = nil
+            } else { check(false, "şablon yeniden indirildi") }
+        } else { check(false, "sayım şablonu okunabilir") }
+        check(!CountImport.isCountSheet(CountImport.grid(text: "Kodu\tÜrün Tipi\tAdedi\n11101\tDUBLEX BURGER\t14")),
+              "satış raporu sayım Excel'i sanılmıyor (pencereye bırakılınca satış aktarımı)")
 
         print("17) Eşitleme kayıt noktası arayüzü bekletmez (önce veri, sonra durum)")
         let year = DemoData.make(endingAt: d2, days: 365)

@@ -137,6 +137,12 @@ public struct ItemCalc {
 
     /// Kapanış girilmiş mi (günün bu kalemi için sayım tamam mı)
     public var isCounted: Bool { closing != nil }
+    /// Olması gereken (beklenen kalan) = Devreden + Giren + Şubeden gelen − Çıkan − Satılan − Zayi. Devreden bilinmiyorsa
+    /// (önceki sayım yok ya da çok eski; ilk sayım) nil. Sayılmışsa Fark = Kalan − Olması gereken.
+    public var expectedClosing: Double? {
+        guard openingSource != .noBase else { return nil }
+        return Engine.clean(opening + incoming + transferIn - transferOut - sold - waste)
+    }
     /// Dayanak var ama `Engine.carryMaxDays` günden eski
     public var hasStaleBase: Bool { openingSource == .noBase && openingBaseDate != nil }
     /// Bu kalemle ilgili herhangi bir veri/hareket var mı

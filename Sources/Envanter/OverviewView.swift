@@ -342,7 +342,11 @@ struct OverviewView: View {
             Button { store.section = .reports } label: { Label("Dönem raporu", systemImage: "chart.bar.xaxis") }
             Button { store.section = .team } label: { Label("Ekip", systemImage: "person.2") }
             Divider()
-            Button { store.exportCountSheet() } label: { Label("Sayım formu (Excel)…", systemImage: "printer") }
+            Button { store.exportCountSheet() } label: { Label("Sayım şablonu (Excel)…", systemImage: "tablecells") }
+            Button {
+                store.section = .daily
+                store.pickCountImport()
+            } label: { Label("Excel'den sayım yükle…", systemImage: "square.and.arrow.down") }
             Button { store.exportDayExcel() } label: { Label("Günü Excel'e aktar…", systemImage: "square.and.arrow.up") }
             if canShowSetup {
                 Divider()
@@ -352,7 +356,7 @@ struct OverviewView: View {
             Label("Diğer işlemler", systemImage: "ellipsis.circle")
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .help("Panodan satış, sipariş önerisi, dönem raporu, ekip, sayım formu ve Excel'e aktarım")
+        .help("Panodan satış, sipariş önerisi, dönem raporu, ekip, sayım şablonu, Excel'den sayım yükleme ve Excel'e aktarım")
     }
 
     @ViewBuilder
@@ -622,7 +626,7 @@ private struct WelcomeCard: View {
     /// Sıfırdan başlayan için: hazır tanımlar ve ilk satış raporu
     private var freshTile: some View {
         let active = store.engine.activeItems
-        var text = "\(store.data.products.count) hazır reçete ve \(active.count) stok kalemi yüklü. Stok Kalemleri'nde kritik seviye ve toleransı girin, Reçeteler'i kontrol edin; gün sonunda ModPos satış raporunu aktarıp Günlük Sayım'da kapanışı yazın."
+        var text = "\(store.data.products.count) hazır reçete ve \(active.count) stok kalemi yüklü. Stok Kalemleri'nde kritik seviye ve toleransı girin, Reçeteler'i kontrol edin; gün sonunda ModPos satış raporunu aktarıp Günlük Sayım'da Kalan'ı yazın."
         if !store.canEditCatalog { text += " Personel hesabıyla tanımlar salt okunurdur." }
         return StartTile(icon: "shippingbox", title: "Sıfırdan başlayın", text: text) {
             Button { store.section = .items } label: { Label("Stok Kalemleri", systemImage: "shippingbox") }

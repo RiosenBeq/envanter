@@ -213,3 +213,127 @@ struct WorkbookImportSheet: View {
         .padding(22).frame(width: 600)
     }
 }
+
+/// Sayım Excel'i yükleme önizlemesi (web: CountImportDialog): kalem kalem eski → yeni (Giren, Çıkan, Zayi, Kalan; eski
+/// şablondan geldiyse Şubeden gelen), bilinmeyen kalemler, okunamayan hücreler ve yinelenen satırlar. "Uygula" tüm
+/// değerleri önizlemenin gününe tek geri alma adımında yazar (`AppStore.applyCountImport`).
+struct CountImportSheet: View {
+    @EnvironmentObject var store: AppStore
+    let preview: CountImportPreview
+
+    var body: some View {
+        let result = preview.result
+        let changes = CountImport.changes(result.updates, day: store.data.days[preview.date])
+        let unchanged = result.updates.count - changes.count
+        let locked = store.isLocked(preview.date)
+        let fields = CountImport.Field.allCases.filter { f in f != .transferIn || changes.contains { $0.change(.transferIn) != nil } }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "tablecells.badge.ellipsis").font(.title).foregroundStyle(Brand.accent)
+                VStack(alignment: .leading) {
+                    Text(CountImportText.title).font(.title2.weight(.semibold))
+                    Text("\(preview.sourceName) → \(DateKey.long(preview.date))").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            if let message = result.message {
+                notice(icon: "exclamationmark.triangle.fill", color: Brand.warn, text: message + ". " + CountImportText.noHeaderHint)
+            } else {
+                Text(CountImportText.summary(changed: changes.count, unchanged: unchanged, unknown: result.unknown.count,
+                                             errors: result.errors.count, duplicates: result.duplicates.count))
+                    .font(.headline)
+                if changes.isEmpty {
+                    Text(CountImportText.nothingToApply).font(.callout).foregroundStyle(.secondary)
+                } else {
+                    changeTable(changes, fields: fields)
+                }
+                issues(result)
+                Text(CountImportText.rules).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if locked {
+                notice(icon: "lock.fill", color: Brand.negative,
+                       text: store.canChangeLockedDays
+                        ? "\(DateKey.short(preview.date)) günü kapatılmış (kilitli). Yüklemek için önce Günlük Sayım'dan kilidi açın."
+                        : "\(DateKey.short(preview.date)) günü kapatılmış (kilitli). \(CloudPermission.lockedDayPickAnotherNote)")
+            }
+            HStack {
+                Spacer()
+                Button("Vazgeç") { store.countImportPreview = nil }.keyboardShortcut(.cancelAction)
+                Button(CountImportText.apply) { _ = store.applyCountImport(preview) }
+                    .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                    .disabled(changes.isEmpty)
+            }
+        }
+        .padding(22).frame(width: 680)
+    }
+
+    /// Değişecek kalemler: her sütunda "eski → yeni" (değişmeyen alan boş)
+    private func changeTable(_ changes: [CountImport.ItemChange], fields: [CountImport.Field]) -> some View {
+        ScrollView {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                GridRow {
+                    Text("Kalem").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(fields, id: \.self) { f in
+                        Text(f.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                    }
+                }
+                Divider()
+                ForEach(changes) { c in
+                    GridRow {
+                        Text(store.engine.itemsByID[c.itemID]?.name ?? c.itemID).lineLimit(1)
+                        ForEach(fields, id: \.self) { f in
+                            Text(changeText(c, f)).monospacedDigit()
+                        }
+                    }
+                }
+            }
+            .font(.callout)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: min(CGFloat(changes.count) * 26 + 40, 300))
+    }
+
+    /// "— → 640" (alan değişmiyorsa boş)
+    private func changeText(_ c: CountImport.ItemChange, _ f: CountImport.Field) -> String {
+        guard let fc = c.change(f), let item = store.engine.itemsByID[c.itemID] else { return "" }
+        return CountImportText.change(fc, item: item)
+    }
+
+    @ViewBuilder private func issues(_ r: CountImport.Result) -> some View {
+        if !r.unknown.isEmpty {
+            issueList(CountImportText.unknownTitle, color: Brand.warn, lines: r.unknown.map(CountImportText.unknownLine))
+        }
+        if !r.errors.isEmpty {
+            issueList(CountImportText.errorsTitle, color: Brand.negative, lines: r.errors.map(CountImportText.errorLine))
+        }
+        if !r.duplicates.isEmpty {
+            issueList(CountImportText.duplicatesTitle, color: Brand.warn,
+                      lines: r.duplicates.map { CountImportText.duplicateLine($0, name: store.engine.itemsByID[$0.itemID]?.name ?? $0.itemID) })
+        }
+    }
+
+    private func issueList(_ title: String, color: Color, lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(title) (\(lines.count))").font(.callout.weight(.semibold)).foregroundStyle(color)
+            ForEach(Array(lines.prefix(8).enumerated()), id: \.offset) { _, line in
+                Text(line).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            if lines.count > 8 {
+                Text("… ve \(lines.count - 8) satır daha").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.10)))
+    }
+
+    private func notice(icon: String, color: Color, text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon).foregroundStyle(color)
+            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
+    }
+}

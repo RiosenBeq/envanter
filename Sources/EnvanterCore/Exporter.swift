@@ -1,12 +1,21 @@
 import Foundation
 
-/// Excel'e aktarım. "Alımlar" sayfasıyla aynı sütun düzenini kullanır; böylece eski pivot tablolar çalışmaya devam eder.
+/// Excel'e aktarım. Dönem kitabının "Alımlar" ve "Özet" sayfaları eski Alımlar sayfasıyla aynı sütun düzenini ve başlıkları
+/// kullanır; böylece eski pivot tablolar çalışmaya devam eder. Gün kitabının "Envanter" sayfası aynı sütun sırasıyla sayım
+/// ekranının adlarını kullanır (Devreden, Giren, … Olması Gereken, Fark; web `DAY_HEADER`).
 public enum Exporter {
     public static let inventoryHeader = [
         "Tarih", "Ürün", "Açılış", "Gelen", "Gelen Transfer (+)", "Giden Transfer (-)",
         "Kapanış", "Satılan", "Zaiyat", "Fiili Tüketim", "Fark",
     ]
     public static let inventoryWidths: [Double] = [12, 28, 11, 11, 14, 14, 11, 11, 11, 13, 11]
+
+    /// Gün kitabının Envanter sayfası (sade sözcükler)
+    public static let dayHeader = [
+        "Tarih", "Ürün", "Devreden", "Giren", "Şubeden Gelen", "Çıkan",
+        "Kalan", "Satılan", "Zayi", "Olması Gereken", "Fark",
+    ]
+    public static let dayWidths: [Double] = [12, 28, 11, 11, 13, 11, 11, 11, 11, 14, 11]
 
     public static func label(_ item: Item) -> String { "\(item.name) / \(item.unit)" }
 
@@ -29,6 +38,22 @@ public enum Exporter {
         return rows
     }
 
+    /// Gün kitabının satırları: aynı sütun sırası, 10. sütun Olması Gereken (Devreden + Giren + Şubeden gelen − Çıkan −
+    /// Satılan − Zayi; Devreden bilinmiyorsa boş); Fark = Kalan − Olması Gereken
+    public static func dayInventoryRows(engine: Engine, date: String) -> [[XlsxCell]] {
+        let serial = DateKey.excelSerial(date)
+        return engine.calc(date: date).rows.compactMap { c -> [XlsxCell]? in
+            guard let item = engine.itemsByID[c.itemID] else { return nil }
+            return [
+                serial.map { XlsxCell.date(serial: $0) } ?? .text(date),
+                .text(label(item)),
+                .number(c.opening), .number(c.incoming), .number(c.transferIn), .number(c.transferOut),
+                .optNumber(c.closing), .number(c.sold), .number(c.waste),
+                .optNumber(c.expectedClosing), .diff(c.diff),
+            ]
+        }
+    }
+
     /// Dışa aktarılan dosyanın adı: "NextGen Envanter – Kadıköy – 01.08.2026.xlsx". Şube adı kırpılır; içindeki / : \
     /// yerine - yazılır; boşsa atlanır. Web'deki `exportFileName` ile aynı (Fixtures/export-vectors.json).
     public static func fileName(branch: String, base: String, ext: String = "xlsx") -> String {
@@ -39,8 +64,8 @@ public enum Exporter {
 
     /// Seçili günün envanteri + satış dökümü (iki sayfa)
     public static func daySheets(engine: Engine, date: String) -> [XlsxSheetData] {
-        let inv = XlsxSheetData(name: "Envanter", header: inventoryHeader,
-                                rows: inventoryRows(engine: engine, dates: [date]), widths: inventoryWidths)
+        let inv = XlsxSheetData(name: "Envanter", header: dayHeader,
+                                rows: dayInventoryRows(engine: engine, date: date), widths: dayWidths)
         return [inv, salesSheet(engine: engine, date: date)]
     }
 
@@ -140,26 +165,16 @@ public enum Exporter {
             rows: rows, widths: [32, 12, 11, 13, 14, 14, 11, 13, 13, 16, 13, 16, 12])
     }
 
-    // MARK: - Sayım formu
+    // MARK: - Sayım şablonu
 
-    /// Depoda elle doldurmak için yazdırılabilir sayım formu: açılış (devreden) dolu, kapanış boş.
+    /// Sayım şablonu ("Sayım Formu"): depoda doldurulup "Excel'den Yükle" ile geri yüklenir (`CountImport`). 1. satır
+    /// başlık, 2. satır sütunlar (Kalem, Kod, Birim, Devreden, Giren, Çıkan, Zayi, Kalan (sayım), Not), kalemler 3. satırdan.
     public static func countSheet(engine: Engine, date: String, branch: String = "") -> Data {
         XlsxWriter.build(sheets: [countSheetData(engine: engine, date: date, branch: branch)])
     }
 
     public static func countSheetData(engine: Engine, date: String, branch: String = "") -> XlsxSheetData {
-        let calcs = engine.calc(date: date).rows
-        let rows: [[XlsxCell]] = calcs.compactMap { c in
-            guard let item = engine.itemsByID[c.itemID] else { return nil }
-            let e = engine.data.days[date]?.entries[item.id]
-            return [.text(item.name), .text(item.unit), .number(c.opening),
-                    .optNumber(e?.incoming), .optNumber(e?.transferIn), .optNumber(e?.transferOut),
-                    .optNumber(e?.closing), XlsxCell(.blank)]
-        }
-        let title = (branch.isEmpty ? "" : branch + " · ") + "Sayım \(DateKey.short(date))"
-        return XlsxSheetData(name: "Sayım Formu",
-                             header: [title, "Birim", "Açılış", "Gelen", "Gelen Transfer (+)", "Giden Transfer (-)", "Kapanış (sayım)", "Not"],
-                             rows: rows, widths: [30, 8, 11, 11, 14, 14, 16, 30])
+        CountImport.template(engine: engine, date: date, branch: branch)
     }
 
     // MARK: - Sipariş önerisi

@@ -49,7 +49,7 @@ struct RangePicker: View {
 }
 
 /// Raporlar: seçilen dönemde kalem kalem miktar özeti (Dönem Özeti, Excel'deki "Özet" sayfası) ve tek bir kalemin
-/// beklenen / fiili tüketimi, günlük farkı ve stok seviyesi (Kalem Analizi). Tutar yoktur: tüm değerler kalemin
+/// satış + zayi ile gerçek kullanımı, günlük farkı ve stok seviyesi (Kalem Analizi). Tutar yoktur: tüm değerler kalemin
 /// biriminde (adet / kg). Sekme `store.reportsTab`'da, Kalem Analizi'ndeki kalem `store.reportItem`'da tutulur
 /// (Dönem Özeti'ndeki "Ayrıntılı analiz" bağlantısı ikisini birden değiştirir); iki sekme aynı dönemi kullanır.
 struct ReportsView: View {
@@ -94,8 +94,8 @@ struct ReportsView: View {
 
 // MARK: - Dönem özeti
 
-/// Dönem Özeti: kalem kalem ilk açılış, gelen, net transfer, son kapanış, satılan, zayi, fiili tüketim, toplam fark ve
-/// fazla çıkış. Yalnızca kapanışı sayılmış günler toplanır (Fark = Satılan + Zayi − Fiili dönemde de tutar). Satıra
+/// Dönem Özeti: kalem kalem ilk Devreden, Giren, Çıkan, son Kalan, satılan, zayi, gerçek kullanım, toplam fark ve
+/// fazla çıkış. Yalnızca Kalan'ı sayılmış günler toplanır (Fark = Satılan + Zayi − Gerçek kullanım dönemde de tutar). Satıra
 /// tıklayınca günlük fark grafiği açılır.
 private struct PeriodSummaryTab: View {
     @ObservedObject var store: AppStore
@@ -119,7 +119,7 @@ private struct PeriodSummaryTab: View {
             .padding(.horizontal, 20).padding(.top, 10)
             if all.allSatisfy({ $0.daysCounted == 0 }) {
                 EmptyStateView(icon: "chart.bar.xaxis", title: "Bu dönemde sayılmış gün yok",
-                               message: "Özet, kapanış sayımı girilmiş günlerden hesaplanır. Günlük Sayım ekranında sayımları girin ya da tarih aralığını değiştirin.")
+                               message: "Özet, Kalan'ı sayılmış günlerden hesaplanır. Günlük Sayım ekranında sayımları girin ya da tarih aralığını değiştirin.")
             } else {
                 kpis(all)
                 header
@@ -173,9 +173,9 @@ private struct PeriodSummaryTab: View {
     }
 
     private let widths: [CGFloat] = [80, 80, 86, 84, 86, 80, 90, 92, 96]
-    private let titles = ["İlk Açılış", "Toplam Gelen", "Net Transfer", "Son Kapanış", "Toplam Satılan",
-                          "Toplam Zayi", "Fiili Tüketim", "Toplam Fark", "Fazla Çıkış"]
-    private let terms: [Term] = [.opening, .incoming, .transfer, .closing, .sold, .waste, .actualUsage, .diff, .shortage]
+    private let titles = ["İlk Devreden", "Toplam Giren", "Toplam Çıkan", "Son Kalan", "Toplam Satılan",
+                          "Toplam Zayi", "Gerçek Kullanım", "Toplam Fark", "Fazla Çıkış"]
+    private let terms: [Term] = [.opening, .incoming, .transferOut, .closing, .sold, .waste, .actualUsage, .diff, .shortage]
 
     private var header: some View {
         HStack(spacing: 0) {
@@ -200,8 +200,9 @@ private struct PeriodSummaryTab: View {
             }.frame(minWidth: 130, maxWidth: .infinity, alignment: .leading).padding(.leading, 12)
             cell(counted ? r.firstOpening.map(f) ?? "—" : "—", 0)
             cell(counted ? f(r.incoming) : "—", 1)
-            cell(counted ? f(r.transferIn - r.transferOut) : "—", 2)
-                .help("Gelen transfer \(f(r.transferIn)) − giden transfer \(f(r.transferOut))")
+            // Çıkan (başka şubeden gelen varsa ipucunda; Gerçek kullanım ikisini de hesaba katar)
+            cell(counted ? f(r.transferOut) : "—", 2)
+                .help(r.transferIn != 0 ? "\(CountText.transferOut) \(f(r.transferOut)) · \(CountText.transferIn) \(f(r.transferIn))" : Term.transferOut.text)
             cell(counted ? r.lastClosing.map(f) ?? "—" : "—", 3)
             cell(counted ? f(r.sold) : "—", 4)
             cell(counted ? f(r.waste) : "—", 5)
@@ -295,7 +296,7 @@ private func percent(_ v: Double?) -> String {
 
 private func day(_ key: String) -> Date { DateKey.date(from: key) ?? Date() }
 
-/// Kalem Analizi: seçili kalemin dönemdeki ortalama beklenen ve fiili tüketimi, toplam farkı, tutarlılığı ve grafikleri
+/// Kalem Analizi: seçili kalemin dönemdeki ortalama satış + zayi ve gerçek kullanımı, toplam farkı, tutarlılığı ve grafikleri
 private struct ItemAnalysisView: View {
     @ObservedObject var store: AppStore
     let from: String
@@ -349,12 +350,12 @@ private struct ItemAnalysisView: View {
         let accuracy = counted.isEmpty ? nil : Double(counted.filter { item.severity(of: $0.diff ?? 0).isProblem == false }.count) / Double(counted.count)
         let u = item.unit.lowercased()
         return StatRow {
-            StatCard(title: "Ort. beklenen tüketim", value: "\(Fmt.number(avgExpected, maxFraction: item.maxFraction)) \(u)",
-                     detail: "Reçeteye göre, günlük", icon: "function", color: Brand.positive, info: .sold)
-            StatCard(title: "Ort. fiili tüketim", value: avgActual.map { "\(Fmt.number($0, maxFraction: item.maxFraction)) \(u)" } ?? "—",
+            StatCard(title: "Ort. satış + zayi", value: "\(Fmt.number(avgExpected, maxFraction: item.maxFraction)) \(u)",
+                     detail: "Reçeteye göre, günlük", icon: "function", color: Brand.positive, info: .expectedUsage)
+            StatCard(title: "Ort. gerçek kullanım", value: avgActual.map { "\(Fmt.number($0, maxFraction: item.maxFraction)) \(u)" } ?? "—",
                      detail: "\(counted.count) sayılmış gün", icon: "scalemass", color: Brand.accent, info: .actualUsage)
             StatCard(title: "Toplam fark", value: "\(Fmt.number(totalDiff, maxFraction: item.maxFraction)) \(u)",
-                     detail: shortageDays > 0 ? "\(shortageDays) gün fazla çıkış · negatif: fazla çıkış" : "Fazla çıkış günü yok · negatif: fazla çıkış",
+                     detail: shortageDays > 0 ? "\(shortageDays) gün fazla çıkış · eksi: eksik" : "Fazla çıkış günü yok · eksi: eksik",
                      icon: "plusminus", color: Brand.color(for: item.severity(of: totalDiff)), info: .diff)
             StatCard(title: "Tutarlılık", value: percent(accuracy),
                      detail: "Farkın tolerans içinde kaldığı günler", icon: "target",
@@ -368,23 +369,23 @@ private struct ConsumptionChart: View {
     let series: [ItemDayPoint]
 
     var body: some View {
-        ChartCard(title: "\(item.name) · beklenen ve fiili tüketim (\(item.unit.lowercased()))",
-                  subtitle: "Beklenen: satış raporu × reçete (zayi dahil). Fiili: sayımdan hesaplanan tüketim.") {
+        ChartCard(title: "\(item.name) · satış + zayi ve gerçek kullanım (\(item.unit.lowercased()))",
+                  subtitle: "Satış + zayi: satış raporu × reçete, zayi dahil. Gerçek kullanım: sayımdan (Devreden + Giren + Şubeden gelen − Çıkan − Kalan).") {
             Chart {
                 ForEach(series) { p in
                     BarMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Miktar", p.expected))
-                        .foregroundStyle(by: .value("Seri", "Beklenen"))
+                        .foregroundStyle(by: .value("Seri", "Satış + zayi"))
                         .opacity(0.55)
                     if let a = p.actual {
                         LineMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Miktar", a))
-                            .foregroundStyle(by: .value("Seri", "Fiili"))
+                            .foregroundStyle(by: .value("Seri", "Gerçek kullanım"))
                             .interpolationMethod(.monotone)
                         PointMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Miktar", a))
-                            .foregroundStyle(by: .value("Seri", "Fiili"))
+                            .foregroundStyle(by: .value("Seri", "Gerçek kullanım"))
                     }
                 }
             }
-            .chartForegroundStyleScale(domain: ["Beklenen", "Fiili"], range: [Brand.positive, Brand.accent])
+            .chartForegroundStyleScale(domain: ["Satış + zayi", "Gerçek kullanım"], range: [Brand.positive, Brand.accent])
             .chartLegend(position: .top, alignment: .leading)
             .frame(height: 230)
         }
@@ -396,7 +397,7 @@ private struct DiffChart: View {
     let series: [ItemDayPoint]
 
     var body: some View {
-        ChartCard(title: "Günlük fark", subtitle: "Negatif: beklenenden fazla çıkış", info: .diff) {
+        ChartCard(title: "Günlük fark", subtitle: "Eksi: eksik (satışlara göre fazla çıkış) · artı: fazla", info: .diff) {
             Chart {
                 ForEach(series.filter { $0.diff != nil }) { p in
                     BarMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Fark", p.diff ?? 0))
@@ -420,7 +421,7 @@ private struct StockLevelChart: View {
     let series: [ItemDayPoint]
 
     var body: some View {
-        ChartCard(title: "Stok seviyesi (kapanış)", subtitle: item.minStock.map { "Kesikli çizgi: kritik seviye \(Fmt.number($0, maxFraction: item.maxFraction))" } ?? "Kritik seviye tanımlı değil", info: .minStock) {
+        ChartCard(title: "Stok seviyesi (Kalan)", subtitle: item.minStock.map { "Kesikli çizgi: kritik seviye \(Fmt.number($0, maxFraction: item.maxFraction))" } ?? "Kritik seviye tanımlı değil", info: .minStock) {
             Chart {
                 ForEach(series.filter { $0.closing != nil }) { p in
                     AreaMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Stok", p.closing ?? 0))

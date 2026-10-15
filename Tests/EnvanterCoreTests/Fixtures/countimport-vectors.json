@@ -1,0 +1,538 @@
+{
+ "about": "Sayım Excel'i yükleme kuralları (Mac CountImport, web countImport). İki depoda birebir aynı dosya: envanter Tests/EnvanterCoreTests/Fixtures/countimport-vectors.json ve envantersite test/fixtures/countimport-vectors.json. Kural: docs/SYNC.md → Sayım Excel'i. Hücreler metin, sayı ya da null. Başlık satırı: ilk 15 satırda, kalem ya da kod sütunu VE en az bir miktar sütunu olan ilk satır; hücre ' · ' içeriyor ya da gg.aa.yyyy tarihi taşıyorsa kalem sütunudur; diğerleri katlanmış (Türkçe harfler ASCII, küçük harf, boşluklar tek) metnin 'aliases' listesindeki bir adla eşitliği ya da o ad + boşluk / '(' ile başlamasıyla, listedeki sırayla eşleşir; aynı türden ikinci sütun yok sayılır. Kalem önce kodla (büyük/küçük harf duyarsız), sonra katlanmış adla bulunur. Boş, '-', '—', '–' hücre değişiklik değildir; sayı hücresi olduğu gibi (eksi geçersiz); metin hücre kalemin birimine göre toplayarak giriş kuralıyla (count-vectors.json 'expression') okunur. 'opening' (Devreden/Açılış), 'unit', 'note' yüklenmez. 'waste' kalemin o gündeki Excel zayi kaydını (id 'excel-<kalem kimliği>', neden 'other', not \"Excel'den yüklendi\") ayarlar; 0 kaydı siler. Satır numaraları 1'den başlar.",
+ "aliases": [
+  [
+   "transferIn",
+   [
+    "gelen transfer",
+    "transfer gelen",
+    "gelen tr"
+   ]
+  ],
+  [
+   "transferOut",
+   [
+    "giden transfer",
+    "transfer giden",
+    "giden tr"
+   ]
+  ],
+  [
+   "item",
+   [
+    "kalem",
+    "urun",
+    "malzeme",
+    "stok kalemi",
+    "ad"
+   ]
+  ],
+  [
+   "code",
+   [
+    "kod",
+    "stok kodu"
+   ]
+  ],
+  [
+   "unit",
+   [
+    "birim"
+   ]
+  ],
+  [
+   "opening",
+   [
+    "devreden",
+    "acilis",
+    "onceki"
+   ]
+  ],
+  [
+   "incoming",
+   [
+    "giren",
+    "gelen",
+    "giris",
+    "alim",
+    "alis",
+    "teslim"
+   ]
+  ],
+  [
+   "transferOut",
+   [
+    "cikan",
+    "cikis",
+    "giden"
+   ]
+  ],
+  [
+   "waste",
+   [
+    "zayi",
+    "zaiyat",
+    "fire"
+   ]
+  ],
+  [
+   "closing",
+   [
+    "kalan",
+    "kapanis",
+    "sayim",
+    "sayilan",
+    "mevcut"
+   ]
+  ],
+  [
+   "note",
+   [
+    "not",
+    "aciklama"
+   ]
+  ]
+ ],
+ "template": {
+  "sheet": "Sayım Formu",
+  "titleRow": "<şube> · Sayım <gg.aa.yyyy>",
+  "header": [
+   "Kalem",
+   "Kod",
+   "Birim",
+   "Devreden",
+   "Giren",
+   "Çıkan",
+   "Zayi",
+   "Kalan (sayım)",
+   "Not"
+  ],
+  "widths": [
+   28,
+   12,
+   8,
+   11,
+   11,
+   11,
+   11,
+   14,
+   28
+  ]
+ },
+ "items": [
+  {
+   "id": "g90",
+   "name": "90 Gr",
+   "unit": "Adet"
+  },
+  {
+   "id": "peynir",
+   "name": "Peynir",
+   "unit": "Kg"
+  },
+  {
+   "id": "patates",
+   "name": "Patates",
+   "unit": "Kg"
+  },
+  {
+   "id": "ekmek",
+   "name": "Ekmek Susamlı",
+   "unit": "Adet"
+  },
+  {
+   "id": "cigkofte",
+   "name": "Çiğ Köfte",
+   "unit": "Kg"
+  }
+ ],
+ "cases": [
+  {
+   "name": "yeni şablon (başlık satırı 2, Devreden yüklenmez)",
+   "grid": [
+    [
+     "Tuzla Marina · Sayım 31.08.2026"
+    ],
+    [
+     "Kalem",
+     "Kod",
+     "Birim",
+     "Devreden",
+     "Giren",
+     "Çıkan",
+     "Zayi",
+     "Kalan (sayım)",
+     "Not"
+    ],
+    [
+     "90 Gr",
+     "g90",
+     "Adet",
+     303,
+     420,
+     null,
+     null,
+     640,
+     null
+    ],
+    [
+     "Peynir",
+     "peynir",
+     "Kg",
+     16.8,
+     null,
+     null,
+     "0,5",
+     "14,28",
+     "ok"
+    ],
+    [
+     "Patates",
+     "patates",
+     "Kg",
+     201.18,
+     "",
+     "-",
+     null,
+     169.68,
+     null
+    ],
+    [
+     "Ekmek Susamlı",
+     "ekmek",
+     "Adet",
+     737,
+     "1.200",
+     50,
+     0,
+     "3x24+7",
+     null
+    ],
+    [
+     "Çiğ Köfte",
+     "cigkofte",
+     "Kg",
+     5,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "headerRow": 2,
+    "updates": [
+     {
+      "itemID": "g90",
+      "fields": {
+       "incoming": 420.0,
+       "closing": 640.0
+      }
+     },
+     {
+      "itemID": "peynir",
+      "fields": {
+       "closing": 14.28
+      },
+      "waste": 0.5
+     },
+     {
+      "itemID": "patates",
+      "fields": {
+       "closing": 169.68
+      }
+     },
+     {
+      "itemID": "ekmek",
+      "fields": {
+       "incoming": 1200.0,
+       "transferOut": 50.0,
+       "closing": 79.0
+      },
+      "waste": 0.0
+     }
+    ],
+    "unknown": [],
+    "errors": [],
+    "duplicates": []
+   }
+  },
+  {
+   "name": "kod yok, adla eşleşme (Türkçe harf, büyük/küçük)",
+   "grid": [
+    [
+     "ÜRÜN",
+     "GİREN",
+     "KALAN"
+    ],
+    [
+     "çiğ köfte",
+     "2,5",
+     "1.200"
+    ],
+    [
+     "EKMEK SUSAMLI",
+     "1.200",
+     "12"
+    ],
+    [
+     "Bilinmeyen Kalem",
+     5,
+     5
+    ],
+    [
+     "",
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "headerRow": 1,
+    "updates": [
+     {
+      "itemID": "cigkofte",
+      "fields": {
+       "incoming": 2.5,
+       "closing": 1.2
+      }
+     },
+     {
+      "itemID": "ekmek",
+      "fields": {
+       "incoming": 1200.0,
+       "closing": 12.0
+      }
+     }
+    ],
+    "unknown": [
+     {
+      "row": 4,
+      "name": "Bilinmeyen Kalem"
+     }
+    ],
+    "errors": [],
+    "duplicates": []
+   }
+  },
+  {
+   "name": "eski şablon (başlık ilk hücrede, transfer sütunları)",
+   "grid": [
+    [
+     "Tuzla Marina · Sayım 31.08.2026",
+     "Birim",
+     "Açılış",
+     "Gelen",
+     "Gelen Transfer (+)",
+     "Giden Transfer (-)",
+     "Kapanış (sayım)",
+     "Not"
+    ],
+    [
+     "90 Gr",
+     "Adet",
+     303,
+     10,
+     5,
+     2,
+     400,
+     null
+    ],
+    [
+     "Peynir",
+     "Kg",
+     16.8,
+     null,
+     null,
+     null,
+     15,
+     null
+    ]
+   ],
+   "expected": {
+    "headerRow": 1,
+    "updates": [
+     {
+      "itemID": "g90",
+      "fields": {
+       "incoming": 10.0,
+       "transferIn": 5.0,
+       "transferOut": 2.0,
+       "closing": 400.0
+      }
+     },
+     {
+      "itemID": "peynir",
+      "fields": {
+       "closing": 15.0
+      }
+     }
+    ],
+    "unknown": [],
+    "errors": [],
+    "duplicates": []
+   }
+  },
+  {
+   "name": "hatalı değerler, yinelenen kalem, kodla eşleşme önceliği",
+   "grid": [
+    [
+     "Kod",
+     "Kalem",
+     "Gelen",
+     "Çıkış",
+     "Fire",
+     "Sayım"
+    ],
+    [
+     "PATATES",
+     "Yanlış Ad",
+     -5,
+     "abc",
+     1,
+     10
+    ],
+    [
+     "patates",
+     "Patates",
+     3,
+     null,
+     null,
+     11
+    ],
+    [
+     "",
+     "90 Gr",
+     7,
+     1,
+     "2",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": 1,
+    "updates": [
+     {
+      "itemID": "patates",
+      "fields": {
+       "closing": 10.0
+      },
+      "waste": 1.0
+     },
+     {
+      "itemID": "g90",
+      "fields": {
+       "incoming": 7.0,
+       "transferOut": 1.0,
+       "closing": 100.0
+      },
+      "waste": 2.0
+     }
+    ],
+    "unknown": [],
+    "errors": [
+     {
+      "row": 2,
+      "column": "incoming",
+      "value": -5
+     },
+     {
+      "row": 2,
+      "column": "transferOut",
+      "value": "abc"
+     }
+    ],
+    "duplicates": [
+     {
+      "row": 3,
+      "itemID": "patates"
+     }
+    ]
+   }
+  },
+  {
+   "name": "başlık bulunamadı",
+   "grid": [
+    [
+     "a",
+     "b"
+    ],
+    [
+     1,
+     2
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "updates": [],
+    "unknown": [],
+    "errors": [],
+    "duplicates": [],
+    "message": "Başlık satırı bulunamadı"
+   }
+  },
+  {
+   "name": "boş satırlar ve yalnızca bilgi sütunları değişiklik değildir",
+   "grid": [
+    [
+     "Kalem",
+     "Kod",
+     "Birim",
+     "Devreden",
+     "Giren",
+     "Çıkan",
+     "Zayi",
+     "Kalan (sayım)",
+     "Not"
+    ],
+    [
+     "90 Gr",
+     "g90",
+     "Adet",
+     303,
+     null,
+     null,
+     null,
+     null,
+     "not"
+    ],
+    [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "Peynir",
+     "peynir",
+     "Kg",
+     16.8,
+     null,
+     null,
+     null,
+     0,
+     null
+    ]
+   ],
+   "expected": {
+    "headerRow": 1,
+    "updates": [
+     {
+      "itemID": "peynir",
+      "fields": {
+       "closing": 0.0
+      }
+     }
+    ],
+    "unknown": [],
+    "errors": [],
+    "duplicates": []
+   }
+  }
+ ]
+}

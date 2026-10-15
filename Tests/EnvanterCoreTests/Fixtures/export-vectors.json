@@ -4,25 +4,28 @@
   "branch": "Tuzla Marina",
   "countSheet": {
     "name": "Sayım Formu",
+    "title": "Tuzla Marina · Sayım 31.08.2026",
     "header": [
-      "Tuzla Marina · Sayım 31.08.2026",
+      "Kalem",
+      "Kod",
       "Birim",
-      "Açılış",
-      "Gelen",
-      "Gelen Transfer (+)",
-      "Giden Transfer (-)",
-      "Kapanış (sayım)",
+      "Devreden",
+      "Giren",
+      "Çıkan",
+      "Zayi",
+      "Kalan (sayım)",
       "Not"
     ],
     "widths": [
-      30,
+      28,
+      12,
       8,
       11,
       11,
+      11,
+      11,
       14,
-      14,
-      16,
-      30
+      28
     ]
   },
   "countSheetTitleWithoutBranch": "Sayım 31.08.2026",
@@ -32,14 +35,14 @@
       "header": [
         "Tarih",
         "Ürün",
-        "Açılış",
-        "Gelen",
-        "Gelen Transfer (+)",
-        "Giden Transfer (-)",
-        "Kapanış",
+        "Devreden",
+        "Giren",
+        "Şubeden Gelen",
+        "Çıkan",
+        "Kalan",
         "Satılan",
-        "Zaiyat",
-        "Fiili Tüketim",
+        "Zayi",
+        "Olması Gereken",
         "Fark"
       ],
       "widths": [
@@ -47,12 +50,12 @@
         28,
         11,
         11,
-        14,
-        14,
-        11,
-        11,
-        11,
         13,
+        11,
+        11,
+        11,
+        11,
+        14,
         11
       ]
     },

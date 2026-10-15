@@ -46,7 +46,7 @@ struct OrdersView: View {
                 } label: { Label("Sipariş Oluştur", systemImage: "cart.badge.plus") }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(!store.canEditCatalog)
-                    .help(store.canEditCatalog ? "Önerilen miktarlarla başlayan bir sipariş formu açar (miktarlar değiştirilebilir); mal gelince \"Teslim al\" ile Gelen'e işlenir"
+                    .help(store.canEditCatalog ? "Önerilen miktarlarla başlayan bir sipariş formu açar (miktarlar değiştirilebilir); mal gelince \"Teslim al\" ile Giren'e işlenir"
                           : CloudPermission.ordersStaffNote)
                 Button {
                     store.copyOrderText(date: date)
@@ -90,7 +90,7 @@ struct OrdersView: View {
                 EmptyStateView(icon: "checkmark.seal",
                                title: all.allSatisfy({ $0.sampleDays == 0 }) ? "Tüketim verisi yok" : "Sipariş gerekmiyor",
                                message: all.allSatisfy({ $0.sampleDays == 0 })
-                                ? "Öneri, son günlerin sayım (fiili tüketim) veya satış verisinden hesaplanır. Birkaç gün sayım girdikten sonra burada görünür."
+                                ? "Öneri, son günlerin sayım (gerçek kullanım) veya satış verisinden hesaplanır. Birkaç gün sayım girdikten sonra burada görünür."
                                 : "Mevcut stoklar seçilen gün sayısına ve kritik seviyelere yetiyor.")
             } else {
                 Table(list) {
@@ -253,7 +253,7 @@ private struct OrderRow: View {
                             .help(note)
                     }
                     if order.receivedWithoutIncoming == true {
-                        Text("Gelen elle girilmişti; Gelen'e eklenmedi").font(.caption2).foregroundStyle(.secondary)
+                        Text("Giren elle girilmişti; Giren'e eklenmedi").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -262,7 +262,7 @@ private struct OrderRow: View {
                     Button("Teslim al") { receiving = ReceiveTarget(order: order, date: asOf) }
                         .buttonStyle(SoftButtonStyle(tint: Brand.positive))
                         .disabled(!store.canEditCatalog)
-                        .help(store.canEditCatalog ? "Gelen miktarları seçilen günün Gelen sütununa işler" : CloudPermission.ordersStaffNote)
+                        .help(store.canEditCatalog ? "Gelen miktarları seçilen günün Giren sütununa işler" : CloudPermission.ordersStaffNote)
                 } else if order.status == .cancelled {
                     Button("Yeniden Aç") { store.reopenOrder(order.id) }
                         .buttonStyle(SoftButtonStyle())
@@ -289,7 +289,7 @@ private struct OrderRow: View {
             if let hint {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "info.circle.fill").foregroundStyle(Brand.positive)
-                    Text(OrderTexts.hint(hint, items: items) + " Öyleyse Gelen'e eklemeden teslim alındı sayın.")
+                    Text(OrderTexts.hint(hint, items: items) + " Öyleyse Giren'e eklemeden teslim alındı sayın.")
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -312,7 +312,7 @@ private struct OrderRow: View {
             Button("Sil", role: .destructive) { store.deleteOrder(order.id) }
             Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text("\(title) kaydı kalıcı olarak silinir. Teslim alınmışsa Gelen sütununa işlenen miktarlar değişmez.")
+            Text("\(title) kaydı kalıcı olarak silinir. Teslim alınmışsa Giren sütununa işlenen miktarlar değişmez.")
         }
     }
 }
@@ -324,10 +324,10 @@ enum OrderTexts {
         "\(Fmt.number(v, maxFraction: item?.maxFraction ?? 2)) \(item?.unit.lowercased() ?? "birim")"
     }
 
-    /// "31.08.2026 günü bu kalemlere Gelen girilmiş: 90 Gr 420 adet. Bu teslimat bu siparişten mi?"
+    /// "31.08.2026 günü bu kalemlere Giren girilmiş: 90 Gr 420 adet. Bu teslimat bu siparişten mi?"
     static func hint(_ hint: Purchasing.IncomingHint, items: [String: Item]) -> String {
         let parts = hint.lines.map { "\(items[$0.itemID]?.name ?? $0.itemID) \(amount($0.incoming, items[$0.itemID]))" }
-        return "\(DateKey.short(hint.date)) günü bu kalemlere Gelen girilmiş: \(parts.joined(separator: ", ")). Bu teslimat bu siparişten mi?"
+        return "\(DateKey.short(hint.date)) günü bu kalemlere Giren girilmiş: \(parts.joined(separator: ", ")). Bu teslimat bu siparişten mi?"
     }
 
     /// "Teslim alındı say" başlangıç miktarları: o gün Gelen'i olan satır en çok sipariş miktarı kadar, diğerleri 0
@@ -394,7 +394,7 @@ private struct OrderEditorSheet: View {
         }
         return rows.isEmpty
             ? "\(DateKey.short(target.date)) için önerilen sipariş yok; \"Kalem ekle\" ile kalemleri seçin."
-            : "\(rows.count) kalem önerilen miktarlarla \(DateKey.short(target.date)) tarihli siparişe eklendi; miktarları değiştirebilir, kalem ekleyip çıkarabilirsiniz. Mal gelince \"Teslim al\" ile Gelen'e işlenir."
+            : "\(rows.count) kalem önerilen miktarlarla \(DateKey.short(target.date)) tarihli siparişe eklendi; miktarları değiştirebilir, kalem ekleyip çıkarabilirsiniz. Mal gelince \"Teslim al\" ile Giren'e işlenir."
     }
 
     var body: some View {
@@ -519,8 +519,8 @@ private struct ReceiveSheet: View {
         let blocked = addToIncoming && store.isLocked(date)
         let alreadyEntered = order.lines.contains { incoming($0.itemID) > 0 }
         let info: String = addToIncoming
-            ? "Gelen miktarlar \(DateKey.long(date)) gününün Gelen sütununa eklenecek. Eksik gelen kalemin miktarını düzeltin; hiç gelmediyse 0 yazın."
-            : "Sipariş \(DateKey.long(date)) gününe teslim alındı sayılacak; Gelen sütununa dokunulmaz."
+            ? "Gelen miktarlar \(DateKey.long(date)) gününün Giren sütununa eklenecek. Eksik gelen kalemin miktarını düzeltin; hiç gelmediyse 0 yazın."
+            : "Sipariş \(DateKey.long(date)) gününe teslim alındı sayılacak; Giren sütununa dokunulmaz."
         VStack(alignment: .leading, spacing: 14) {
             Text("Teslim al").font(.title2.weight(.semibold))
             Text(info)
@@ -531,15 +531,15 @@ private struct ReceiveSheet: View {
                 DatePicker("", selection: dateBinding, displayedComponents: .date).labelsHidden()
             }
             VStack(alignment: .leading, spacing: 2) {
-                Toggle("Gelen'e eklemeden teslim alındı say", isOn: Binding(get: { !addToIncoming }, set: { addToIncoming = !$0 }))
-                Text("Teslimat Günlük Sayım'da Gelen olarak elle girildiyse seçin: sipariş kapanır, Gelen iki kez sayılmaz.")
+                Toggle("Giren'e eklemeden teslim alındı say", isOn: Binding(get: { !addToIncoming }, set: { addToIncoming = !$0 }))
+                Text("Teslimat Günlük Sayım'da Giren olarak elle girildiyse seçin: sipariş kapanır, Giren iki kez sayılmaz.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
                 GridRow {
                     Text("Kalem").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text("Sipariş").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text("Gelen").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Giren").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     // Birim sütunu (başlıksız)
                     Color.clear.frame(width: 1, height: 1)
                 }
@@ -552,7 +552,7 @@ private struct ReceiveSheet: View {
                                 Text("Kalem silinmiş").font(.caption).foregroundStyle(Brand.warn)
                             }
                             if incoming(l.itemID) > 0 {
-                                Text("Bu günde zaten Gelen: \(OrderTexts.amount(incoming(l.itemID), item))")
+                                Text("Bu günde zaten Giren: \(OrderTexts.amount(incoming(l.itemID), item))")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -570,7 +570,7 @@ private struct ReceiveSheet: View {
                 Label("Seçili gün kapatılmış; önce kilidi açın veya başka bir gün seçin.", systemImage: "lock.fill")
                     .font(.callout).foregroundStyle(Brand.negative)
             } else if addToIncoming && alreadyEntered {
-                Label("Bu günde bu kalemlere zaten Gelen girilmiş. Teslimat elle girildiyse \"Gelen'e eklemeden teslim alındı say\"ı seçin; yoksa miktarlar mevcut Gelen'in üstüne eklenir.",
+                Label("Bu günde bu kalemlere zaten Giren girilmiş. Teslimat elle girildiyse \"Giren'e eklemeden teslim alındı say\"ı seçin; yoksa miktarlar mevcut Giren'in üstüne eklenir.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.callout).foregroundStyle(Brand.warn).fixedSize(horizontal: false, vertical: true)
             }

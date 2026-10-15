@@ -65,7 +65,6 @@ struct EnvanterApp: App {
                 Divider()
                 Button("Günü Excel'e Aktar…") { store.exportDayExcel() }
                     .keyboardShortcut("e")
-                Button("Sayım Formu (Excel)…") { store.exportCountSheet() }
                 Button("Sipariş Listesini Kopyala") { store.copyOrderText(date: store.selectedDate) }
             }
             CommandMenu("Gün") {
@@ -83,6 +82,13 @@ struct EnvanterApp: App {
                 Button("Kapatılmamış Günler…") {
                     store.section = .overview
                     store.showUnclosedDays = true
+                }
+                Divider()
+                // Sayım Excel'i: seçili günün şablonu ve doldurulan şablonun yüklenmesi (önizlemeden sonra tek adımda uygulanır)
+                Button(CountImportText.templateCommand) { store.exportCountSheet() }
+                Button(CountImportText.uploadCommand) {
+                    store.section = .daily
+                    store.pickCountImport()
                 }
                 Divider()
                 // Günlük Sayım'daki arama kutusu (ad ya da kimlik); Stok Kalemleri açıksa oradaki

@@ -5,7 +5,8 @@ import EnvanterCore
 // `wasteLog` alanına yazılır (docs/SYNC.md §1 "Elle zayi"); toplamı kalemin Zayi sütununa eklenir.
 
 /// "Zayi Ekle": kalem (aranabilir liste), miktar (> 0), neden (zorunlu), not (en fazla 200 karakter) ve kim. Seçilen
-/// kalemin o günkü ModPos zayisi ve önceden elle girilenler gösterilir (aynı zayi iki kez girilmesin).
+/// kalemin o günkü ModPos zayisi ve önceden elle girilenler gösterilir (aynı zayi iki kez girilmesin); elle girilen kayıtlar
+/// listelenir ve gün açıkken silinebilir. Günlük Sayım'daki Zayi düğmesi bu pencereyi o kalem seçili açar.
 struct WasteSheet: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
@@ -76,6 +77,20 @@ struct WasteSheet: View {
                 Label(hint, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout).foregroundStyle(Brand.warn)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Seçili kalemin bu gün elle girilen kayıtları (Günlük Sayım'daki Zayi düğmesiyle açılınca da); gün açıkken silinebilir
+            if let item {
+                let manual = WasteLog.entries(store.data.days[date], itemID: item.id)
+                if !manual.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(WasteText.manualSection) · \(item.name)").font(.callout.weight(.semibold))
+                        WasteEntryList(date: date, entries: manual, showItem: false)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                }
             }
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
@@ -195,50 +210,5 @@ struct WasteEntryList: View {
                 }
             }
         }
-    }
-}
-
-/// Günlük Sayım satırındaki Zayi hücresinin açtığı döküm: ModPos ZAYİ ürünleri ve elle girilen kayıtlar
-struct WastePopover: View {
-    @EnvironmentObject var store: AppStore
-    let itemID: String
-    let date: String
-    /// Bu kalem seçili "Zayi Ekle"
-    var onAdd: (String) -> Void
-
-    var body: some View {
-        let result = store.engine.calc(date: date)
-        let item = store.engine.itemsByID[itemID]
-        let calc = result.rows.first { $0.itemID == itemID }
-        let pos = (result.analysis.contributions[itemID] ?? []).filter { $0.isWaste }.sorted { $0.amount > $1.amount }
-        let legacy = store.data.days[date]?.usesLegacySales ?? false
-        VStack(alignment: .leading, spacing: 10) {
-            if let item, let calc {
-                Text("\(item.name) · \(WasteText.section) \(WasteText.amount(calc.waste, item: item))").font(.headline)
-                if !pos.isEmpty {
-                    Text(WasteText.posSection).font(.subheadline.weight(.semibold))
-                    ForEach(pos) { c in
-                        HStack {
-                            Text(c.name).lineLimit(1)
-                            Spacer()
-                            Text(WasteText.amount(c.amount, item: item)).monospacedDigit()
-                        }
-                        .font(.callout)
-                    }
-                }
-                // Excel'den aktarılan günde Zayi'nin elle girilmeyen kısmı Excel'deki Zaiyat'tır (ModPos ZAYİ ürünü yok)
-                if let line = WasteText.legacyLine(calc, legacy: legacy, item: item) {
-                    Text(line).font(.callout).monospacedDigit()
-                }
-                Text(WasteText.manualSection).font(.subheadline.weight(.semibold))
-                WasteEntryList(date: date, entries: WasteLog.entries(store.data.days[date], itemID: itemID), showItem: false)
-                if !store.isLocked(date) {
-                    Button { onAdd(itemID) } label: { Label(WasteText.addTitle, systemImage: "plus") }
-                        .buttonStyle(SoftButtonStyle())
-                }
-            }
-        }
-        .padding(16)
-        .frame(width: 380)
     }
 }

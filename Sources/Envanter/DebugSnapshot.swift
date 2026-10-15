@@ -77,7 +77,7 @@ enum DebugSnapshot {
 
     static func snapshot(to path: String) {
         guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) else { return }
-        // Pencere sunucusunun birleştirdiği gerçek görüntü (Liquid Glass gibi efektler ancak böyle görünür);
+        // Pencere sunucusunun birleştirdiği gerçek görüntü (sistem çizimleri ekrandaki haliyle görünür);
         // izin yoksa ya da başarısız olursa görünüm hiyerarşisi çizilerek alınır.
         if ProcessInfo.processInfo.environment["ENVANTER_SNAPSHOT_MODE"] != "view" {
             let p = Process()

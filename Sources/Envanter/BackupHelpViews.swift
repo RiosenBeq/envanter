@@ -262,7 +262,7 @@ struct HelpView: View {
     private func step(_ n: Int, _ title: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(n)").font(.headline).foregroundStyle(Brand.accent)
-                .frame(width: 28, height: 28).background(Circle().fill(Brand.accent.opacity(0.14)))
+                .frame(width: 28, height: 28).background(Shapes.control.fill(Brand.accent.opacity(0.12)))
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.headline)
                 Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

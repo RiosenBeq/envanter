@@ -47,7 +47,7 @@ struct EnvanterApp: App {
                 .handlesExternalEvents(preferring: Set(["*"]), allowing: Set(["*"]))
         }
         .defaultSize(width: 1440, height: 920)
-        // Başlık çubuğu içerikle birleşir (cam yüzeyler pencerenin tepesine kadar ortam ışığını gösterir)
+        // Başlık çubuğu içerikle birleşir (düz zemin ve yan menü pencerenin tepesine kadar uzanır)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {

@@ -89,7 +89,7 @@ struct WasteSheet: View {
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                    .tintedSurface(Color.primary, opacity: 0.04)
                 }
             }
 

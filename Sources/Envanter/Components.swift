@@ -16,10 +16,7 @@ enum Brand {
     static let positive = Color(red: 0.12, green: 0.45, blue: 0.85)
     static let ok = Color(red: 0.16, green: 0.62, blue: 0.33)
     static let warn = Color(red: 0.88, green: 0.55, blue: 0.05)
-    static let card = Color(nsColor: .controlBackgroundColor)
-    static let line = Color(nsColor: .separatorColor)
-    static let field = Color(nsColor: .textBackgroundColor)
-    static let gradient = LinearGradient(colors: [accent, accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+    // Yüzey renkleri (page, card, field, line, hover …) ve köşe ölçüsü (Radius, Shapes): Glass.swift
 
     /// Fark değerlendirmesinin rengi
     static func color(for s: DiffSeverity) -> Color {
@@ -48,7 +45,7 @@ struct CellID: Hashable {
     var col: Int
 }
 
-/// İçerik kartı: Liquid Glass yüzey (macOS 26) ya da buzlu cam (önceki sürümler)
+/// İçerik kartı: düz kart yüzeyi, 1 px çizgi, köşe 6 (gölge yok)
 struct Card<Content: View>: View {
     var padding: CGFloat = 14
     @ViewBuilder var content: Content
@@ -56,10 +53,11 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentGlass()
+            .cardSurface()
     }
 }
 
+/// Durum etiketi: köşe 4, durum renginin %12 tonu, yazı durumun koyu (koyu modda açık) tonuyla; kenarlık ve gölge yok
 struct Pill: View {
     var text: String
     var color: Color
@@ -67,9 +65,9 @@ struct Pill: View {
     var body: some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .foregroundStyle(filled ? Color.white : color)
-            .background(Capsule().fill(filled ? color : color.opacity(0.14)))
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .foregroundStyle(filled ? Color.white : Brand.ink(for: color))
+            .background(Shapes.control.fill(filled ? color : color.opacity(0.12)))
     }
 }
 
@@ -81,7 +79,7 @@ struct Sparkline: View {
         Chart {
             ForEach(Array(values.enumerated()), id: \.offset) { i, v in
                 AreaMark(x: .value("i", i), y: .value("v", v))
-                    .foregroundStyle(color.opacity(0.12).gradient)
+                    .foregroundStyle(color.opacity(0.12))
                     .interpolationMethod(.monotone)
                 LineMark(x: .value("i", i), y: .value("v", v))
                     .foregroundStyle(color)
@@ -115,13 +113,13 @@ struct StatCard: View {
                     Image(systemName: icon)
                         .font(.callout.weight(.semibold)).foregroundStyle(color)
                         .frame(width: 28, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.13)))
+                        .background(Shapes.control.fill(color.opacity(0.12)))
                     Text(title).font(.callout.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                     if let info { InfoTip(term: info) }
                     Spacer(minLength: 0)
                 }
                 HStack(alignment: .bottom, spacing: 10) {
-                    Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(value).font(.system(size: 24, weight: .semibold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.6)
                     if let spark, spark.count > 1 {
                         Spacer(minLength: 4)
@@ -161,11 +159,11 @@ struct TrackerStrip: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(days) { d in
-                RoundedRectangle(cornerRadius: 3)
+                Shapes.tiny
                     .fill(color(d))
                     .frame(maxWidth: .infinity)
                     .frame(height: 26)
-                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(d.date == selected ? Color.primary.opacity(0.8) : Color.clear, lineWidth: 1.5))
+                    .overlay(Shapes.tiny.strokeBorder(d.date == selected ? Color.primary.opacity(0.8) : Color.clear, lineWidth: 1.5))
                     .help(tooltip(d))
                     .onTapGesture { onSelect?(d.date) }
             }
@@ -199,36 +197,65 @@ struct TrackerLegend: View {
         .font(.caption2).foregroundStyle(.secondary)
     }
     private func item(_ c: Color, _ t: String) -> some View {
-        HStack(spacing: 4) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 10, height: 10); Text(t) }
+        HStack(spacing: 4) { Shapes.tiny.fill(c).frame(width: 10, height: 10); Text(t) }
     }
 }
 
-/// Birincil düğme: marka turuncusuyla renklendirilmiş cam kapsül
+/// Birincil düğme: düz marka turuncusu, beyaz yazı, köşe 4 (gölge ve büyüme efekti yok); üzerine gelince ve
+/// basılıyken koyu turuncu
 struct PrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
+        PrimaryButtonBody(configuration: configuration)
+    }
+}
+
+private struct PrimaryButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        let dark = isEnabled && (hovering || configuration.isPressed)
         configuration.label
             .font(.body.weight(.semibold))
             .padding(.horizontal, 15).padding(.vertical, 7)
             .foregroundStyle(.white)
-            .glassSurface(in: Capsule(), tint: Brand.accent, interactive: true)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .background(Shapes.control.fill(dark ? Brand.primaryHover : Brand.primary))
             .opacity(isEnabled ? 1 : 0.45)
+            .onHover { hovering = $0 }
     }
 }
 
-/// İkincil düğme: renksiz cam kapsül
+/// İkincil düğme: kart rengi, 1 px çizgi, köşe 4; renkli düğmede yazı rengin koyu tonuyla (okunaklı).
+/// Üzerine gelince ve basılıyken hafif ton.
 struct SoftButtonStyle: ButtonStyle {
     var tint: Color = .primary
-    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
+        SoftButtonBody(configuration: configuration, tint: tint)
+    }
+}
+
+private struct SoftButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let tint: Color
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        let state: Color = configuration.isPressed ? Brand.pressed : (isEnabled && hovering ? Brand.hover : Color.clear)
         configuration.label
             .font(.body.weight(.medium))
             .padding(.horizontal, 13).padding(.vertical, 6)
-            .foregroundStyle(tint)
-            .glassSurface(in: Capsule(), interactive: true)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .foregroundStyle(Brand.ink(for: tint))
+            .background {
+                ZStack {
+                    Shapes.control.fill(Brand.card)
+                    Shapes.control.fill(state)
+                }
+            }
+            .overlay(Shapes.control.strokeBorder(Brand.line, lineWidth: 1))
             .opacity(isEnabled ? 1 : 0.45)
+            .onHover { hovering = $0 }
     }
 }
 
@@ -240,7 +267,7 @@ struct DateNavigator: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // Gün adımı: cam kapsül içinde ◀ tarih ▶
+            // Gün adımı: kart yüzeyli kutuda ◀ tarih ▶
             HStack(spacing: 8) {
                 Button { store.shiftDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 22, height: 22).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
@@ -264,7 +291,7 @@ struct DateNavigator: View {
                     .accessibilityLabel("Sonraki gün")
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
-            .glassSurface(in: Capsule())
+            .controlSurface()
             DatePicker("", selection: store.dateBinding, displayedComponents: .date)
                 .labelsHidden()
                 .datePickerStyle(.compact)
@@ -328,8 +355,8 @@ struct NumberCell: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 6).fill(background))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(isFocused ? Brand.accent : Brand.line.opacity(0.6), lineWidth: isFocused ? 1.5 : 0.5))
+            // Köşe 4, 1 px çizgi; odakta dışta 2 px marka rengi çerçeve
+            .inputSurface(focused: isFocused, fill: background)
             .padding(.horizontal, 4)
             .onAppear { text = display(value) }
             .onChange(of: value) { _, new in if !isFocused { text = display(new); dirty = false } }
@@ -354,7 +381,7 @@ struct NumberCell: View {
     private var background: Color {
         if !isEnabled { return Color.primary.opacity(0.04) }
         if isFocused { return Brand.field }
-        return (tint ?? Brand.field).opacity(tint == nil ? 0.55 : 0.18)
+        return tint.map { $0.opacity(0.14) } ?? Brand.field
     }
 
     private func display(_ v: Double?) -> String {

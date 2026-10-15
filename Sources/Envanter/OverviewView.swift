@@ -135,7 +135,7 @@ struct OverviewView: View {
             .font(.callout)
             .padding(.horizontal, 10).padding(.vertical, 8)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
+            .tintedSurface(Color.primary, opacity: 0.04)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -209,11 +209,11 @@ struct OverviewView: View {
                         BarMark(x: .value("Gün", DateKey.date(from: d.date) ?? Date(), unit: .day),
                                 y: .value("Kalem", Double(d.shortageItems)))
                             .foregroundStyle(Brand.negative.opacity(d.date == store.selectedDate ? 1 : 0.65))
-                            .cornerRadius(3)
+                            .cornerRadius(Radius.tiny)
                         BarMark(x: .value("Gün", DateKey.date(from: d.date) ?? Date(), unit: .day),
                                 y: .value("Kalem", Double(max(d.problemItems - d.shortageItems, 0))))
                             .foregroundStyle(Brand.positive.opacity(d.date == store.selectedDate ? 1 : 0.55))
-                            .cornerRadius(3)
+                            .cornerRadius(Radius.tiny)
                     }
                 }
                 .chartXAxis {
@@ -237,7 +237,7 @@ struct OverviewView: View {
     }
 
     private func legendItem(_ c: Color, _ t: String) -> some View {
-        HStack(spacing: 4) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 10, height: 10); Text(t) }
+        HStack(spacing: 4) { Shapes.tiny.fill(c).frame(width: 10, height: 10); Text(t) }
     }
 
     // MARK: Bugün
@@ -291,7 +291,7 @@ struct OverviewView: View {
         }
     }
 
-    /// Adım satırı: numara (yapıldıysa yeşil onay), başlık, durum ve tek düğme
+    /// Adım satırı: numara kutusu (köşe 4; yapıldıysa yeşil onay), başlık, durum ve tek düğme
     private func todayStep<Action: View>(_ step: DaySteps.Step, steps: DaySteps, title: String, status: String,
                                          warning: Bool = false, @ViewBuilder action: () -> Action) -> some View {
         let done = steps.isDone(step)
@@ -299,11 +299,11 @@ struct OverviewView: View {
         let button = action()
         return HStack(alignment: .top, spacing: 10) {
             ZStack {
-                Circle().fill(done ? Brand.ok.opacity(0.15) : (current ? Brand.accent.opacity(0.15) : Color.primary.opacity(0.06)))
+                Shapes.control.fill(done ? Brand.ok.opacity(0.12) : (current ? Brand.accent.opacity(0.12) : Color.primary.opacity(0.06)))
                 if done {
-                    Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Brand.ok)
+                    Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Brand.ink(for: Brand.ok))
                 } else {
-                    Text("\(step.rawValue)").font(.callout.weight(.bold)).foregroundStyle(current ? Brand.accent : Color.secondary)
+                    Text("\(step.rawValue)").font(.callout.weight(.bold)).foregroundStyle(current ? Brand.ink(for: Brand.accent) : Color.secondary)
                 }
             }
             .frame(width: 26, height: 26)
@@ -552,7 +552,7 @@ private struct LiveSyncLine: View {
             }
             .font(.callout).foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .glassSurface(in: Capsule())
+            .controlSurface()
             .help(RealtimeStatusLabel.text(cloud.realtimeStatus) + "\nAyrıntı: Ayarlar → Web paneli ile eşitleme")
         }
     }
@@ -655,7 +655,7 @@ private struct StartTile<Actions: View>: View {
                 Image(systemName: done ? "checkmark.circle.fill" : icon)
                     .font(.callout.weight(.semibold)).foregroundStyle(tint)
                     .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(tint.opacity(0.13)))
+                    .background(Shapes.control.fill(tint.opacity(0.12)))
                 Text(title).font(.headline)
             }
             Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -668,6 +668,6 @@ private struct StartTile<Actions: View>: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+        .tintedSurface(Color.primary, opacity: 0.035)
     }
 }

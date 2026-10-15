@@ -27,7 +27,7 @@ struct RecipesView: View {
         }
         .navigationTitle("Reçeteler")
         .sheet(isPresented: $showNew, onDismiss: { store.newProductDraft = nil }) {
-            NewProductSheet(draft: store.newProductDraft).environmentObject(store)
+            NewProductSheet(draft: store.newProductDraft).environmentObject(store).sheetSurface()
         }
         .onAppear { if store.newProductDraft != nil { showNew = true } }
         .onChange(of: store.newProductDraft?.code) { _, c in if c != nil { showNew = true } }
@@ -135,7 +135,7 @@ private struct RecipeEditor: View {
                             }
                             Spacer()
                         }
-                        .padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Brand.warn.opacity(0.12)))
+                        .padding(10).tintedSurface(Brand.warn)
                     }
 
                     Divider()
@@ -183,7 +183,7 @@ private struct RecipeEditor: View {
                 // Personel hesabıyla reçeteler salt okunur (web panelindeki hal geçerli)
                 .disabled(!store.canEditCatalog)
             }
-            .sheet(isPresented: $showCopy) { CopyRecipeSheet(targetCode: code).environmentObject(store) }
+            .sheet(isPresented: $showCopy) { CopyRecipeSheet(targetCode: code).environmentObject(store).sheetSurface() }
             .confirmationDialog("\"\(p.name)\" silinsin mi?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Sil", role: .destructive) { store.deleteProduct(code) }
                 Button("Vazgeç", role: .cancel) {}

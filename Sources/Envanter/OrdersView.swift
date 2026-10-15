@@ -149,6 +149,8 @@ struct OrdersView: View {
                         .monospacedDigit().frame(maxWidth: .infinity, alignment: .trailing)
                     }.width(130)
                 }
+                // Zebra satır yok (web paneliyle aynı sade tablo; sistem tablosunun varsayılan çizgili satırları kapalı)
+                .alternatingRowBackgrounds(.disabled)
             }
             if !store.data.purchaseOrders.isEmpty {
                 Divider()
@@ -165,8 +167,8 @@ struct OrdersView: View {
             .padding(.horizontal, 20).padding(.vertical, 8)
         }
         .navigationTitle("Sipariş")
-        .sheet(item: $receiving) { t in ReceiveSheet(target: t).environmentObject(store) }
-        .sheet(item: $editor) { t in OrderEditorSheet(target: t).environmentObject(store) }
+        .sheet(item: $receiving) { t in ReceiveSheet(target: t).environmentObject(store).sheetSurface() }
+        .sheet(item: $editor) { t in OrderEditorSheet(target: t).environmentObject(store).sheetSurface() }
     }
 
     private func num(_ v: Double, _ item: Item) -> String { Fmt.number(v, maxFraction: item.maxFraction) }

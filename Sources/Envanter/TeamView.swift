@@ -67,17 +67,20 @@ private struct TeamScreen: View {
             .padding(22)
         }
         .sheet(item: $sheet) { s in
-            switch s {
-            case .newMember:
-                TeamMemberSheet(store: store, employeeID: nil)
-            case .editMember(let id):
-                TeamMemberSheet(store: store, employeeID: id)
-            case .createAccount(let id):
-                CreateAccountSheet(store: store, cloud: cloud, members: members, presetEmployeeID: id,
-                                   onDone: { await loadMembers() })
-            case .setPassword(let m):
-                SetPasswordSheet(cloud: cloud, member: m)
+            Group {
+                switch s {
+                case .newMember:
+                    TeamMemberSheet(store: store, employeeID: nil)
+                case .editMember(let id):
+                    TeamMemberSheet(store: store, employeeID: id)
+                case .createAccount(let id):
+                    CreateAccountSheet(store: store, cloud: cloud, members: members, presetEmployeeID: id,
+                                       onDone: { await loadMembers() })
+                case .setPassword(let m):
+                    SetPasswordSheet(cloud: cloud, member: m)
+                }
             }
+            .sheetSurface()
         }
         .confirmationDialog("\"\(deleting?.name ?? "")\" silinsin mi?",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -203,7 +206,7 @@ private struct TeamListCard: View {
                 }
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(Color.primary.opacity(0.04))
+                .background(Brand.header)
                 ForEach(store.employees) { e in
                     TeamRow(store: store, employee: e, canCreateAccount: canCreateAccounts && (e.account ?? "").isEmpty,
                             onEdit: { onEdit(e) }, onDelete: { onDelete(e) }, onCreateAccount: { onCreateAccount(e) })
@@ -364,7 +367,7 @@ private struct TeamMemberSheet: View {
                     TextEditor(text: $note)
                         .font(.body)
                         .frame(height: 60)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Brand.line))
+                        .overlay(Shapes.control.strokeBorder(Brand.line, lineWidth: 1))
                 }
                 if !isNew {
                     GridRow {
@@ -1069,8 +1072,8 @@ private struct AccountMessageBox: View {
                     .padding(10)
             }
             .frame(height: 190)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Brand.line))
+            .background(Shapes.container.fill(Color.primary.opacity(0.05)))
+            .overlay(Shapes.container.strokeBorder(Brand.line, lineWidth: 1))
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(message, forType: .string)

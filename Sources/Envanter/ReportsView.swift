@@ -126,8 +126,10 @@ private struct PeriodSummaryTab: View {
                 Divider()
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
-                            row(r).background(selected == r.id ? Brand.accent.opacity(0.12) : (i % 2 == 0 ? Color.clear : Color.primary.opacity(0.03)))
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { _, r in
+                            // Zebra yerine 1 px satır ayırıcı; seçili satır marka tonunda
+                            row(r).background(selected == r.id ? Brand.selection : Color.clear)
+                                .rowSeparator(leading: 12)
                                 .contentShape(Rectangle())
                                 .onTapGesture { selected = (selected == r.id ? nil : r.id) }
                         }
@@ -186,7 +188,7 @@ private struct PeriodSummaryTab: View {
         }
         .font(.caption.weight(.semibold)).multilineTextAlignment(.center)
         .padding(.vertical, 8).padding(.trailing, 8)
-        .background(Color.primary.opacity(0.05))
+        .background(Brand.header)
     }
 
     private func row(_ r: Engine.SummaryRow) -> some View {
@@ -212,7 +214,7 @@ private struct PeriodSummaryTab: View {
                     let color = Brand.color(for: r.severity)
                     Text(r.severity == .zero ? "0" : f(r.diff)).monospacedDigit().fontWeight(.semibold)
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .foregroundStyle(color).background(Capsule().fill(color.opacity(0.13)))
+                        .foregroundStyle(Brand.ink(for: color)).background(Shapes.control.fill(color.opacity(0.12)))
                 } else { Text("—").foregroundStyle(.tertiary) }
             }.frame(width: widths[7])
             // Fazla çıkış: tolerans dışı fazla çıkan günlerin toplamı (pozitif miktar, kalemin biriminde)
@@ -249,6 +251,7 @@ private struct PeriodSummaryTab: View {
                     BarMark(x: .value("Gün", DateKey.date(from: d.date) ?? Date(), unit: .day),
                             y: .value("Fark", d.diff))
                         .foregroundStyle(Brand.color(for: r.item.severity(of: d.diff)))
+                        .cornerRadius(Radius.tiny)
                 }
                 RuleMark(y: .value("Sıfır", 0)).foregroundStyle(.secondary)
                 if let t = r.item.tolerance, t > 0 {
@@ -376,6 +379,7 @@ private struct ConsumptionChart: View {
                     BarMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Miktar", p.expected))
                         .foregroundStyle(by: .value("Seri", "Satış + zayi"))
                         .opacity(0.55)
+                        .cornerRadius(Radius.tiny)
                     if let a = p.actual {
                         LineMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Miktar", a))
                             .foregroundStyle(by: .value("Seri", "Gerçek kullanım"))
@@ -402,6 +406,7 @@ private struct DiffChart: View {
                 ForEach(series.filter { $0.diff != nil }) { p in
                     BarMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Fark", p.diff ?? 0))
                         .foregroundStyle(Brand.color(for: item.severity(of: p.diff ?? 0)))
+                        .cornerRadius(Radius.tiny)
                 }
                 RuleMark(y: .value("Sıfır", 0)).foregroundStyle(.secondary)
                 if let t = item.tolerance, t > 0 {
@@ -425,7 +430,7 @@ private struct StockLevelChart: View {
             Chart {
                 ForEach(series.filter { $0.closing != nil }) { p in
                     AreaMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Stok", p.closing ?? 0))
-                        .foregroundStyle(Brand.accent.opacity(0.15).gradient)
+                        .foregroundStyle(Brand.accent.opacity(0.12))
                         .interpolationMethod(.monotone)
                     LineMark(x: .value("Gün", day(p.date), unit: .day), y: .value("Stok", p.closing ?? 0))
                         .foregroundStyle(Brand.accent)
